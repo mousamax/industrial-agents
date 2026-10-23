@@ -8,7 +8,7 @@ weekend on **agent design, prompts and flows**.
 |---|---|---|
 | Agents | [Pydantic AI](https://ai.pydantic.dev) 2.60 | Typed outputs, tools, capabilities, test models |
 | Models | Claude via aliases (`smart` = Opus 5.5, `balanced` = Sonnet 5.5, `fast` = Haiku 5.5), Anthropic API or OpenRouter | One env var swaps models for everyone |
-| Tracing | Logfire SDK → Logfire and/or Langfuse (OTLP) | One instrumentation, whichever UI you like |
+| Tracing | Pydantic AI's built-in OpenTelemetry → [Langfuse](https://langfuse.com) | See every agent, prompt, model call and tool call |
 | Evals | [pydantic-evals](https://ai.pydantic.dev/evals/) + `evals.yaml` next to each agent | Fast iteration, committed baselines |
 | Error analysis | LLM judges for open coding → failure-mode codebook → closed coding | Know *why* outputs fail, not just *that* |
 | Serving | FastAPI: `/run`, `/chat` (Vercel AI protocol), `/ui` (built-in chat UI) | A demo in zero lines of frontend |
@@ -18,8 +18,9 @@ weekend on **agent design, prompts and flows**.
 
 ```bash
 uv sync && cp .env.example .env
-# put ANTHROPIC_API_KEY or OPENROUTER_API_KEY (and the team's LOGFIRE_TOKEN) in .env
-uv run ia list             # what exists
+# put ANTHROPIC_API_KEY or OPENROUTER_API_KEY (and the team's LANGFUSE_* keys) in .env
+uv run ia list             # every agent/flow: model, tools, eval cases
+uv run ia show supplier_quote        # its job, input/output, model, tools, full prompt
 uv run ia run supplier_quote @data/sample/quotes/automa.txt
 uv run ia ui supplier_quote          # chat UI on http://localhost:8001
 uv run ia eval supplier_quote        # evals vs baseline
@@ -78,7 +79,7 @@ src/app/
   core.py            AgentCard / FlowCard: the contract everything else uses
   registry.py        finds agents/flows by folder (no central list, no merge conflicts)
   models.py          model aliases
-  observability.py   Logfire + Langfuse
+  observability.py   Langfuse tracing
   evals/             eval runner + custom evaluators
   api/main.py        FastAPI
   cli.py             `ia` command
@@ -96,9 +97,17 @@ OpenRouter (`openrouter:anthropic/claude-opus-5.5`, ...). Any full id works for 
 
 ## Tracing
 
-Set `LOGFIRE_TOKEN` (one shared project for the team) and/or `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`.
-Every agent run, tool call, model request (with tokens and cost), flow step, HTTP request and eval
-case becomes a span. Set `DEV_NAME` to filter your own traces.
+Two ways to see what's going on:
+- **Without leaving the terminal:** `ia list` (all agents and flows, their models, tools, eval cases) and
+  `ia show <name>` (job, input/output, model, tools, full prompt).
+- **Langfuse** (one shared project; `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` in `.env`):
+  one trace per run, named after the agent or flow and tagged `cli`/`api`/`eval`, with `DEV_NAME` as the user.
+  A flow is a `chain` node, with each agent run nested under it, and inside each agent run the model calls
+  (prompt, thinking, tokens, cost) and tool calls (arguments, result). Leave the keys empty to trace nothing.
+  Cost shows for `claude-*` models on the Anthropic API. OpenRouter model names aren't in Langfuse's price
+  table, so OpenRouter runs show tokens only.
+
+The Langfuse agent skill is in `.claude/skills/langfuse` (query traces, prompts, datasets via `langfuse-cli`).
 
 ## API
 

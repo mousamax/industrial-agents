@@ -1,0 +1,30 @@
+task: Extracts a supplier quote into structured lines and checks it against the catalog. The agent reads one supplier
+  quote (email or PDF text), extracts supplier, ISO currency, line items, stated total, validity date and Incoterms,
+  converts lead times to days, calls lookup_part once for every part number, flags deviations as blocker, warning
+  or info, and recommends reject, negotiate or accept with a two- or three-sentence rationale.
+failure_modes:
+- name: garbled_flag_message
+  definition: A buyer-facing flag or note contains stray, duplicated or nonsensical wording that makes its meaning
+    unclear, even when the underlying number is correct.
+  examples:
+  - approved-supplier-good-prices
+- name: unflagged_quantity_unit_ambiguity
+  definition: A line's quantity or unit of measure (e.g. box vs piece) is misread or ambiguous in the quote and
+    the output neither resolves it nor flags it for the buyer to confirm.
+  examples:
+  - usd-slow-and-pricey
+- name: inconsistent_figures_across_output
+  definition: The same deviation or value is stated with different numbers in different parts of the output (e.g.
+    rationale vs flag percentage or amount).
+  examples:
+  - usd-slow-and-pricey
+- name: ungrounded_added_detail
+  definition: The output includes specific facts (such as technical specifications or attributes) that appear neither
+    in the supplier quote nor in the catalog lookup result, and does not say where they came from.
+  examples:
+  - usd-slow-and-pricey
+- name: rationale_exceeds_style_limit
+  definition: The rationale runs past the requested two or three plain sentences or packs several separate actions
+    into one sentence.
+  examples:
+  - usd-slow-and-pricey

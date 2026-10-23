@@ -18,6 +18,8 @@ from typing import Any
 from pydantic import BaseModel, TypeAdapter
 from pydantic_ai import Agent, format_as_xml
 
+from app import observability
+
 
 def load_prompt(module_file: str, name: str = "prompt.md") -> str:
     """Read a prompt that lives next to the agent: `load_prompt(__file__)`.
@@ -69,7 +71,11 @@ class FlowCard[InputT, OutputT]:
         return TypeAdapter(self.input_type).validate_python(inputs)
 
     async def run(self, inputs: InputT | dict[str, Any] | str, *, model: str | None = None) -> OutputT:
-        return await self.fn(self.coerce(inputs), model=model)
+        inputs = self.coerce(inputs)
+        with observability.flow_span(self.name, inputs) as span:
+            output = await self.fn(inputs, model=model)
+            observability.set_output(span, output)
+        return output
 
 
 Card = AgentCard[Any, Any, Any] | FlowCard[Any, Any]

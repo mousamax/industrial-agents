@@ -10,7 +10,7 @@ Loop, one change per iteration:
 2. Qualitative analysis: `uv run ia analyze <name>` (open coding of the run, grouped into
    `failure_modes.yaml`). Review and tighten the codebook with the user; it is committed and every later
    `ia eval` labels outputs against it (closed coding). Pick the most frequent failure mode, then read its
-   traces (Logfire, or `-v`): wrong tool use? missing fact? ambiguous instruction? loose schema? weak model?
+   traces (Langfuse, filter tag `eval`, or `-v`): wrong tool use? missing fact? ambiguous instruction? loose schema? weak model?
 3. Make the smallest change that addresses it, preferring, in order: a tool or data fix, a schema or
    validator fix, a prompt fix, a model/effort change (`--model balanced|smart`, `Thinking(...)`).
 4. Re-run with a new `--label`. Keep the change only if the targeted `no_<mode>` assertion improves without

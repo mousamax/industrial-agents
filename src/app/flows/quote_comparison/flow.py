@@ -5,14 +5,13 @@ The flow pattern we use: Python owns the control flow, agents own the judgment.
 2. Decide in code: rank deterministically (cheap, testable, explainable).
 3. Fan in: a writer agent drafts the email to the chosen supplier.
 
-Every step is a span, so the whole flow is one trace in Logfire/Langfuse.
+The flow is one `chain` node in Langfuse with every agent run nested under it.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.capabilities import Thinking
@@ -54,10 +53,7 @@ def rank(analyses: list[QuoteAnalysis]) -> list[QuoteAnalysis]:
 
 
 async def compare_quotes(inputs: ComparisonInput, *, model: str | None = None) -> Decision:
-    with logfire.span("analyse {n} quotes", n=len(inputs.quotes)):
-        analyses = await asyncio.gather(
-            *(quote_card.run({"document": q}, model=model) for q in inputs.quotes)
-        )
+    analyses = await asyncio.gather(*(quote_card.run({"document": q}, model=model) for q in inputs.quotes))
 
     ranked = rank(list(analyses))
     best = ranked[0] if ranked[0].recommendation != "reject" else None

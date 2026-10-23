@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import re
@@ -35,13 +36,58 @@ def _parse_input(raw: str) -> Any:
         return raw
 
 
+def _tools(card: Any) -> dict[str, str]:
+    if not isinstance(card, AgentCard):
+        return {}
+    return {
+        name: (tool.description or "").strip()
+        for toolset in card.agent.toolsets
+        for name, tool in getattr(toolset, "tools", {}).items()
+    }
+
+
 @cli.command("list")
 def list_() -> None:
-    """Every agent and flow in the repo."""
-    table = Table("name", "kind", "description")
+    """Every agent and flow: model, tools, eval cases."""
+    from app.evals.runner import load_dataset
+
+    table = Table("name", "kind", "model", "tools", "evals", "description")
+    for column in table.columns[:3]:
+        column.no_wrap = True
     for name, entry in registry().items():
-        table.add_row(name, entry.kind, entry.card.description)
+        card = entry.card
+        model = str(card.agent.model) if isinstance(card, AgentCard) else "(its agents')"
+        cases = len(load_dataset(entry).cases) if entry.evals_path.exists() else 0
+        table.add_row(name, entry.kind, model, ", ".join(_tools(card)), str(cases), card.description)
     console.print(table)
+
+
+@cli.command()
+def show(name: str) -> None:
+    """Everything about one agent/flow: what it does, model, input/output, tools, prompt."""
+    entry = get(name)
+    card = entry.card
+    console.rule(f"[bold]{name}[/] ({entry.kind})  {entry.path.relative_to(ROOT)}")
+    for file in ("agent.py", "flow.py"):
+        if (entry.path / file).exists():
+            docstring = ast.get_docstring(ast.parse((entry.path / file).read_text()))
+            if docstring:
+                console.print(docstring + "\n")
+    console.print(f"[bold]input[/]  {card.input_type.__name__}: {_fields(card.input_type)}")
+    if isinstance(card, AgentCard):
+        out = card.agent.output_type
+        console.print(f"[bold]output[/] {getattr(out, '__name__', out)}: {_fields(out)}")
+        console.print(f"[bold]model[/]  {card.agent.model}")
+        for tool, description in _tools(card).items():
+            console.print(f"[bold]tool[/]   {tool}: {description.splitlines()[0] if description else ''}")
+    for prompt in sorted(entry.path.glob("*prompt*.md")):
+        console.rule(prompt.name)
+        console.print(prompt.read_text(), markup=False, soft_wrap=True)
+
+
+def _fields(model_type: Any) -> str:
+    fields = getattr(model_type, "model_fields", None)
+    return ", ".join(fields) if fields else str(model_type)
 
 
 @cli.command()
@@ -57,7 +103,8 @@ def run(
     if isinstance(inputs, str) and card.input_type is not str:
         first_field = next(iter(card.input_type.model_fields))  # type: ignore[union-attr]
         inputs = {first_field: inputs}
-    output = asyncio.run(card.run(inputs, model=resolve_model(model) if model else None))
+    with observability.entrypoint(name, kind=get(name).kind, tags=["cli"]):  # type: ignore[arg-type]
+        output = asyncio.run(card.run(inputs, model=resolve_model(model) if model else None))
     console.print_json(output.model_dump_json() if isinstance(output, BaseModel) else json.dumps(output))
 
 
@@ -87,7 +134,7 @@ def ui(name: str, port: int = 8001) -> None:
 def eval_(
     name: str,
     model: Annotated[str | None, typer.Option(help="alias or model id; default: the agent's own")] = None,
-    label: Annotated[str | None, typer.Option(help="name this experiment (shows in Logfire)")] = None,
+    label: Annotated[str | None, typer.Option(help="name this experiment (Langfuse tag label:<label>)")] = None,
     case: Annotated[str | None, typer.Option(help="only cases whose name contains this")] = None,
     repeat: Annotated[int, typer.Option(help="run each case N times (LLMs are noisy)")] = 1,
     concurrency: int = 4,

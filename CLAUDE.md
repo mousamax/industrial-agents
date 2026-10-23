@@ -1,6 +1,6 @@
 # Industrial Agents: guide for coding agents (Claude Code, Cursor, Codex)
 
-Hackathon repo. Python 3.12, uv, Pydantic AI 2.60 on Claude (Anthropic API or OpenRouter), Logfire/Langfuse
+Hackathon repo. Python 3.12, uv, Pydantic AI 2.60 on Claude (Anthropic API or OpenRouter), Langfuse
 tracing, pydantic-evals. Built for fast iteration: no Docker, no Makefile, no CI. Every agent change is
 checked with its evals, not by eyeballing one output.
 
@@ -16,7 +16,7 @@ checked with its evals, not by eyeballing one output.
   judges). `evals/baselines/` and each agent's `failure_modes.yaml` are committed.
 
 ## Commands
-- `uv run ia list | run <name> '<json|@file|text>' | chat <name> | ui <name> | eval <name> | analyze <name>`
+- `uv run ia list | show <name> | run <name> '<json|@file|text>' | chat <name> | ui <name> | eval <name> | analyze <name>`
 - Before committing: `uv run ruff check --fix src tests && uv run ruff format src tests && uv run pytest -q`.
 - `ia eval` / `ia analyze` need `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY` in `.env`.
 

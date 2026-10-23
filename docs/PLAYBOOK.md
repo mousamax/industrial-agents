@@ -3,7 +3,7 @@
 ## Before kickoff (Sat 09:30)
 - [ ] Everyone: clone, `uv sync`, `cp .env.example .env`, `uv run pytest -q` green. Claude Code / Cursor
   pointed at the repo.
-- [ ] One Logfire project; everyone uses the same `LOGFIRE_TOKEN` and their own `DEV_NAME`.
+- [ ] One Langfuse project; everyone uses the same `LANGFUSE_*` keys and their own `DEV_NAME`.
 - [ ] The Anthropic key from the organisers goes in each `.env` (never committed). Until then:
   `OPENROUTER_API_KEY`.
 - [ ] Repo on GitHub, everyone has push rights, branch protection off (speed).

@@ -9,9 +9,9 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.161",
-    "logfire[fastapi,httpx]>=5.3",
-    "pydantic-ai-slim[ag-ui,anthropic,logfire,mcp,openrouter,web]==2.60.0",
-    "pydantic-evals[logfire]==2.60.0",
+    "langfuse>=4",
+    "pydantic-ai-slim[ag-ui,anthropic,mcp,openrouter,web]==2.60.0",
+    "pydantic-evals==2.60.0",
     "pydantic-settings>=2.16.1",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",

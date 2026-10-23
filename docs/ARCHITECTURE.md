@@ -45,8 +45,8 @@ Start at the top, go down only when you have to (Anthropic's "start simple" ladd
 
 ## Models
 
-`models.py` maps aliases to model ids on the Anthropic API or, with only `OPENROUTER_API_KEY` set (or
-`MODEL_PROVIDER=openrouter`), on OpenRouter. `.env` can override each alias: `smart` Opus 5.5 (default for agents),
+`models.py` maps aliases to model ids on the Anthropic API, or on OpenRouter when there is no
+`ANTHROPIC_API_KEY` (once that key is set, the aliases never use OpenRouter). `.env` can override each alias: `smart` Opus 5.5 (default for agents),
 `balanced` Sonnet 5.5 (writers, cheaper steps), `fast` Haiku 5.5 (classification, routing), `judge` Sonnet 5.5.
 Notes for the Claude 5.5 models: `temperature`/`top_p` are rejected, thinking is always on (tune
 depth instead), forced tool choice is rejected; pydantic-ai already handles that for structured output.
@@ -65,11 +65,12 @@ depth instead), forced tool choice is rejected; pydantic-ai already handles that
 
 Judges run on the `judge` alias (Sonnet 5.5), the axial grouping on `smart`.
 
-Each run prints a table against `evals/baselines/<name>.json`, saves to `evals/reports/` and, with a
-Logfire token, appears under Evals in Logfire for the whole team.
+Each run prints a table against `evals/baselines/<name>.json` and saves to `evals/reports/`. With
+Langfuse keys set, every case's agent run is a trace tagged `eval` and `label:<label>`.
 
 ## Observability
 
-`observability.setup()` configures the Logfire SDK and instruments pydantic-ai, httpx and FastAPI.
-Spans go to Logfire (`LOGFIRE_TOKEN`), Langfuse (OTLP, `LANGFUSE_*`), both, or nowhere. Spans exist
-even with no sink, which is how the trajectory evaluators see tool calls.
+`observability.setup()` turns on Pydantic AI's OpenTelemetry instrumentation (`Agent.instrument_all()`)
+and, if `LANGFUSE_*` keys are set, the Langfuse client, which exports those spans. Entry points (CLI,
+API, eval cases) set the trace name, tags and user. Flows add one `chain` node. Agents need no tracing
+code. Without keys, spans stay in memory, which is how the trajectory evaluators see tool calls.

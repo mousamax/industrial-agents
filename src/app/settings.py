@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,8 +16,6 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     openrouter_api_key: str | None = None
-    model_provider: Literal["anthropic", "openrouter"] | None = None
-    """Unset: Anthropic if its key is set, else OpenRouter. See models.py."""
 
     # Per-alias overrides (MODEL_SMART=openrouter:openai/gpt-6.1-sol ...); unset uses models.ALIASES.
     model_smart: str | None = None
@@ -26,10 +23,9 @@ class Settings(BaseSettings):
     model_fast: str | None = None
     model_judge: str | None = None
 
-    logfire_token: str | None = None
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
-    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_base_url: str = "https://cloud.langfuse.com"
 
     app_env: str = "dev"
     dev_name: str | None = None

@@ -9,6 +9,7 @@ ia eval supplier_quote --save-baseline          # you improved it: commit evals/
 from __future__ import annotations
 
 import datetime as dt
+import json
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from pydantic_evals.evaluators.llm_as_a_judge import set_default_judge_model
 from pydantic_evals.reporting import EvaluationReport, EvaluationReportAdapter
 
 from app import observability
+from app.core import AgentCard
 from app.evals import coding
 from app.evals.evaluators import CUSTOM_EVALUATORS
 from app.models import model as resolve_model
@@ -96,10 +98,12 @@ async def run_eval(
 
     resolved = resolve_model(model) if model else None
 
-    async def task(inputs: Any) -> Any:
-        return await entry.card.run(inputs, model=resolved)
-
     label = label or (model or "default")
+
+    async def task(inputs: Any) -> Any:
+        with observability.entrypoint(name, kind="eval", tags=[f"label:{label}"]):
+            return await entry.card.run(inputs, model=resolved)
+
     report = await dataset.evaluate(
         task,
         name=f"{name}:{label}",
@@ -133,8 +137,15 @@ async def analyze(name: str, report_path: Path | None = None) -> Path:
     report = load_report(report_path)
     assert report is not None
     task = entry.card.description
-    if (prompt := entry.path / "prompt.md").exists():
-        task += "\n\n" + prompt.read_text()
+    if isinstance(entry.card, AgentCard):
+        tools = {
+            name: tool.description
+            for toolset in entry.card.agent.toolsets
+            for name, tool in getattr(toolset, "tools", {}).items()
+        }
+        task += f"\n\nThe agent can call these tools: {json.dumps(tools)}"
+    for prompt in sorted(entry.path.glob("*prompt*.md")):
+        task += f"\n\n{prompt.name}:\n{prompt.read_text()}"
 
     codes = await coding.open_code(report, task)
     notes_path = report_path.with_suffix(".open_codes.yaml")

@@ -23,7 +23,7 @@ from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, format_as_xml
+from pydantic_ai import Agent
 from pydantic_ai.capabilities import Thinking
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
 from pydantic_evals.reporting import EvaluationReport
@@ -62,7 +62,10 @@ _open_coder = Agent(
         "output (may be partial) and the automated checks. Write concrete notes about what is wrong or "
         "risky: wrong values, missed issues, invented facts, bad reasoning, unhelpful wording. Quote "
         "the evidence. Don't restate a failed check without saying what actually went wrong. "
-        "Don't invent categories; just describe."
+        "Don't invent categories; just describe. The output is the agent's final structured output as "
+        "JSON (null means not provided). Its tool calls and their results are not shown: don't call a "
+        "fact unsupported only because the tool result isn't visible, but do flag facts that contradict "
+        "the input or the tools' purpose. If the output is fully acceptable, set ok and leave notes empty."
     ),
     capabilities=[Thinking("medium")],
     defer_model_check=True,
@@ -89,11 +92,20 @@ _closed_coder = Agent(
     instructions=(
         "Label one AI agent output against a fixed codebook of failure modes. For every mode in the "
         "codebook answer true only if the definition clearly applies to this output; give the evidence "
-        "for each true. Use exactly the given mode names as keys."
+        "for each true. Use exactly the given mode names as keys. The output is the agent's final "
+        "structured output as JSON (null means not provided); its tool calls are not shown."
     ),
     capabilities=[Thinking("low")],
     defer_model_check=True,
 )
+
+
+def _render(**sections: Any) -> str:
+    """Prompt sections as <name>JSON</name>: data stays JSON, so the judge sees exactly what the agent returned."""
+    return "\n".join(
+        f"<{name}>\n{value if isinstance(value, str) else json.dumps(_jsonable(value), indent=2, ensure_ascii=False)}\n</{name}>"
+        for name, value in sections.items()
+    )
 
 
 def _jsonable(value: Any) -> Any:
@@ -117,7 +129,7 @@ async def open_code(
 
     async def one(case: Any) -> OpenCode:
         async with sem:
-            prompt = format_as_xml({"task": task, "case": _case_view(case)}, root_tag="review")
+            prompt = _render(task=task, case=_case_view(case))
             return (await _open_coder.run(prompt, model=model("judge"))).output
 
     codes = list(await asyncio.gather(*(one(c) for c in report.cases)))
@@ -130,7 +142,7 @@ async def axial_code(codes: list[OpenCode], task: str, existing: Codebook | None
     payload: dict[str, Any] = {"task": task, "notes": notes}
     if existing:
         payload["existing_codebook"] = existing.model_dump()
-    return (await _axial_coder.run(format_as_xml(payload, root_tag="input"), model=model("smart"))).output
+    return (await _axial_coder.run(_render(**payload), model=model("smart"))).output
 
 
 def load_codebook(path: Path) -> Codebook:
@@ -158,14 +170,7 @@ class ClosedCoding(Evaluator[Any, Any, Any]):
 
     async def evaluate(self, ctx: EvaluatorContext[Any, Any, Any]) -> dict[str, EvaluationReason]:
         book = _cached_codebook(self.codebook)
-        prompt = format_as_xml(
-            {
-                "codebook": book.model_dump(),
-                "inputs": _jsonable(ctx.inputs),
-                "output": _jsonable(ctx.output),
-            },
-            root_tag="input",
-        )
+        prompt = _render(codebook=book.model_dump(), inputs=ctx.inputs, output=ctx.output)
         labels = (await _closed_coder.run(prompt, model=model("judge"))).output
         return {
             f"no_{m.name}": EvaluationReason(

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import logfire
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, TypeAdapter
@@ -23,10 +22,9 @@ from app import observability
 from app.core import AgentCard
 from app.registry import Entry, get, registry
 
-observability.setup("industrial-agents-api")
+observability.setup()
 app = FastAPI(title="Industrial Agents")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-logfire.instrument_fastapi(app)
 
 
 class AgentInfo(BaseModel):
@@ -65,7 +63,9 @@ async def list_agents() -> list[AgentInfo]:
 
 @app.post("/run/{name}")
 async def run(name: str, inputs: dict[str, Any] | str) -> Any:
-    output = await _entry(name).card.run(inputs)
+    entry = _entry(name)
+    with observability.entrypoint(name, kind=entry.kind, tags=["api"]):  # type: ignore[arg-type]
+        output = await entry.card.run(inputs)
     return output.model_dump(mode="json") if isinstance(output, BaseModel) else output
 
 

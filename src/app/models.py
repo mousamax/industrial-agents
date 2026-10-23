@@ -5,8 +5,10 @@ Agents are built with `model("smart")` instead of a hard-coded id. That gives us
 - a single knob for eval sweeps (`ia eval my_agent --model balanced`),
 - agents that import fine without an API key (tests run offline).
 
-The provider is picked from whichever key is in `.env` (Anthropic first, then OpenRouter), or forced
-with MODEL_PROVIDER. Any full model id passes through, e.g. `--model openrouter:openai/gpt-6.1-sol`.
+Provider: as soon as ANTHROPIC_API_KEY is set, every alias goes to the Anthropic API, even if an alias
+override in `.env` names an OpenRouter model. OpenRouter is only the fallback for when there is no
+Anthropic key. A full model id you pass on purpose still goes through as-is, e.g.
+`--model openrouter:openai/gpt-6.1-sol` to compare against another lab's model.
 """
 
 from __future__ import annotations
@@ -35,14 +37,14 @@ ALIASES: dict[str, dict[str, str]] = {
 
 def provider() -> str:
     s = get_settings()
-    if s.model_provider:
-        return s.model_provider
-    if s.anthropic_api_key or not s.openrouter_api_key:
-        return "anthropic"
-    return "openrouter"
+    return "openrouter" if s.openrouter_api_key and not s.anthropic_api_key else "anthropic"
 
 
 def model(alias: Alias | str) -> str:
     """Resolve an alias to a pydantic-ai model string; anything else passes through unchanged."""
+    if alias not in ALIASES["anthropic"]:
+        return alias
     override = getattr(get_settings(), f"model_{alias}", None)
-    return override or ALIASES[provider()].get(alias, alias)
+    if override and not (provider() == "anthropic" and override.startswith("openrouter:")):
+        return override
+    return ALIASES[provider()][alias]

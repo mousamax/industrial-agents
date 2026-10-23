@@ -13,7 +13,8 @@ from app import observability
 
 models.ALLOW_MODEL_REQUESTS = False
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-not-used")
-observability.setup("industrial-agents-tests")
+os.environ["LANGFUSE_PUBLIC_KEY"] = ""  # never send test traces, even with keys in .env
+observability.setup()
 
 
 def pytest_collection_modifyitems(config, items):
