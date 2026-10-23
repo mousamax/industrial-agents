@@ -29,6 +29,11 @@ class QuoteAnalysis(BaseModel):
     currency: str = Field(description="ISO 4217 code, e.g. EUR, USD")
     line_items: list[LineItem]
     total: float = Field(description="Total as stated on the quote")
+    total_differs_reason: str | None = Field(
+        None,
+        description="Only if the stated total is not the sum of the line items: why (freight, VAT, "
+        "discount, or an error in the quote). Leave empty when they match.",
+    )
     valid_until: date | None = None
     incoterms: str | None = Field(None, description="e.g. FCA, EXW, DDP (code only)")
     flags: list[Flag] = Field(description="Every deviation from catalog targets or policy")

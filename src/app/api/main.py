@@ -79,6 +79,7 @@ async def chat(name: str, request: Request) -> Response:
     )
 
 
+# `to_web` takes one deps object for the app's lifetime (see AgentCard.deps); /chat builds them per request.
 for _name, _e in registry().items():
     if isinstance(_e.card, AgentCard):
         app.mount(f"/ui/{_name}", _e.card.agent.to_web(deps=_e.card.deps() if _e.card.deps else None))

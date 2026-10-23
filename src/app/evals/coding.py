@@ -28,6 +28,8 @@ from pydantic_ai.capabilities import Thinking
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
 from pydantic_evals.reporting import EvaluationReport
 
+from app.core import load_prompt
+from app.jsonable import to_jsonable
 from app.models import model
 
 
@@ -57,16 +59,7 @@ _open_coder = Agent(
     model("judge"),
     name="open_coder",
     output_type=OpenCode,
-    instructions=(
-        "You do error analysis on one output of an AI agent. Read the task, input, output, expected "
-        "output (may be partial) and the automated checks. Write concrete notes about what is wrong or "
-        "risky: wrong values, missed issues, invented facts, bad reasoning, unhelpful wording. Quote "
-        "the evidence. Don't restate a failed check without saying what actually went wrong. "
-        "Don't invent categories; just describe. The output is the agent's final structured output as "
-        "JSON (null means not provided). Its tool calls and their results are not shown: don't call a "
-        "fact unsupported only because the tool result isn't visible, but do flag facts that contradict "
-        "the input or the tools' purpose. If the output is fully acceptable, set ok and leave notes empty."
-    ),
+    instructions=load_prompt(__file__, "prompts/open_coder.md"),
     capabilities=[Thinking("medium")],
     defer_model_check=True,
 )
@@ -75,12 +68,7 @@ _axial_coder = Agent(
     model("smart"),
     name="axial_coder",
     output_type=Codebook,
-    instructions=(
-        "Group these open-coding notes into 3 to 8 distinct, non-overlapping failure modes. Each "
-        "definition must be specific enough that another reviewer labels outputs the same way. Order "
-        "by how often they occur. Drop one-off noise. If an existing codebook is given, keep its modes "
-        "where they still fit and add or split only where the notes demand it."
-    ),
+    instructions=load_prompt(__file__, "prompts/axial_coder.md"),
     capabilities=[Thinking("high")],
     defer_model_check=True,
 )
@@ -89,12 +77,7 @@ _closed_coder = Agent(
     model("judge"),
     name="closed_coder",
     output_type=Labels,
-    instructions=(
-        "Label one AI agent output against a fixed codebook of failure modes. For every mode in the "
-        "codebook answer true only if the definition clearly applies to this output; give the evidence "
-        "for each true. Use exactly the given mode names as keys. The output is the agent's final "
-        "structured output as JSON (null means not provided); its tool calls are not shown."
-    ),
+    instructions=load_prompt(__file__, "prompts/closed_coder.md"),
     capabilities=[Thinking("low")],
     defer_model_check=True,
 )
@@ -103,21 +86,17 @@ _closed_coder = Agent(
 def _render(**sections: Any) -> str:
     """Prompt sections as <name>JSON</name>: data stays JSON, so the judge sees exactly what the agent returned."""
     return "\n".join(
-        f"<{name}>\n{value if isinstance(value, str) else json.dumps(_jsonable(value), indent=2, ensure_ascii=False)}\n</{name}>"
+        f"<{name}>\n{value if isinstance(value, str) else json.dumps(to_jsonable(value), indent=2, ensure_ascii=False)}\n</{name}>"
         for name, value in sections.items()
     )
-
-
-def _jsonable(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=lambda o: getattr(o, "model_dump", lambda **_: str(o))()))
 
 
 def _case_view(case: Any) -> dict[str, Any]:
     return {
         "name": case.name,
-        "inputs": _jsonable(case.inputs),
-        "output": _jsonable(case.output),
-        "expected_output": _jsonable(case.expected_output),
+        "inputs": case.inputs,
+        "output": case.output,
+        "expected_output": case.expected_output,
         "checks": {k: {"pass": bool(a.value), "reason": a.reason} for k, a in case.assertions.items()},
     }
 

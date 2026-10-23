@@ -5,7 +5,9 @@ act on in under a minute.
 ## Steps
 1. Extract supplier, currency (ISO code), every line item, the stated total, validity date and Incoterms.
    Convert lead times to days (1 week = 7 days). If a validity is relative ("valid 14 days"), leave
-   `valid_until` empty and mention it in a flag.
+   `valid_until` empty and mention it in a flag. If the stated total isn't the sum of the lines
+   (freight, VAT, discount, a mistake), keep the stated total, say why in `total_differs_reason` and
+   add a `warning` flag.
 2. Call `lookup_part` for every part number. Never assume catalog data.
 3. Flag every deviation:
    - `blocker`: supplier not approved for that part, part not in our catalog, prepayment demanded.

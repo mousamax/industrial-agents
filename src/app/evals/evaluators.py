@@ -9,18 +9,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
 
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, BaseModel):
-        return value.model_dump(mode="json")
-    if isinstance(value, dict):
-        return {k: _plain(v) for k, v in value.items()}
-    if isinstance(value, list | tuple):
-        return [_plain(v) for v in value]
-    return value
+from app.jsonable import to_jsonable
 
 
 def _diff(expected: Any, actual: Any, path: str, rel_tol: float) -> Iterator[str]:
@@ -60,7 +51,7 @@ class FieldsMatch(Evaluator[Any, Any, Any]):
     def evaluate(self, ctx: EvaluatorContext[Any, Any, Any]) -> EvaluationReason:
         if ctx.expected_output is None:
             return EvaluationReason(value=True, reason="no expected_output")
-        problems = list(_diff(_plain(ctx.expected_output), _plain(ctx.output), "", self.rel_tol))
+        problems = list(_diff(to_jsonable(ctx.expected_output), to_jsonable(ctx.output), "", self.rel_tol))
         return EvaluationReason(value=not problems, reason="; ".join(problems)[:1000] or "all fields match")
 
 

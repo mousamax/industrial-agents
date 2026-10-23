@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ from pydantic_evals.evaluators.llm_as_a_judge import set_default_judge_model
 from pydantic_evals.reporting import EvaluationReport, EvaluationReportAdapter
 
 from app import observability
-from app.core import AgentCard
+from app.core import tool_descriptions
 from app.evals import coding
 from app.evals.evaluators import CUSTOM_EVALUATORS
 from app.models import model as resolve_model
@@ -48,6 +49,11 @@ def latest_report(name: str) -> Path:
     if not runs:
         raise FileNotFoundError(f"no saved runs for {name}; run `ia eval {name}` first")
     return runs[-1]
+
+
+def safe_filename(label: str) -> str:
+    """Model ids like `openrouter:anthropic/claude-haiku-5.5` must not create subfolders."""
+    return re.sub(r"[^\w.-]+", "_", label)
 
 
 def baseline_path(name: str) -> Path:
@@ -80,6 +86,7 @@ async def run_eval(
     repeat: int = 1,
     concurrency: int = 4,
     save_baseline: bool = False,
+    closed_coding: bool = True,
     verbose: bool = False,
 ) -> EvaluationReport[Any, Any, Any]:
     observability.setup()
@@ -93,7 +100,7 @@ async def run_eval(
             raise ValueError(f"no case in {entry.evals_path.name} matches {case!r}")
 
     codebook = codebook_path(entry)
-    if codebook.exists():
+    if closed_coding and codebook.exists():
         dataset.add_evaluator(coding.ClosedCoding(codebook=str(codebook)))
 
     resolved = resolve_model(model) if model else None
@@ -122,7 +129,7 @@ async def run_eval(
         include_total_duration=True,
     )
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    saved = save_report(report, REPORTS / name / f"{stamp}-{label}.json")
+    saved = save_report(report, REPORTS / name / f"{stamp}-{safe_filename(label)}.json")
     print(f"assertion pass rate: {assertion_pass_rate(report):.0%}   report: {saved.relative_to(ROOT)}")
     if save_baseline:
         print(f"baseline saved: {save_report(report, baseline_path(name)).relative_to(ROOT)} (commit it)")
@@ -137,12 +144,7 @@ async def analyze(name: str, report_path: Path | None = None) -> Path:
     report = load_report(report_path)
     assert report is not None
     task = entry.card.description
-    if isinstance(entry.card, AgentCard):
-        tools = {
-            name: tool.description
-            for toolset in entry.card.agent.toolsets
-            for name, tool in getattr(toolset, "tools", {}).items()
-        }
+    if tools := tool_descriptions(entry.card):
         task += f"\n\nThe agent can call these tools: {json.dumps(tools)}"
     for prompt in sorted(entry.path.glob("*prompt*.md")):
         task += f"\n\n{prompt.name}:\n{prompt.read_text()}"

@@ -49,3 +49,20 @@ def test_rank_prefers_accept_then_fewer_flags():
     warn = Flag(severity="warning", message="slow")
     ranked = rank([qa("C", "reject"), qa("B", "negotiate", [warn, warn]), qa("A", "negotiate", [warn])])
     assert [a.supplier for a in ranked] == ["A", "B", "C"]
+
+
+async def test_total_mismatch_is_accepted_when_explained():
+    from pydantic_ai import ModelRetry
+
+    from app.agents.supplier_quote.agent import totals_add_up
+
+    with_freight = QuoteAnalysis.model_validate({**GOOD, "total": 4926.0})
+    try:
+        await totals_add_up(None, with_freight)  # type: ignore[arg-type]
+    except ModelRetry:
+        pass
+    else:
+        raise AssertionError("an unexplained mismatch must be sent back to the model")
+
+    explained = with_freight.model_copy(update={"total_differs_reason": "includes 150 EUR freight"})
+    assert await totals_add_up(None, explained) is explained  # type: ignore[arg-type]

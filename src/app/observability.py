@@ -20,9 +20,9 @@ from typing import Any, Literal
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
-from pydantic import BaseModel
 from pydantic_ai import Agent
 
+from app.jsonable import to_jsonable
 from app.settings import get_settings
 
 
@@ -45,10 +45,6 @@ def setup() -> None:
     else:
         trace.set_tracer_provider(TracerProvider())
     Agent.instrument_all()
-
-
-def _jsonable(value: Any) -> Any:
-    return value.model_dump(mode="json") if isinstance(value, BaseModel) else value
 
 
 @contextmanager
@@ -81,11 +77,11 @@ def flow_span(name: str, inputs: Any) -> Iterator[Any]:
     from langfuse import get_client
 
     with get_client().start_as_current_observation(
-        as_type="chain", name=name, input=_jsonable(inputs)
+        as_type="chain", name=name, input=to_jsonable(inputs)
     ) as span:
         yield span
 
 
 def set_output(span: Any, output: Any) -> None:
     if span is not None:
-        span.update(output=_jsonable(output))
+        span.update(output=to_jsonable(output))

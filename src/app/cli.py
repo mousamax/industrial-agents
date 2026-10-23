@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from app import observability
-from app.core import AgentCard
+from app.core import AgentCard, tool_descriptions
 from app.models import model as resolve_model
 from app.registry import get, registry
 from app.settings import ROOT
@@ -27,23 +27,18 @@ AGENTS_DIR = Path(__file__).parent / "agents"
 
 
 def _parse_input(raw: str) -> Any:
-    """JSON, `@path/to/file` (its text becomes the input), or a plain string."""
+    """A JSON object/array, `@path/to/file` (its text becomes the input), or plain text.
+
+    Only `{...}` / `[...]` are parsed, so text like `2024` or `true` stays text.
+    """
     if raw.startswith("@"):
         return Path(raw[1:]).read_text()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-
-def _tools(card: Any) -> dict[str, str]:
-    if not isinstance(card, AgentCard):
-        return {}
-    return {
-        name: (tool.description or "").strip()
-        for toolset in card.agent.toolsets
-        for name, tool in getattr(toolset, "tools", {}).items()
-    }
+    if raw.lstrip().startswith(("{", "[")):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+    return raw
 
 
 @cli.command("list")
@@ -58,7 +53,9 @@ def list_() -> None:
         card = entry.card
         model = str(card.agent.model) if isinstance(card, AgentCard) else "(its agents')"
         cases = len(load_dataset(entry).cases) if entry.evals_path.exists() else 0
-        table.add_row(name, entry.kind, model, ", ".join(_tools(card)), str(cases), card.description)
+        table.add_row(
+            name, entry.kind, model, ", ".join(tool_descriptions(card)), str(cases), card.description
+        )
     console.print(table)
 
 
@@ -78,7 +75,7 @@ def show(name: str) -> None:
         out = card.agent.output_type
         console.print(f"[bold]output[/] {getattr(out, '__name__', out)}: {_fields(out)}")
         console.print(f"[bold]model[/]  {card.agent.model}")
-        for tool, description in _tools(card).items():
+        for tool, description in tool_descriptions(card).items():
             console.print(f"[bold]tool[/]   {tool}: {description.splitlines()[0] if description else ''}")
     for prompt in sorted(entry.path.glob("*prompt*.md")):
         console.rule(prompt.name)
@@ -134,11 +131,16 @@ def ui(name: str, port: int = 8001) -> None:
 def eval_(
     name: str,
     model: Annotated[str | None, typer.Option(help="alias or model id; default: the agent's own")] = None,
-    label: Annotated[str | None, typer.Option(help="name this experiment (Langfuse tag label:<label>)")] = None,
+    label: Annotated[
+        str | None, typer.Option(help="name this experiment (Langfuse tag label:<label>)")
+    ] = None,
     case: Annotated[str | None, typer.Option(help="only cases whose name contains this")] = None,
     repeat: Annotated[int, typer.Option(help="run each case N times (LLMs are noisy)")] = 1,
     concurrency: int = 4,
     save_baseline: Annotated[bool, typer.Option(help="store as the baseline to compare against")] = False,
+    closed_coding: Annotated[
+        bool, typer.Option(help="label outputs with failure_modes.yaml (one judge call per case)")
+    ] = True,
     verbose: Annotated[bool, typer.Option("-v", help="show inputs and outputs")] = False,
     min_pass: Annotated[float, typer.Option(help="exit 1 below this assertion pass rate")] = 0.0,
 ) -> None:
@@ -154,6 +156,7 @@ def eval_(
             repeat=repeat,
             concurrency=concurrency,
             save_baseline=save_baseline,
+            closed_coding=closed_coding,
             verbose=verbose,
         )
     )

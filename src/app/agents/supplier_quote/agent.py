@@ -42,11 +42,13 @@ async def lookup_part(ctx: RunContext[Deps], part_number: str) -> CatalogEntry |
 @agent.output_validator
 async def totals_add_up(ctx: RunContext[Deps], out: QuoteAnalysis) -> QuoteAnalysis:
     computed = sum(i.quantity * i.unit_price for i in out.line_items)
-    if out.line_items and abs(computed - out.total) > max(1.0, 0.01 * out.total):
+    mismatch = out.line_items and abs(computed - out.total) > max(1.0, 0.01 * out.total)
+    if mismatch and not out.total_differs_reason:
         raise ModelRetry(
             f"Line items sum to {computed:.2f} but total is {out.total:.2f}. "
-            "Re-read the quote: fix a misread quantity/price, or keep the stated total and add a "
-            "'warning' flag that the quote's total does not match its lines."
+            "Re-read the quote: fix a misread quantity/price, or, if the quote's total really differs "
+            "(freight, VAT, discount, an error in the quote), keep the stated total, explain it in "
+            "`total_differs_reason` and add a 'warning' flag."
         )
     return out
 

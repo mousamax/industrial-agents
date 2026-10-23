@@ -45,7 +45,11 @@ class AgentCard[InputT, DepsT, OutputT]:
     agent: Agent[DepsT, OutputT]
     input_type: type[InputT] = str  # type: ignore[assignment]
     deps: Callable[[], DepsT] | None = None
-    """Builds fresh deps per run (DB handles, API clients, loaded data...)."""
+    """Builds deps (API clients, loaded data, ...): fresh per run for the CLI, /run, /chat and evals.
+
+    The built-in chat UI (`/ui`, `ia ui`) builds them once at startup and shares them across chats, so
+    keep per-run state (scratchpads, collected results) out of deps, or demo through /chat instead.
+    """
 
     def coerce(self, inputs: Any) -> InputT:
         return TypeAdapter(self.input_type).validate_python(inputs)
@@ -79,3 +83,14 @@ class FlowCard[InputT, OutputT]:
 
 
 Card = AgentCard[Any, Any, Any] | FlowCard[Any, Any]
+
+
+def tool_descriptions(card: Card) -> dict[str, str]:
+    """{tool name: description} for an agent's function tools; empty for flows."""
+    if not isinstance(card, AgentCard):
+        return {}
+    return {
+        name: (tool.description or "").strip()
+        for toolset in card.agent.toolsets
+        for name, tool in getattr(toolset, "tools", {}).items()
+    }
