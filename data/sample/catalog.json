@@ -1,0 +1,6 @@
+{
+  "HV-200": {"description": "Hydraulic directional valve 4/3, 24V", "target_price_eur": 410.0, "max_lead_time_days": 21, "approved_suppliers": ["Bosch Rexroth", "Hydratech GmbH"]},
+  "BR-6205": {"description": "Deep groove ball bearing 6205-2RS", "target_price_eur": 4.2, "max_lead_time_days": 10, "approved_suppliers": ["SKF", "Schaeffler", "Hydratech GmbH"]},
+  "PLC-S7-1214": {"description": "PLC CPU module, 14 DI / 10 DO", "target_price_eur": 389.0, "max_lead_time_days": 28, "approved_suppliers": ["Siemens", "Automa Distribution"]},
+  "M8-SS-50": {"description": "Hex bolt M8x50, A4 stainless, box of 100", "target_price_eur": 18.5, "max_lead_time_days": 7, "approved_suppliers": ["Würth", "Fastenal"]}
+}

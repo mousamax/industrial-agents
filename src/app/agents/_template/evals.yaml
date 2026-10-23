@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../../../evals/schema.json
+# Run: ia eval __NAME__     (add --save-baseline once you are happy, commit evals/baselines/)
+cases:
+  - name: happy-path
+    inputs:
+      text: "replace me with a realistic input"
+    expected_output:
+      answer: "replace me"
+    evaluators:
+      - FieldsMatch
+evaluators:
+  - IsInstance: Output
+  - MaxDuration: 60
+  - LLMJudge:
+      rubric: "The answer addresses the input directly and does not invent facts."
+      include_input: true

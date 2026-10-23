@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../../../../evals/schema.json
+# Run: ia eval supplier_quote   |   compare models: ia eval supplier_quote --model balanced
+cases:
+  - name: approved-supplier-good-prices
+    inputs:
+      document: |
+        From: sales@hydratech.example
+        Subject: Quotation Q-24-1187 for your RFQ 5512
+
+        We are pleased to quote as follows (prices in EUR, net, FCA Stuttgart):
+        Pos 1  HV-200   Hydraulic directional valve 4/3 24V   qty 12   unit 398.00   lead time 3 weeks
+        Pos 2  BR-6205  Ball bearing 6205-2RS                 qty 500  unit 3.95     lead time 1 week
+        Total net: 6,751.00 EUR
+        This offer is valid until 2026-11-30. Payment 30 days net.
+        Hydratech GmbH
+    expected_output:
+      supplier: Hydratech GmbH
+      currency: EUR
+      total: 6751.0
+      incoterms: FCA
+      valid_until: "2026-11-30"
+      recommendation: accept
+      line_items:
+        - {part_number: HV-200, quantity: 12, unit_price: 398.0, lead_time_days: 21}
+        - {part_number: BR-6205, quantity: 500, unit_price: 3.95, lead_time_days: 7}
+
+  - name: usd-slow-and-pricey
+    inputs:
+      document: |
+        Hi, as discussed on the phone here our offer for the PLC modules:
+        - PLC-S7-1214 CPU module x 8 @ USD 455.00 each, delivery approx. 6 weeks
+        - M8-SS-50 hex bolts A4 (box/100) x 20 @ USD 21.00
+        Total: USD 4,060.00 (EXW our warehouse Rotterdam). Prices valid 14 days.
+        Best, Automa Distribution B.V.
+    expected_output:
+      currency: USD
+      total: 4060.0
+      incoterms: EXW
+      line_items:
+        - {part_number: PLC-S7-1214, quantity: 8, unit_price: 455.0, lead_time_days: 42}
+        - {part_number: M8-SS-50, quantity: 20, unit_price: 21.0}
+    evaluators:
+      - LLMJudge:
+          rubric: >
+            The analysis flags (a) the PLC lead time above the 28-day maximum, (b) prices above target,
+            and (c) that Automa is not an approved supplier for the M8 bolts. The recommendation is
+            'negotiate' or 'reject' and the rationale explains why.
+
+  - name: unknown-vendor-prepayment
+    inputs:
+      document: |
+        QUOTE
+        Vendor: FastParts Trading Ltd
+        Item HV-200 hydraulic valve, quantity 12, price 290 EUR/pc, ships in 5 days
+        Item XZ-999 "universal sensor", quantity 4, price 120 EUR/pc
+        Grand total 3,960 EUR. Incoterms: DDP. Payment 100% in advance.
+    expected_output:
+      supplier: FastParts Trading Ltd
+      total: 3960.0
+      recommendation: reject
+    evaluators:
+      - LLMJudge:
+          rubric: >
+            Has blocker flags for the unapproved supplier, the unknown part XZ-999 and the prepayment.
+            Mentions that the low HV-200 price deserves a quality check.
+
+# Applied to every case
+evaluators:
+  - IsInstance: QuoteAnalysis
+  - FieldsMatch
+  - ToolCorrectness:
+      expected_tools: [lookup_part]
+      allow_extra: true
+  - MaxToolCalls: 8
+  - MaxDuration: 90

@@ -1,0 +1,12 @@
+__pycache__/
+*.py[oc]
+build/
+dist/
+.venv/
+.env
+.logfire/
+.pytest_cache/
+.ruff_cache/
+evals/reports/
+data/private/
+.DS_Store

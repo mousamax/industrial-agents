@@ -1,0 +1,15 @@
+From: sales@hydratech.example
+Subject: Quotation Q-24-1187 for your RFQ 5512
+
+Dear purchasing team,
+
+thank you for your request. We are pleased to quote as follows (prices in EUR, net, FCA Stuttgart):
+
+Pos 1  HV-200   Hydraulic directional valve 4/3 24V   qty 12   unit 398.00   lead time 3 weeks
+Pos 2  BR-6205  Ball bearing 6205-2RS                 qty 500  unit 3.95     lead time 1 week
+
+Total net: 6,751.00 EUR
+This offer is valid until 2026-11-30. Payment 30 days net.
+
+Kind regards,
+Hydratech GmbH

@@ -1,0 +1,48 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "Industrial Agents Hackathon: agents, flows and evals on Pydantic AI + Claude"
+readme = "README.md"
+authors = [
+    { name = "mousamax", email = "mousa.abdelmaksoud@tum.de" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.161",
+    "logfire[fastapi,httpx]>=5.3",
+    "pydantic-ai-slim[ag-ui,anthropic,logfire,mcp,openrouter,web]==2.60.0",
+    "pydantic-evals[logfire]==2.60.0",
+    "pydantic-settings>=2.16.1",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+ia = "app.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "inline-snapshot>=0.36.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["live: calls the real model API (skipped unless ANTHROPIC_API_KEY is set)"]

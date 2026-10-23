@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../evals/schema.json
+# End-to-end eval of the flow (slower: one run = 3 quote analyses + 1 email).
+cases:
+  - name: picks-the-approved-supplier
+    inputs:
+      quotes:
+        - "Hydratech GmbH quote, EUR, FCA. HV-200 qty 12 at 398.00, 3 weeks. BR-6205 qty 500 at 3.95, 1 week. Total 6,751.00 EUR. Valid until 2026-11-30."
+        - "FastParts Trading Ltd. HV-200 qty 12 at 290 EUR, 5 days. XZ-999 qty 4 at 120 EUR. Total 3,960 EUR. DDP. 100% prepayment."
+    expected_output:
+      chosen_supplier: Hydratech GmbH
+evaluators:
+  - FieldsMatch
+  - LLMJudge:
+      rubric: "The email is addressed to the chosen supplier, is under 150 words and asks for a concrete next step."
+  - MaxDuration: 180

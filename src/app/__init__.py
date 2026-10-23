@@ -1,0 +1,1 @@
+"""Industrial Agents Hackathon stack."""
