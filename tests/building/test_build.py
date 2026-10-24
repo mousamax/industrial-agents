@@ -232,7 +232,7 @@ def test_draft_rejects_what_it_cannot_read():
     with pytest.raises(ValueError):
         draft_from_plans(plans(FACTORY), name="x", levels=[0])
     with pytest.raises(NotImplementedError):
-        draft_from_plans([building_dir(FACTORY) / "floor_0_plain.png"], name="x")
+        draft_from_plans([building_dir(FACTORY) / "floor_0.pdf"], name="x")
 
 
 def test_drafted_rooms_and_assets_get_their_types_from_the_furniture():
@@ -258,3 +258,48 @@ def test_guesses_list_every_value_the_plans_dont_state():
         }
     stairs = {c["id"] for c in drafted["vertical_connectors"] if c["synthetic"]}
     assert {g["element_id"] for g in guesses if g["field"] == "vertical_connector"} == stairs
+
+
+# ---- draft_from_plans from floor_<level>_plain.png (scoreboard row level4-from-images) -----------------------
+
+RESPLAN = next(r["building_id"] for r in MANIFEST if r["split"] == "dev" and r["source"] == "resplan")
+
+
+def png_plans(building_id: str) -> list[Path]:
+    return sorted(building_dir(building_id).glob("floor_*_plain.png"))
+
+
+def test_png_drafted_factory_matches_truth():
+    drafted = draft_from_plans(png_plans(FACTORY), name="Drafted factory")
+    assert errors(drafted) == []
+    scores = compare(drafted, raw_copy(FACTORY), align=True)
+    for metric in ("space_recall", "space_precision", "door_recall", "connector_recall"):
+        assert scores[metric] == pytest.approx(1.0), metric
+    assert scores["mean_iou"] > 0.97  # outlines traced to about a pixel
+    assert scores["area_iou"] > 0.99
+
+
+@pytest.mark.parametrize("building_id", ONE_PER_SOURCE)
+def test_png_drafts_validate_and_keep_their_outlines(building_id):
+    drafted = draft_from_plans(png_plans(building_id), name="Drafted")
+    assert errors(drafted) == []
+    scores = compare(drafted, raw_copy(building_id), align=True)
+    assert scores["mean_iou"] > 0.8  # OSM rooms hidden under others and unaligned Swiss floors cost the rest
+    assert scores["area_iou"] > 0.75
+
+
+@pytest.mark.parametrize("building_id", [FACTORY, RESPLAN])  # default scale, and a small home scaled up
+def test_png_scale_agrees_with_the_svg(building_id):
+    from_png = draft_from_plans(png_plans(building_id), name="x")
+    from_svg = draft_from_plans(plans(building_id), name="x")
+    assert compare(from_png, from_svg, align=True)["mean_iou"] > 0.95
+
+
+def test_png_metres_per_pixel_sets_the_scale():
+    files = png_plans(RESPLAN)
+
+    def total_area(metres_per_pixel: float) -> float:
+        drafted = draft_from_plans(files, name="x", metres_per_pixel=metres_per_pixel)
+        return sum(Polygon(s["polygon"]).area for s in drafted["spaces"])
+
+    assert total_area(0.1) / total_area(0.05) == pytest.approx(4.0, rel=0.01)

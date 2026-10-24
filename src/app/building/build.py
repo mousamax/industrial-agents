@@ -32,9 +32,12 @@ from numbers import Real
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from shapely import STRtree
+import contourpy
+import numpy as np
+from PIL import Image
+from shapely import STRtree, make_valid
 from shapely.affinity import translate
-from shapely.geometry import Point, Polygon
+from shapely.geometry import LinearRing, Point, Polygon
 from shapely.ops import unary_union
 
 from app.building.model import OUTSIDE, Building, ConnectorKind, OpeningKind, SpaceType, parse_building
@@ -348,6 +351,107 @@ def _read_plan(path: Path, metres_per_pt: float | None) -> _PlanFloor:
         markers=[(stroke, metres(p)) for stroke, p in markers],
         labels=labels,
         assets=[(category, [metres(p) for p in pts]) for category, pts in assets],
+    )
+
+
+# ---- the same floors from the kit's floor_<level>_plain.png ----------------------------------------------
+#
+# The PNGs are the same drawing rasterised at 100 dpi, without furniture. Spaces are flat fills in the six
+# space colours, separated by ~1 px dark outlines; doors are small coloured markers. Each fill colour's
+# regions are traced (contourpy at half a pixel), grown back over half the outline, and simplified. The
+# scale follows the renderer's rule, recovered from all 797 SVG floors: 9.9792 pt per metre, unless the
+# plan's longer side (plus the 2 m margins) would be under 332.6 pt or over 2217.6 pt, then it's clamped.
+# Not read yet: labels (refs) and titles, which would need OCR.
+
+PNG_PX_PER_PT = 100 / 72
+PLAN_PT_PER_M = 9.9792
+PLAN_SIDE_PT = (332.6, 2217.6)
+PNG_FILL_TOLERANCE = 20  # max RGB channel difference to a fill colour
+PNG_MARKER_TOLERANCE = 40
+PNG_GROW_PX = 0.8  # half the outline: from the fill's edge to the wall's middle
+PNG_MIN_THICKNESS_PX = 1.5  # thinner "regions" are antialiasing along lines and text
+PNG_MARKER_CORE_TOLERANCE = 8
+PNG_MARKER_MIN_CORE_PX = 12  # door dots have ~21 px of their exact colour, entrances ~58; text edges 0-3
+PNG_MARKER_MIN_SOLIDITY = 0.7  # markers are solid: most of the blob is that exact colour
+
+
+def _rgb(colour: str) -> tuple[int, int, int]:
+    return (int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16))
+
+
+def _regions(mask: Any, min_area: float, thickness: float) -> list[Polygon]:
+    """Outer outlines (px) of a boolean mask's regions. contourpy traces outer edges counter-clockwise
+    and holes (label text) clockwise, so holes are dropped by direction. Regions thinner than `thickness`
+    everywhere are antialiasing along lines and text, not drawn shapes."""
+    rings = contourpy.contour_generator(z=mask.astype(float), line_type=contourpy.LineType.Separate).lines(
+        0.5
+    )
+    shapes = []
+    for ring in rings:
+        if len(ring) < 4 or not LinearRing(ring).is_ccw:
+            continue
+        shape = Polygon(ring)
+        if not shape.is_valid:
+            shape = max(getattr(fixed := shape.buffer(0), "geoms", [fixed]), key=lambda g: g.area)
+        if shape.area >= min_area and not shape.buffer(-thickness).is_empty:
+            shapes.append(shape)
+    return shapes
+
+
+def _valid_ring(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """The outline itself, or the largest valid piece of it when tracing left a self-crossing spike."""
+    shape = Polygon(points)
+    if shape.is_valid:
+        return points
+    fixed = make_valid(shape)
+    pieces = [g for g in getattr(fixed, "geoms", [fixed]) if isinstance(g, Polygon)]
+    return [(round(x, 4), round(y, 4)) for x, y in max(pieces, key=lambda g: g.area).exterior.coords[:-1]]
+
+
+def _read_png_plan(path: Path, metres_per_px: float | None) -> _PlanFloor:
+    """One floor plan PNG in metres, with the lower-left corner of its outlines at (0, 0)."""
+    rgb = np.asarray(Image.open(path).convert("RGB")).astype(int)
+
+    def near(colour: str, tolerance: int) -> Any:
+        return np.abs(rgb - np.array(_rgb(colour))).max(axis=2) <= tolerance
+
+    outlines = [
+        (fill, shape.buffer(PNG_GROW_PX, join_style="mitre").simplify(0.5))
+        for fill in FILL_TYPES
+        for shape in _regions(near(fill, PNG_FILL_TOLERANCE), min_area=6.0, thickness=PNG_MIN_THICKNESS_PX)
+    ]
+    if not outlines:
+        raise ValueError(f"{path.name}: no space fills found")
+    markers = []
+    for stroke in MARKER_KINDS:
+        core = near(stroke, PNG_MARKER_CORE_TOLERANCE)
+        for blob in _regions(near(stroke, PNG_MARKER_TOLERANCE), min_area=4.0, thickness=0.0):
+            bx0, by0, bx1, by1 = blob.bounds
+            solid = core[int(by0) : int(by1) + 2, int(bx0) : int(bx1) + 2].sum()
+            if solid >= max(PNG_MARKER_MIN_CORE_PX, PNG_MARKER_MIN_SOLIDITY * blob.area):
+                markers.append((stroke, (blob.centroid.x, blob.centroid.y)))
+    x0, y0, x1, y1 = unary_union([shape for _, shape in outlines]).bounds
+    if metres_per_px:
+        px_per_m = 1 / metres_per_px
+    else:  # the longer side plus a 2 m margin at each end is clamped into PLAN_SIDE_PT
+        px_per_m, longest = PLAN_PT_PER_M * PNG_PX_PER_PT, max(x1 - x0, y1 - y0)
+        low, high = (side * PNG_PX_PER_PT for side in PLAN_SIDE_PT)
+        if not low <= longest + 2 * PLAN_MARGIN_M * px_per_m <= high:
+            side = low if longest + 2 * PLAN_MARGIN_M * px_per_m < low else high
+            px_per_m = (side - longest) / (2 * PLAN_MARGIN_M)
+
+    def metres(p: tuple[float, float]) -> tuple[float, float]:
+        return (round((p[0] - x0) / px_per_m, 4), round((y1 - p[1]) / px_per_m, 4))  # image y grows down
+
+    return _PlanFloor(
+        title=None,
+        outlines=[
+            (fill, _valid_ring([metres(p) for p in list(shape.exterior.coords)[:-1]]))
+            for fill, shape in outlines
+        ],
+        markers=[(stroke, metres(p)) for stroke, p in markers],
+        labels=[],
+        assets=[],
     )
 
 
@@ -774,18 +878,25 @@ def draft_from_plans(
     Sources: furniture (room types, with their probability), footprint (asset types, with the share of
     same-sized pieces that type had in train), reachability (staircases added so every space can be
     reached), default (floor heights 3 m, door widths 0.9 m, no steps). The frame's origin is arbitrary.
-    Use floor_<level>.svg, not the _plain ones, which have no furniture. PNG plans aren't supported yet."""
+    Use floor_<level>.svg, not the _plain ones, which have no furniture.
+
+    PNG plans (floor_<level>_plain.png, or any PNG drawn the same way) work too, less exactly: outlines
+    traced from the fill colours (to about a pixel), doors from the markers, scale from the renderer's
+    rule (or `metres_per_pixel`); no refs, titles or furniture, so room types are guessed from area alone."""
     if not images:
         raise ValueError("no floor plans given")
     paths = [Path(p) for p in images]
-    if any(p.suffix.lower() != ".svg" for p in paths):
-        raise NotImplementedError("only the kit's vector plans (floor_<level>.svg) can be read so far")
+    if any(p.suffix.lower() not in (".svg", ".png") for p in paths):
+        raise NotImplementedError("only the kit's plans can be read: floor_<level>.svg or .png")
     if levels is None:
         numbers = [re.search(r"floor_(-?\d+)", p.stem) for p in paths]
         levels = [int(m.group(1)) for m in numbers] if all(numbers) else list(range(len(paths)))  # type: ignore[union-attr]
     if len(levels) != len(paths) or len(set(levels)) != len(levels):
         raise ValueError(f"need one distinct level per plan, got {levels} for {len(paths)} plans")
-    plans = {level: _read_plan(p, metres_per_pixel) for level, p in zip(levels, paths, strict=True)}
+    plans = {
+        level: (_read_png_plan if p.suffix.lower() == ".png" else _read_plan)(p, metres_per_pixel)
+        for level, p in zip(levels, paths, strict=True)
+    }
     shifts = _line_up(plans)
 
     building_id = re.sub(r"[^a-z0-9]+", "-", name.casefold()).strip("-") or "drafted"

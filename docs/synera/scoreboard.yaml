@@ -59,7 +59,7 @@ rows:
   what: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4)
   owners: [B]
   stake: 5
-  missing: draft_from_plans on PNG plans and a compare() score test (ask Synera which input Level 4 uses)
+  pytest: [test_png_]
 - id: level3-multibuilding
   part: Does it work
   what: Several buildings joined by walkways (Level 3)
