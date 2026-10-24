@@ -1,10 +1,10 @@
-"""Owner B's Level 4 checks: `validate` and `compare` on the kit's real buildings and on broken copies.
+"""Owner B's Level 4 checks: `validate`, `compare` and `draft_from_plans` on the kit's real buildings.
 
     uv run pytest tests/building/test_build.py -q
 
 Real buildings must validate with no errors (warnings are fine: OSM and Swiss doors drawn off the wall),
 and every fault we inject must be caught. `compare` must score a building 1.0 against itself and drop on
-the metric we damaged.
+the metric we damaged. Buildings drafted from the kit's SVG plans must validate and have the true rooms.
 """
 
 from __future__ import annotations
@@ -12,12 +12,14 @@ from __future__ import annotations
 import copy
 import csv
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
+from shapely.geometry import Polygon
 
-from app.building.build import compare, validate
-from app.building.model import OUTSIDE, load_building
+from app.building.build import compare, draft_from_plans, validate
+from app.building.model import OUTSIDE, building_dir, load_building
 from app.settings import get_settings
 
 DATA = get_settings().synera_kit_dir / "data"
@@ -161,3 +163,73 @@ def test_compare_drops_when_drawn_elsewhere():
     scores = compare(drafted, truth)
     assert scores["space_recall"] == 0.0
     assert scores["area_iou"] == 0.0
+
+
+def moved(raw: dict[str, Any], dx: float, dy: float) -> dict[str, Any]:
+    out = copy.deepcopy(raw)
+    for s in out["spaces"]:
+        s["polygon"] = [[x + dx, y + dy] for x, y in s["polygon"]]
+    for element in out["openings"] + out["assets"]:
+        element["position"] = [element["position"][0] + dx, element["position"][1] + dy]
+    return out
+
+
+def test_compare_align_ignores_where_the_building_sits():
+    truth = raw_copy(FACTORY)
+    drafted = moved(truth, 1000.0, -50.0)
+    assert compare(drafted, truth)["space_recall"] == 0.0
+    assert all(v == pytest.approx(1.0) for v in compare(drafted, truth, align=True).values())
+
+
+# ---- draft_from_plans (the kit's floor_<level>.svg) ----------------------------------------------------------
+
+
+def plans(building_id: str) -> list[Path]:
+    return sorted(building_dir(building_id).glob("floor_*.svg"))
+
+
+@pytest.mark.parametrize("building_id", ONE_PER_SOURCE)
+def test_drafted_building_validates_and_has_the_true_rooms(building_id):
+    drafted = draft_from_plans(plans(building_id), name="Drafted")
+    assert errors(drafted) == []
+    scores = compare(drafted, raw_copy(building_id), align=True)
+    assert scores["mean_iou"] > 0.99  # every matched room has the true outline
+    assert scores["area_iou"] > 0.8  # below 1 only where floors sit differently (Swiss truth isn't aligned)
+
+
+def test_drafted_factory_is_exact():
+    truth = raw_copy(FACTORY)
+    drafted = draft_from_plans(plans(FACTORY), name="Drafted factory")
+    scores = compare(drafted, truth, align=True)
+    for metric in (
+        "space_recall",
+        "space_precision",
+        "area_iou",
+        "ref_accuracy",
+        "door_recall",
+        "connector_recall",
+    ):
+        assert scores[metric] == pytest.approx(1.0), metric
+    assert sorted((f["level"], f["name"]) for f in drafted["floors"]) == sorted(
+        (f["level"], f["name"]) for f in truth["floors"]
+    )
+    areas = sorted(Polygon(s["polygon"]).area for s in drafted["spaces"])
+    assert areas == pytest.approx(sorted(Polygon(s["polygon"]).area for s in truth["spaces"]), rel=1e-4)
+    assert drafted["building"]["name"] == "Drafted factory"
+
+
+def test_draft_levels_come_from_file_names_unless_given():
+    files = plans(FACTORY)
+    from_names = {f["level"] for f in draft_from_plans(files, name="x")["floors"]}
+    assert from_names == {int(p.stem.split("_")[1]) for p in files}
+    given = list(range(10, 10 + len(files)))
+    assert {f["level"] for f in draft_from_plans(files, name="x", levels=given)["floors"]} == set(given)
+
+
+def test_draft_rejects_what_it_cannot_read():
+    with pytest.raises(ValueError):
+        draft_from_plans([], name="x")
+    with pytest.raises(ValueError):
+        draft_from_plans(plans(FACTORY), name="x", levels=[0])
+    with pytest.raises(NotImplementedError):
+        draft_from_plans([building_dir(FACTORY) / "floor_0_plain.png"], name="x")
