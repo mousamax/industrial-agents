@@ -17,6 +17,12 @@ hard-code anything to a building or question.
 - `synera-kit/`: Synera's kit as a git submodule (data, `starter_agent/building_map.py` with the exact
   route model, `benchmark/score.py` the judges' scorer). Don't edit it; import from it.
 - `src/app/agents/building_guide/`: baseline agent on that kit. `BENCHMARK.md`: the official run command.
+- `src/app/building/`: the domain core (model, geometry, routing, state, queries, build, view) as typed
+  interfaces. Four people build behind them in parallel: **roles, file ownership and rules are in
+  `docs/synera/TEAM_PLAN.md`.** Ask which role the user has; only edit files that role owns; never change a
+  signature in `src/app/building/` without the user agreeing to announce it to the team.
+- Golden scoreboard: `uv run pytest tests/building -q -rs` checks each interface against Synera's answers
+  (unimplemented stubs are skipped). Make the relevant tests pass; never weaken them.
 
 ## Map
 - `src/app/agents/<name>/`: one folder per agent: `agent.py` (Agent + tools + `card`), `prompt.md`,

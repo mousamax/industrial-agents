@@ -1,6 +1,6 @@
 # Synera track: Talk to Your Building
 
-Team: Mousa, Magnus, Maximilian. Sources: `challenges/Synera/` (brief PDF, kickoff transcript) and the
+Team: Mousa, Magnus, Maximilian, Vadim. Sources: `challenges/Synera/` (brief PDF, kickoff transcript) and the
 kit, which is the `synera-kit/` git submodule (Synera-GmbH/industrial-agents-hackathon-2026).
 
 ## The challenge in one paragraph
@@ -96,13 +96,4 @@ Suggested order for the solution session (time-box it, ~60–90 min):
    question types and at least one tricky-user moment (vague request, wrong room number, change of mind).
 4. **Then build**, protecting the 55 points first.
 
-Possible split for three people, to discuss rather than assign:
-
-- **Geometry core** (fits the mathematician): a deterministic `PlanFacts` module next to `BuildingMap`:
-  areas, shared walls, stacking, centroids, door-width and step-free reachability, what-if doors. Checked
-  against train/dev answers, free to run. This is most of the 55 points.
-- **Agent + interaction** (fits CS): tools on top of the core, the clarifying-question behaviour, the
-  `Answer:` format, voice in/out (ElevenLabs credits), and `ia eval` / `ia analyze` on the interaction rubric.
-- **Build from plans + presentation** (fits physics/aerospace): level 4 (floor-plan image → `building.json`,
-  validated by reachability), the 3D stacked-floor view with animated routes (three.js or Lovable), and the
-  demo video.
+How we split the work (four people, interfaces, file ownership, timeline): [TEAM_PLAN.md](TEAM_PLAN.md).

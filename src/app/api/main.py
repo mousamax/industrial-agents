@@ -5,11 +5,17 @@
     POST /chat/{name}       streaming chat, Vercel AI SDK protocol (`useChat` in a Next.js/v0 frontend)
     GET  /ui/{name}/        ready-made chat UI for an agent: the zero-effort demo
 
+    Synera UI contract (app/building/view.py):
+    GET  /buildings                     ids, names, split, source (filter with ?split=dev&source=procedural)
+    GET  /buildings/{id}/scene          floors, space polygons, openings, stairs/lifts, assets, in metres
+    POST /buildings/{id}/chat           the building guide for that building, Vercel AI SDK stream
+
 Run: `uv run uvicorn app.api.main:app --reload` -> http://localhost:8000/docs
 """
 
 from __future__ import annotations
 
+import csv
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -19,8 +25,11 @@ from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from starlette.responses import Response
 
 from app import observability
+from app.building import load_building
+from app.building.view import Scene, scene
 from app.core import AgentCard
 from app.registry import Entry, get, registry
+from app.settings import get_settings
 
 observability.setup()
 app = FastAPI(title="Industrial Agents")
@@ -77,6 +86,57 @@ async def chat(name: str, request: Request) -> Response:
     return await VercelAIAdapter.dispatch_request(
         request, agent=card.agent, deps=card.deps() if card.deps else None
     )
+
+
+# ---- Synera: buildings for the UI (contract: app/building/view.py) --------------------------------------
+
+
+class BuildingInfo(BaseModel):
+    id: str
+    name: str
+    split: str
+    source: str
+    floors: int
+    has_lift: bool
+
+
+@app.get("/buildings")
+async def list_buildings(split: str | None = None, source: str | None = None) -> list[BuildingInfo]:
+    manifest = get_settings().synera_kit_dir / "data" / "manifest.csv"
+    with manifest.open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    return [
+        BuildingInfo(
+            id=r["building_id"],
+            name=r["name"],
+            split=r["split"],
+            source=r["source"],
+            floors=int(r["floors"]),
+            has_lift=r["has_lift"] == "True",
+        )
+        for r in rows
+        if (split is None or r["split"] == split) and (source is None or r["source"] == source)
+    ]
+
+
+@app.get("/buildings/{building_id}/scene")
+async def building_scene(building_id: str) -> Scene:
+    try:
+        return scene(load_building(building_id))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from None
+
+
+@app.post("/buildings/{building_id}/chat")
+async def building_chat(building_id: str, request: Request) -> Response:
+    """Chat with the building guide about one building (Vercel AI SDK protocol, like /chat/{name})."""
+    card = _entry("building_guide").card
+    assert isinstance(card, AgentCard) and card.deps_from_input
+    try:
+        deps = card.deps_from_input(card.coerce({"building": building_id, "question": ""}))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from None
+    return await VercelAIAdapter.dispatch_request(request, agent=card.agent, deps=deps)
 
 
 # `to_web` takes one deps object for the app's lifetime (see AgentCard.deps); /chat builds them per request.
