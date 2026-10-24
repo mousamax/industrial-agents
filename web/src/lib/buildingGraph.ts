@@ -176,7 +176,7 @@ export function spaceByName(index: SceneIndex, name: string): SceneSpace | undef
   )
 }
 
-function entrancesOf(index: SceneIndex): { opening: SceneOpening; space: SceneSpace }[] {
+export function entrancesOf(index: SceneIndex): { opening: SceneOpening; space: SceneSpace }[] {
   const out: { opening: SceneOpening; space: SceneSpace }[] = []
   for (const o of index.openingById.values()) {
     if (!o.space_ids.includes('outside')) continue

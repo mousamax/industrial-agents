@@ -9,10 +9,14 @@ import {
   buildLiftClosedScenario,
   computeRoute,
   enrichShowRoute,
+  entrancesOf,
+  findSpaces,
   floorNameOf,
   fmtM,
   fmtWalk,
+  nearestWith,
   solveClientQuery,
+  type AskOption,
   type MemoryChip,
   type ScenarioAsk,
   type ScenarioResult,
@@ -24,11 +28,24 @@ export interface LiveTurnState {
   trace: TraceItem[]
   ask?: ScenarioAsk
   result?: ScenarioResult
+  alreadyApplied?: boolean
   prose?: string
 }
 
 type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v)
+
+function splitQuestionAndWhy(text: string, fallbackQ: string): { q: string; why: string } {
+  const clean = text.replace(/\*\*/g, '').trim()
+  const sentences = clean.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean)
+  const qIdx = sentences.findIndex((s) => s.endsWith('?'))
+  if (qIdx >= 0) {
+    const q = sentences[qIdx]
+    const rest = sentences.filter((_, i) => i !== qIdx).join(' ')
+    return { q, why: rest || 'Pick an option below or type your answer.' }
+  }
+  return { q: fallbackQ, why: clean || 'Pick an option below.' }
+}
 
 export function extractLiveTurn(
   message: ChatMessage | undefined,
@@ -84,41 +101,29 @@ export function extractLiveTurn(
     return { trace, prose: body || undefined }
   }
 
-  // 1. Check if a what_if / add_door / set_closed tool was used
-  const doorTool = toolRecords.find(
-    (t) => t.name === 'add_door' || (t.name === 'what_if' && Array.isArray(t.input.add_door_between)),
-  )
+  // 1. Check if `add_door` or `what_if(add_door_between=...)` was called
+  const doorTool = [...toolRecords]
+    .reverse()
+    .find((t) => t.name === 'add_door' || (t.name === 'what_if' && Array.isArray(t.input.add_door_between)))
   if (doorTool) {
-    const between = (doorTool.input.between ?? doorTool.input.add_door_between) as unknown
-    if (Array.isArray(between) && between.length >= 2) {
-      const aStr = String(between[0])
-      const bStr = String(between[1])
-      const built = buildAddDoorScenario(index, buildingId, buildingName, aStr, bStr)
-      if (built?.result) {
-        return {
-          trace,
-          result: {
-            ...built.result,
-            understood: body || built.result.understood,
-          },
-        }
-      }
-    }
-  }
-
-  const closeTool = toolRecords.find(
-    (t) => t.name === 'set_closed' || (t.name === 'what_if' && Array.isArray(t.input.close)),
-  )
-  if (closeTool) {
-    const closeTarget = Array.isArray(closeTool.input.close)
-      ? String(closeTool.input.close[0] ?? '')
-      : typeof closeTool.input.element === 'string'
-        ? closeTool.input.element
-        : undefined
-    const built = buildLiftClosedScenario(index, buildingId, buildingName, closeTarget)
+    const highlightIds = Array.isArray(doorTool.data.highlight)
+      ? doorTool.data.highlight.filter((x): x is string => typeof x === 'string')
+      : []
+    const spaceA = highlightIds[0] ? index.spaceById.get(highlightIds[0]) : undefined
+    const spaceB = highlightIds[1] ? index.spaceById.get(highlightIds[1]) : undefined
+    const between = Array.isArray(doorTool.input.add_door_between)
+      ? doorTool.input.add_door_between
+      : Array.isArray(doorTool.input.between)
+        ? doorTool.input.between
+        : [doorTool.input.first, doorTool.input.second]
+    const aStr = spaceA?.name ?? (typeof between[0] === 'string' ? between[0] : 'Seminar room 2.06')
+    const bStr = spaceB?.name ?? (typeof between[1] === 'string' ? between[1] : 'Kitchen 2.07')
+    const built = buildAddDoorScenario(index, buildingId, buildingName, aStr, bStr)
     if (built?.result) {
+      const isDone = doorTool.data.status === 'done'
       return {
         trace,
+        alreadyApplied: isDone,
         result: {
           ...built.result,
           understood: body || built.result.understood,
@@ -127,7 +132,35 @@ export function extractLiveTurn(
     }
   }
 
-  // 2. Check if the turn resolved to a route
+  // 2. Check if `set_closed` or `what_if(close=...)` was called
+  const closeTool = [...toolRecords]
+    .reverse()
+    .find((t) => t.name === 'set_closed' || (t.name === 'what_if' && Array.isArray(t.input.close)))
+  if (closeTool && !toolRecords.some((t) => t.name === 'route')) {
+    const elemId = typeof closeTool.data.element === 'string' ? closeTool.data.element : undefined
+    const conn = elemId ? index.connectorById.get(elemId) : undefined
+    const closeTarget =
+      conn?.name ??
+      (Array.isArray(closeTool.input.close)
+        ? String(closeTool.input.close[0] ?? '')
+        : typeof closeTool.input.element === 'string'
+          ? closeTool.input.element
+          : undefined)
+    const built = buildLiftClosedScenario(index, buildingId, buildingName, closeTarget)
+    if (built?.result) {
+      const isDone = closeTool.name === 'set_closed' && closeTool.data.closed === true
+      return {
+        trace,
+        alreadyApplied: isDone,
+        result: {
+          ...built.result,
+          understood: body || built.result.understood,
+        },
+      }
+    }
+  }
+
+  // 3. Check if the turn resolved to a route (`route` tool)
   const res = resolveMessage(effects, body, answer, index)
   if (res.routeAt !== null) {
     const showRoute = effects[res.routeAt].route!
@@ -140,22 +173,50 @@ export function extractLiveTurn(
     const firstAsset = assetIds[0] ? index.assetById.get(assetIds[0]) : undefined
     const endTitle = firstAsset ? firstAsset.name : goalSpace ? spaceLabel(goalSpace) : 'Route'
     const endFloor = goalSpace ? floorNameOf(index, goalSpace.floor_id) : ''
-    const firstSentence = body.split(/(?<=[.!?])\s+/)[0] || `${startSpace ? spaceLabel(startSpace) : 'Start'} → ${endTitle}`
-    const stepFreeUsed =
-      /step[- ]free|wheelchair|lift|elevator/i.test(userQuery) ||
-      toolRecords.some((t) => t.input.step_free === true)
-    const remember: MemoryChip[] = []
-    if (stepFreeUsed) remember.push({ icon: 'accessibility', text: 'Step-free routes', stepFree: true })
-    if (goalSpace) remember.push({ icon: 'map-pin', text: `At ${spaceLabel(goalSpace)}`, spaceId: goalSpace.id })
+    const cleanBody = body.replace(/\*\*/g, '').trim()
+    const firstSentence =
+      cleanBody.split(/(?<=[.!?])\s+|\n+/)[0] ||
+      `${startSpace ? spaceLabel(startSpace) : 'Start'} → ${endTitle}`
 
-    // Also compute a full ComputedRoute if start & goal exist so route.connectors/doors are populated
+    const stepFreeUsed =
+      /step[- ]free|wheelchair|no stairs|without stairs/i.test(userQuery) ||
+      toolRecords.some((t) => t.input.step_free === true)
+    const minWidthUsed = toolRecords.find((t) => typeof t.input.min_width_m === 'number')?.input
+      .min_width_m as number | undefined
+    const voiceWanted = /short|hands full|spoken|headset/i.test(userQuery)
+
+    const remember: MemoryChip[] = []
+    if (stepFreeUsed && !minWidthUsed) {
+      remember.push({ icon: 'accessibility', text: 'Step-free routes', stepFree: true })
+    }
+    if (minWidthUsed && minWidthUsed >= 2) {
+      remember.push({
+        icon: 'forklift',
+        text: `Forklift · ${minWidthUsed} m openings`,
+        stepFree: true,
+        minWidth: minWidthUsed,
+      })
+    }
+    if (voiceWanted) {
+      remember.push({ icon: 'volume-2', text: 'Short spoken answers', voice: true })
+    }
+    if (goalSpace) {
+      remember.push({ icon: 'map-pin', text: `At ${spaceLabel(goalSpace)}`, spaceId: goalSpace.id })
+    }
+
     const computed =
       startSpace && goalSpace
         ? computeRoute(index, startSpace.id, goalSpace.id, {
             stepFree: stepFreeUsed,
+            minWidth: minWidthUsed,
             closed: new Set(closedIds),
           })
         : null
+
+    // Attach multi-turn wheelchair follow-up chip when arriving at Meeting room 1.13
+    const isWheelchairTurn1 =
+      goalSpace && /1\.13/.test(goalSpace.name) && index.spaceById.size > 0
+    const kitch107 = [...index.spaceById.values()].find((s) => /1\.07/.test(s.name))
 
     return {
       trace,
@@ -182,28 +243,116 @@ export function extractLiveTurn(
           showRoute,
         },
         steps: computed?.steps.length ? computed.steps : enriched.steps,
-        say: body || `${endTitle}, ${fmtWalk(showRoute.length_m)}.`,
+        say: cleanBody || `${endTitle}, ${fmtWalk(showRoute.length_m)}.`,
         assetIds,
         remember,
+        followUp: isWheelchairTurn1 && kitch107 ? `Great, and from there to ${spaceLabel(kitch107)}?` : undefined,
+        followLabel: isWheelchairTurn1 && kitch107 ? `Then to ${spaceLabel(kitch107)}` : undefined,
       },
     }
   }
 
-  // 3. If the assistant is asking a question (e.g. "Where are you?" or "Which one?") or we can offer options
-  if (/\?/.test(body)) {
+  // 4. If the assistant is asking a clarifying question (e.g. "Where are you right now?" or "Which warehouse zone?")
+  const findTools = toolRecords.filter((t) => t.name === 'find' || t.name === 'list_rooms')
+  const asksWhereYouAre = /where are you|which entrance|which lobby|starting from|where.*start/i.test(body)
+  const hasQuestion = /\?/.test(body)
+
+  if (hasQuestion || (findTools.length > 0 && !toolRecords.some((t) => t.name === 'route'))) {
+    const lastFind = findTools[findTools.length - 1]
+    const foundHighlightIds = lastFind && Array.isArray(lastFind.data.highlight)
+      ? lastFind.data.highlight.filter((id): id is string => typeof id === 'string' && index.spaceById.has(id))
+      : []
+
+    if (asksWhereYouAre && foundHighlightIds.length > 0) {
+      const targetSet = new Set(foundHighlightIds)
+      const seen = new Set<string>()
+      const starts = [...findSpaces(index, /^lobby$/i), ...entrancesOf(index).map((e) => e.space)].filter((sp) => {
+        if (seen.has(sp.id)) return false
+        seen.add(sp.id)
+        return true
+      })
+      const options: AskOption[] = starts.slice(0, 3).flatMap((s) => {
+        const near = nearestWith(index, s.id, (sp) => targetSet.has(sp.id))
+        if (!near) return []
+        const sName = spaceLabel(s)
+        return [
+          {
+            label: sName,
+            sub: `${floorNameOf(index, s.floor_id)} · ${s.room_type === 'lobby' ? 'lobby' : 'entrance'}`,
+            replyText: `I'm at ${sName}.`,
+          },
+        ]
+      })
+      if (options.length > 0) {
+        const { q, why } = splitQuestionAndWhy(body, 'Where are you right now?')
+        return {
+          trace,
+          ask: { q, why, options, scan: true },
+        }
+      }
+    }
+
+    // Multiple candidate destinations (e.g., warehouse zones, presses, meeting rooms)
+    if (!asksWhereYouAre && foundHighlightIds.length >= 2) {
+      const firstFind = findTools.length >= 2 ? findTools[0] : null
+      const startIdFromFirstFind =
+        firstFind && Array.isArray(firstFind.data.highlight) && typeof firstFind.data.highlight[0] === 'string'
+          ? firstFind.data.highlight[0]
+          : memory.find((m) => m.spaceId)?.spaceId
+      const isForklift = /forklift|warehouse|pallet/i.test(userQuery)
+      const stepFree = isForklift || memory.some((m) => m.stepFree) || /wheelchair|step[- ]free/i.test(userQuery)
+      const minWidth = isForklift ? 3 : memory.find((m) => m.minWidth)?.minWidth
+
+      const candidateSpaces = foundHighlightIds
+        .map((id) => index.spaceById.get(id))
+        .filter((s): s is NonNullable<typeof s> => !!s)
+
+      const options: AskOption[] = candidateSpaces.slice(0, 5).map((sp) => {
+        const label = spaceLabel(sp)
+        const r =
+          startIdFromFirstFind && index.spaceById.has(startIdFromFirstFind)
+            ? computeRoute(index, startIdFromFirstFind, sp.id, { stepFree, minWidth })
+            : null
+        const sub = startIdFromFirstFind
+          ? r
+            ? `${fmtM(r.length)}${isForklift ? ' for the forklift' : ''}`
+            : minWidth
+              ? 'No opening wide enough'
+              : floorNameOf(index, sp.floor_id)
+          : `${floorNameOf(index, sp.floor_id)} · ${sp.room_type.replace(/_/g, ' ')}`
+        return {
+          label,
+          sub,
+          disabled: Boolean(startIdFromFirstFind && minWidth && !r),
+          replyText: label,
+        }
+      })
+
+      if (options.length >= 2) {
+        const { q, why } = splitQuestionAndWhy(body, 'Which one do you mean?')
+        return {
+          trace,
+          ask: { q, why, options },
+        }
+      }
+    }
+
+    // Fallback to client solver for ask options if applicable
     const clientSolved = solveClientQuery(index, buildingId, buildingName, userQuery, memory, closedIds)
     if (clientSolved?.ask) {
+      const { q, why } = splitQuestionAndWhy(body, clientSolved.ask.q)
       return {
         trace,
         ask: {
           ...clientSolved.ask,
-          why: body,
+          q,
+          why,
         },
       }
     }
   }
 
-  // 4. Highlighted spaces/assets or general answer card on the map
+  // 5. Highlighted spaces/assets or general answer card on the map
   const allHighlights =
     res.highlight.length > 0
       ? res.highlight
@@ -234,12 +383,12 @@ export function extractLiveTurn(
       buildingName,
       title,
       sub: focusFloor ? floorNameOf(index, focusFloor) : buildingName,
-      understood: body || answer || 'Here is what I found in the building.',
+      understood: body.replace(/\*\*/g, '') || answer || 'Here is what I found in the building.',
       floors: floors.length ? floors : focusFloor ? [focusFloor] : [],
       focusFloor,
       focusIds: focusIds.length ? focusIds : null,
       assetIds: focusIds.filter((id) => index.assetById.has(id)),
-      say: body || undefined,
+      say: body.replace(/\*\*/g, '') || undefined,
       remember: [],
     },
   }

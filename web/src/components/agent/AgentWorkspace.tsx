@@ -62,7 +62,7 @@ import type { SceneIndex } from '../../lib/sceneIndex'
 import { getOrLoadBuildingIndex, useApp } from '../../store'
 import { BuildingPicker } from '../browse/BuildingPicker'
 import { useBrowseUi } from '../browse/browseStore'
-import { resetChat, useBuildingChat } from '../chat/chats'
+import { getBuildingChat, resetChat, useBuildingChat } from '../chat/chats'
 import { withPreferences } from '../chat/text'
 import { MapView } from '../map/MapView'
 import { extractLiveTurn } from './liveBridge'
@@ -197,7 +197,6 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     messages: liveMessages,
     status: liveStatus,
     error: liveError,
-    sendMessage: sendLiveMessage,
     clearError: clearLiveError,
   } = useChat({
     chat,
@@ -251,7 +250,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
 
   // Apply result helper
   const showResult = useCallback(
-    (res: ScenarioResult, autoSpeak = false) => {
+    (res: ScenarioResult, autoSpeak = false, initialApplied = false) => {
       if (res.buildingId && res.buildingId !== useApp.getState().buildingId) {
         void loadBuilding(res.buildingId)
       }
@@ -263,7 +262,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       setResult(res)
       setFloorState(res.focusFloor)
       setStepIdx(0)
-      setApplied(false)
+      setApplied(initialApplied)
       if (wantSpeak && res.say) {
         speakText(res.say)
       } else {
@@ -273,8 +272,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     [loadBuilding, remember, memory, speakText, stopSpeech],
   )
 
-  // Run a deterministic or client-solved Scenario with animated tool trace
-  const runScenario = useCallback(
+  // Offline fallback runner (used only if the backend server is unreachable)
+  const runOfflineScenario = useCallback(
     (sc: Scenario) => {
       clearTimers()
       stopSpeech()
@@ -306,8 +305,6 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       later(() => {
         setTrace((prev) => prev.map((x) => ({ ...x, running: false })))
         if (sc.ask) {
-          // If the user already has a remembered location in this building and the ask is "Where are you right now?",
-          // check if one of the options matches their remembered location!
           const remLoc = useApp.getState().memory.find((m) => m.spaceId)
           const matchedOpt = remLoc
             ? sc.ask.options.find((o) => o.result?.route?.start === remLoc.spaceId)
@@ -327,20 +324,78 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     [clearTimers, stopSpeech, loadBuilding, later, showResult],
   )
 
+  // Send a prompt to the live building_guide backend (POST /buildings/{id}/chat)
+  const sendToBackend = useCallback(
+    async (text: string, targetBuildingId?: string, matchedScenario?: Scenario | null, isReply = false) => {
+      clearTimers()
+      stopSpeech()
+      const bId = targetBuildingId ?? useApp.getState().buildingId ?? 'proc-campus-dev-000'
+      if (bId !== useApp.getState().buildingId) {
+        await loadBuilding(bId)
+      }
+      const targetChat = getBuildingChat(bId)
+      if (targetChat.status === 'submitted' || targetChat.status === 'streaming') {
+        await targetChat.stop()
+      }
+      clearLiveError()
+      if (!isReply) {
+        setScenario(matchedScenario ?? null)
+        setPhase('working')
+        setUserText(text)
+        setReplyText(null)
+        setTrace([])
+        setTraceOpen(false)
+        setAsk(null)
+        setResult(null)
+        setApplied(false)
+        setInput('')
+      } else {
+        setPhase('working')
+        setReplyText(text)
+      }
+      setLiveMode(true)
+      const currentMem = useApp.getState().memory
+      void targetChat.sendMessage({
+        text: withPreferences(
+          text,
+          currentMem.some((m) => m.stepFree),
+          currentMem.map((m) => m.text),
+        ),
+      })
+    },
+    [clearTimers, stopSpeech, loadBuilding, clearLiveError],
+  )
+
+  // Run a Scenario card by sending its prompt to the live backend (with offline fallback if unreachable)
+  const runScenario = useCallback(
+    (sc: Scenario) => {
+      void sendToBackend(sc.user, sc.buildingId, sc, false)
+    },
+    [sendToBackend],
+  )
+
   // Watch live chat messages when in liveMode
   useEffect(() => {
     if (!liveMode) return
-    const lastAssistant = [...liveMessages].reverse().find((m) => m.role === 'assistant')
     const isReady = liveStatus === 'ready'
-    if (liveError && index && buildingId) {
-      // Seamless fallback to client-side SceneIndex solver if backend is unreachable or has no API key
-      const solved = solveClientQuery(index, buildingId, activeBuildingName, userText, memory, closedIds)
-      if (solved) {
-        clearLiveError()
-        runScenario(solved)
+    if (liveError) {
+      // Seamless fallback to client-side SceneIndex solver if backend is unreachable
+      clearLiveError()
+      if (scenario) {
+        runOfflineScenario(scenario)
         return
       }
+      if (index && buildingId) {
+        const solved = solveClientQuery(index, buildingId, activeBuildingName, userText, memory, closedIds)
+        if (solved) {
+          runOfflineScenario(solved)
+          return
+        }
+      }
+      setLiveMode(false)
+      return
     }
+    const lastAssistant = [...liveMessages].reverse().find((m) => m.role === 'assistant')
     if (!lastAssistant) return
     const extracted = extractLiveTurn(
       lastAssistant,
@@ -359,7 +414,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         setPhase('ask')
         setAsk(extracted.ask)
       } else if (extracted.result) {
-        showResult(extracted.result, false)
+        showResult(extracted.result, Boolean(scenario?.voice), Boolean(extracted.alreadyApplied))
       }
     }
   }, [
@@ -367,6 +422,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     liveMessages,
     liveStatus,
     liveError,
+    scenario,
     index,
     buildingId,
     activeBuildingName,
@@ -374,72 +430,23 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     memory,
     closedIds,
     clearLiveError,
-    runScenario,
+    runOfflineScenario,
     showResult,
   ])
 
-  // Submit handler (scenario id, chip text, or free-form user input)
+  // Submit handler (scenario id, chip text, or free-form user input -> live backend)
   const submit = useCallback(
     (rawText?: string) => {
       const q = (rawText ?? input).trim()
       if (!q) return
       const matched = matchScenario(scenarios, q)
       if (matched) {
-        runScenario(matched)
+        void sendToBackend(matched.user, matched.buildingId, matched, false)
         return
       }
-      // Try client-side solver first if it's a direct route/place question on the active building
-      if (index && buildingId) {
-        const clientSc = solveClientQuery(index, buildingId, activeBuildingName, q, memory, closedIds)
-        if (clientSc && (!chat || liveError)) {
-          runScenario(clientSc)
-          return
-        }
-      }
-      // Otherwise stream live from POST /buildings/{id}/chat (with automatic fallback)
-      if (chat && buildingId) {
-        clearTimers()
-        stopSpeech()
-        setScenario(null)
-        setPhase('working')
-        setUserText(q)
-        setReplyText(null)
-        setTrace([])
-        setTraceOpen(false)
-        setAsk(null)
-        setResult(null)
-        setApplied(false)
-        setInput('')
-        setLiveMode(true)
-        clearLiveError()
-        void sendLiveMessage({
-          text: withPreferences(
-            q,
-            memory.some((m) => m.stepFree),
-            memory.map((m) => m.text),
-          ),
-        })
-      } else if (index && buildingId) {
-        const clientSc = solveClientQuery(index, buildingId, activeBuildingName, q, memory, closedIds)
-        if (clientSc) runScenario(clientSc)
-      }
+      void sendToBackend(q, buildingId ?? undefined, null, false)
     },
-    [
-      input,
-      scenarios,
-      runScenario,
-      index,
-      buildingId,
-      activeBuildingName,
-      memory,
-      closedIds,
-      chat,
-      liveError,
-      clearTimers,
-      stopSpeech,
-      clearLiveError,
-      sendLiveMessage,
-    ],
+    [input, scenarios, sendToBackend, buildingId],
   )
 
   // Consume any prompt sent from BrowsePanel ("Directions")
@@ -449,11 +456,15 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     if (text) submit(text)
   }, [pendingPrompt, consumePrompt, submit])
 
-  // Pick an option in `ask`
+  // Pick an option in `ask` -> sends replyText as Turn 2 to the live backend (or offline fallback)
   const pickOption = useCallback(
     (opt: AskOption) => {
       if (opt.disabled) return
       clearTimers()
+      if (liveMessages.length > 0 && !liveError) {
+        void sendToBackend(opt.replyText, buildingId ?? undefined, scenario, true)
+        return
+      }
       setPhase('working')
       setReplyText(opt.replyText)
       const post = opt.post ?? []
@@ -472,7 +483,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         }
       }, post.length * 240 + 240)
     },
-    [clearTimers, later, showResult, scenario?.voice],
+    [clearTimers, liveMessages.length, liveError, sendToBackend, buildingId, scenario, later, showResult],
   )
 
   const scanDoor = useCallback(() => {
@@ -598,14 +609,20 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     setPhase('result')
   }, [stopSpeech])
 
-  // Confirm / Undo map changes (lift closure, new door)
+  // Confirm / Undo map changes (lift closure, new door) -> applies on map & syncs with live backend session
   const confirmChange = useCallback(() => {
     if (!result) return
     setApplied(true)
     if (result.appliedTrace) {
       setTrace((prev) => [...prev, result.appliedTrace!])
     }
-  }, [result])
+    if (liveMessages.length > 0 && !liveError && buildingId) {
+      const targetChat = getBuildingChat(buildingId)
+      if (targetChat.status === 'ready') {
+        void targetChat.sendMessage({ text: 'Yes, do it.' })
+      }
+    }
+  }, [result, liveMessages.length, liveError, buildingId])
 
   const undoChange = useCallback(() => {
     if (!result) return
@@ -613,7 +630,13 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     if (result.appliedTrace) {
       setTrace((prev) => prev.filter((t) => t !== result.appliedTrace))
     }
-  }, [result])
+    if (liveMessages.length > 0 && !liveError && buildingId) {
+      const targetChat = getBuildingChat(buildingId)
+      if (targetChat.status === 'ready') {
+        void targetChat.sendMessage({ text: 'Undo the last change.' })
+      }
+    }
+  }, [result, liveMessages.length, liveError, buildingId])
 
   // Reset to home
   const reset = useCallback(() => {

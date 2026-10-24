@@ -113,6 +113,13 @@ function getEntry(buildingId: string): Entry {
   return entry
 }
 
+/** Synchronously get or create the BuildingChat for a buildingId. */
+export function getBuildingChat(buildingId: string): BuildingChat {
+  const chat = getEntry(buildingId).chat
+  notify()
+  return chat
+}
+
 /** Throw away this building's conversation and start a new one. */
 export function resetChat(buildingId: string): void {
   entries.get(buildingId)?.dispose()
