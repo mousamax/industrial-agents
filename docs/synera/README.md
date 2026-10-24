@@ -53,6 +53,7 @@ Every kind has an exact definition in `synera-kit/README.md` §4, and train/dev 
 - `src/app/agents/building_guide/`: their starter agent ported to our stack (same tools, same prompt). It
   gets `ia chat`, `ia ui`, the API, Langfuse traces and `ia eval` with the judges' scorer
   (`SyneraScore`). It's a baseline to start from, not a decision about the design.
+- `docs/synera/BASELINE.md`: floor benchmark results and failure analysis on `train` (`evals/baselines/train_floor_per_kind_1.jsonl`) and `dev` (`evals/baselines/building_guide.json`).
 - Their `BuildingMap` (exact route model) and `benchmark.score` are importable from our code.
 - `BENCHMARK.md`: the official run command (format still to confirm, see questions below).
 
