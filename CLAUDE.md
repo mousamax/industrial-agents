@@ -70,3 +70,4 @@ hard-code anything to a building or question.
   rubrics, open coding (`ia analyze`) and closed coding against `failure_modes.yaml`.
 - When you change an agent's behavior: run its evals, and if better, `--save-baseline` in the same commit.
 - Partner data goes in `data/private/` (gitignored). Never commit secrets or partner data.
+- Never run `git push` without explicit permission from the user in the current turn.

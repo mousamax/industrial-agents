@@ -28,7 +28,20 @@ function textOf(message: ChatMessage): string {
 
 function createEntry(buildingId: string): Entry {
   const chat = new Chat<ChatMessage>({
-    transport: new DefaultChatTransport({ api: chatUrl(buildingId) }),
+    transport: new DefaultChatTransport({
+      api: chatUrl(buildingId),
+      fetch: (url, init) => {
+        const app = useApp.getState()
+        const locId =
+          app.memory.find((m) => m.spaceId)?.spaceId ??
+          (app.selection?.kind === 'space' ? app.selection.id : undefined)
+        const targetUrl =
+          locId && typeof url === 'string'
+            ? `${url}${url.includes('?') ? '&' : '?'}location=${encodeURIComponent(locId)}`
+            : url
+        return fetch(targetUrl, init)
+      },
+    }),
   })
   const effects = new Map<string, ToolEffect>()
   const finalized = new Set<string>()

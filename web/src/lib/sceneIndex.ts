@@ -47,8 +47,11 @@ export function floorOf(index: SceneIndex, id: string): string | undefined {
   )
 }
 
-/** Human label: "Kitchen 0.33" style names already include the ref; fall back to ref or id. */
+/** Human label: "Kitchen 0.33" style names already include the ref; append ref when missing. */
 export function spaceLabel(s: SceneSpace): string {
+  if (s.name && s.ref && !s.name.toLowerCase().includes(s.ref.toLowerCase())) {
+    return `${s.name} ${s.ref}`
+  }
   return s.name || s.ref || s.id
 }
 
@@ -67,3 +70,4 @@ export function idsIn(index: SceneIndex, text: string): string[] {
   }
   return [...found]
 }
+

@@ -100,3 +100,10 @@ def test_location_resolves_and_reaches_the_context():
     text = _location_context(SimpleNamespace(deps=deps))
     assert "Büro 0.10 (Ground floor)" in text and "osm-way37850565-F0-S010" in text
     assert _location_context(SimpleNamespace(deps=Deps.load("osm-way37850565"))) == ""
+
+
+def test_deps_is_not_mistaken_for_ui_state_handler():
+    from pydantic_ai.ui._adapter import StateHandler
+
+    deps = Deps.load(FACTORY)
+    assert not isinstance(deps, StateHandler)

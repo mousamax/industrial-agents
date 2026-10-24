@@ -86,9 +86,16 @@ function focusBBox(
 ): BBox | null {
   let b: BBox | null = null
   const pt = (p: Pt, pad: number) => padBBox(bboxOf([p])!, pad)
+  const isRouteFocus = Boolean(route && ids === route.space_ids)
   for (const id of ids) {
     const s = geo.byId.get(id)
-    if (s) b = unionBBox(b, s.bbox)
+    if (s) {
+      const isEndpoint = id === ids[0] || id === ids[ids.length - 1]
+      const roomType = index.spaceById.get(id)?.room_type
+      if (!isRouteFocus || isEndpoint || roomType !== 'corridor') {
+        b = unionBBox(b, s.bbox)
+      }
+    }
     const a = geo.assetById.get(id)
     if (a) b = unionBBox(b, pt(a.p, 2))
     const o = index.openingById.get(id)
@@ -99,8 +106,14 @@ function focusBBox(
   if (ghostDoor && ghostDoor.floorId === geo.floorId) {
     b = unionBBox(b, pt(toSvg(ghostDoor.pos), 3))
   }
-  if (route && ids === route.space_ids)
-    for (const seg of route.segments) if (seg.floor_id === geo.floorId) b = unionBBox(b, bboxOf(seg.points.map(toSvg)))
+  if (isRouteFocus && route) {
+    for (const seg of route.segments) {
+      if (seg.floor_id === geo.floorId) {
+        const segBox = bboxOf(seg.points.map(toSvg))
+        if (segBox) b = unionBBox(b, padBBox(segBox, 3))
+      }
+    }
+  }
   return b
 }
 
@@ -582,8 +595,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     prev.current = { sceneId: scene.id, floorId: geo.floorId, nonce: focus.nonce, sized }
     updateLimits()
 
-    if (newScene && !nonceChanged) return fitFloor(false)
-    if (nonceChanged && (focus.ids.length || ghostDoor)) {
+    if ((nonceChanged || newScene) && (focus.ids.length || ghostDoor)) {
       // A tap on the map selected this: keep the zoom, only make sure the pin is not under the sheet.
       if (tapFocus.current && focus.ids.length === 1 && focus.ids[0] === tapFocus.current) {
         tapFocus.current = null

@@ -22,7 +22,6 @@ import math
 import operator
 import re
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -39,16 +38,25 @@ MAX_RESULTS = 15
 MIN_GAIN_M = 1.0
 
 
-@dataclass
 class Deps:
-    """One conversation's view of a building: the plan plus everything changed in this session."""
+    """One conversation's view of a building: the plan plus everything changed in this session.
 
-    state: BuildingState
-    pending: dict[str, Any] | None = None
-    """An edit proposed to the person and waiting for their yes: {"edit": Edit, "run_id": str}."""
-    here: str | None = None
-    """Space id where the person is, when the app knows it (a QR code at a door, a tap on the map, or the
-    `start` a benchmark line carries). The agent gets it as context; it never overrides what they say."""
+    Plain class rather than @dataclass so pydantic_ai's UIAdapter does not mistake `state: BuildingState`
+    for a frontend AG-UI StateHandler (`__dataclass_fields__` + `state`) and overwrite it with `{}`.
+    """
+
+    def __init__(
+        self,
+        state: BuildingState,
+        pending: dict[str, Any] | None = None,
+        here: str | None = None,
+    ) -> None:
+        self.state: BuildingState = state
+        self.pending: dict[str, Any] | None = pending
+        """An edit proposed to the person and waiting for their yes: {"edit": Edit, "run_id": str}."""
+        self.here: str | None = here
+        """Space id where the person is, when the app knows it (a QR code at a door, a tap on the map, or the
+        `start` a benchmark line carries). The agent gets it as context; it never overrides what they say."""
 
     @property
     def building(self) -> Building:
