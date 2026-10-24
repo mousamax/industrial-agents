@@ -168,6 +168,8 @@ tools use a stand-in port of the kit's route model (`building_guide/graph.py`); 
 ## Commands
 
 ```bash
+uv run ia scoreboard                                    # points per person and row -> SCOREBOARD.md
+uv run ia scoreboard --run scenarios                    # re-measure one agent suite (or --run all)
 uv run pytest tests/building -q -rs                     # golden scoreboard (dev sample)
 GOLDEN_SAMPLE=all uv run pytest tests/building -q       # all dev questions
 uv run uvicorn app.api.main:app --reload                # API for the UI on :8000

@@ -1,0 +1,148 @@
+{
+ "suites": {
+  "benchmark": {
+   "at": "2026-10-24T15:06:13+00:00",
+   "by": "mousamax",
+   "model": "default",
+   "correct": 138,
+   "total": 138,
+   "by_kind": {
+    "errand": [
+     19,
+     19
+    ],
+    "floor_area_total": [
+     31,
+     31
+    ],
+    "largest_room": [
+     20,
+     20
+    ],
+    "room_stacked": [
+     9,
+     9
+    ],
+    "shared_walls_count": [
+     24,
+     24
+    ],
+    "step_free_reachable_count": [
+     1,
+     1
+    ],
+    "straight_line_3d": [
+     13,
+     13
+    ],
+    "what_if_door": [
+     2,
+     2
+    ],
+    "wide_delivery_count": [
+     19,
+     19
+    ]
+   },
+   "errors": 0,
+   "input_tokens": 1833751,
+   "output_tokens": 36112
+  },
+  "warmup": {
+   "at": "2026-10-24T15:07:21+00:00",
+   "by": "mousamax",
+   "model": "default",
+   "correct": 368,
+   "total": 369,
+   "by_kind": {
+    "count": [
+     40,
+     40
+    ],
+    "locate": [
+     100,
+     100
+    ],
+    "route": [
+     120,
+     120
+    ],
+    "route_step_free": [
+     40,
+     40
+    ],
+    "route_with_closure": [
+     28,
+     29
+    ],
+    "tour": [
+     40,
+     40
+    ]
+   },
+   "errors": 0,
+   "input_tokens": 4229036,
+   "output_tokens": 83326
+  },
+  "reworded": {
+   "at": "2026-10-24T15:09:55+00:00",
+   "by": "mousamax",
+   "model": "default",
+   "correct": 45,
+   "total": 45,
+   "by_kind": {
+    "errand": [
+     6,
+     6
+    ],
+    "floor_area_total": [
+     6,
+     6
+    ],
+    "largest_room": [
+     6,
+     6
+    ],
+    "room_stacked": [
+     6,
+     6
+    ],
+    "shared_walls_count": [
+     6,
+     6
+    ],
+    "step_free_reachable_count": [
+     1,
+     1
+    ],
+    "straight_line_3d": [
+     6,
+     6
+    ],
+    "what_if_door": [
+     2,
+     2
+    ],
+    "wide_delivery_count": [
+     6,
+     6
+    ]
+   },
+   "errors": 0,
+   "input_tokens": 610397,
+   "output_tokens": 11808
+  },
+  "scenarios": {
+   "at": "2026-10-24T15:10:17+00:00",
+   "by": "mousamax",
+   "model": "default",
+   "correct": 8,
+   "total": 11,
+   "failing": [
+    "first-day-coffee",
+    "vague-press",
+    "add-a-door"
+   ]
+  }
+ }
+}

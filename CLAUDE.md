@@ -31,6 +31,9 @@ hard-code anything to a building or question.
   without the user agreeing to announce it to the team.
 - Golden scoreboard: `uv run pytest tests/building -q -rs` checks each interface against Synera's answers
   (unimplemented stubs are skipped). Make the relevant tests pass; never weaken them.
+- Team scoreboard: `uv run ia scoreboard` turns Synera's 100 points into rows with owners
+  (`docs/synera/scoreboard.yaml` → `docs/synera/SCOREBOARD.md`). Work test-first: add the failing eval or
+  row, then the code. A row without an eval scores 0; never mark progress without a measurement.
 
 ## Map
 - `src/app/agents/<name>/`: one folder per agent: `agent.py` (Agent + tools + `card`), `prompt.md`,

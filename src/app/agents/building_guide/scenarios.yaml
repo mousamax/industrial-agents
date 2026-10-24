@@ -1,0 +1,130 @@
+# Tricky-user scenarios for the Interaction score (25 points): Synera rates "a short scripted conversation
+# with tricky users" on whether the agent asks only what it needs, shows what it understood, and gives
+# directions a person can follow. Each scenario is a fixed script of user turns on a real building.
+#
+# A scenario passes when every `checks` entry holds (code, on the tool calls of that turn) AND the judge
+# finds every `expect` line met plus the three rubric points. Write the scenario first, watch it fail,
+# then fix the agent. Run: uv run python -m app.agents.building_guide.scenarios
+#
+# checks: {turn: 1-based, tool: name, args: {subset that must match}}  -> that tool was called so in that turn
+#         {turn, no_tool: name}                                          -> that tool was NOT called
+#         {turn, max_words: n}                                           -> the reply is short (voice, hands full)
+scenarios:
+- name: first-day-coffee
+  building: proc-factory-dev-003
+  persona: New employee, first day, knows no room names.
+  turns:
+  - Hi, it's my first day here. Where can I get a coffee?
+  - I'm at the entrance into Office corridor 0.16.
+  checks:
+  - {turn: 2, tool: route}
+  expect:
+  - Turn 1 names real kitchens with coffee machines or asks where they are, in one short question at most.
+  - Turn 2 picks the nearest kitchen from Office corridor 0.16 and gives walking directions, without asking again.
+
+- name: wrong-room-number
+  building: proc-campus-dev-000
+  persona: Visitor who misreads room numbers.
+  turns:
+  - How do I get from the main lobby to room 1.6?
+  expect:
+  - Treats "1.6" as Seminar room 1.06 (Floor 1), the only close match, and says so, or asks to confirm it in one short question.
+  - Does not invent a room 1.6.
+
+- name: which-cnc-mill
+  building: proc-factory-dev-003
+  persona: Service technician with a call about one specific machine.
+  turns:
+  - I'm a service technician, I got a call about CNC mill B. Where is it, and how do I get there from Main aisle H-B5?
+  checks:
+  - {turn: 1, tool: route}
+  expect:
+  - Identifies CNC mill H-A1-B in Production zone H-A1 (Ground floor).
+  - Gives a route from Main aisle H-B5 with the distance.
+
+- name: vague-press
+  building: proc-factory-dev-003
+  persona: Worker who says "the press" when the hall has several.
+  turns:
+  - Where's the press?
+  checks:
+  - {turn: 1, no_tool: route}
+  expect:
+  - Asks one short question listing the actual presses (drill presses and/or injection moulding machines) with where they are, instead of picking one silently.
+
+- name: wheelchair-is-sticky
+  building: proc-campus-dev-000
+  persona: Wheelchair user who says it once.
+  turns:
+  - I use a wheelchair. How do I get from Main lobby 0.18 to Library 1.28?
+  - Great, and from there to Lab 3.06?
+  checks:
+  - {turn: 1, tool: route, args: {step_free: true}}
+  - {turn: 2, tool: route, args: {step_free: true}}
+  expect:
+  - Both routes are step-free (lifts, no stairs) and the second one starts at Library 1.28 without asking.
+
+- name: lift-closed-mid-conversation
+  building: proc-campus-dev-000
+  persona: Facility update, then a wheelchair user.
+  turns:
+  - Heads up, Lift 1 is out of service today.
+  - I'm in a wheelchair at Main lobby 0.18. Get me to Seminar room 2.06 please.
+  checks:
+  - {turn: 1, tool: set_closed}
+  - {turn: 2, tool: route, args: {step_free: true}}
+  expect:
+  - Turn 1 confirms Lift 1 is noted as closed.
+  - Turn 2's route does not use Lift 1 and names the lift it does use.
+
+- name: change-of-mind
+  building: proc-campus-dev-000
+  persona: Student who changes their destination.
+  turns:
+  - Take me from Main lobby 0.18 to the canteen.
+  - Actually, make it the library instead.
+  checks:
+  - {turn: 2, tool: route}
+  expect:
+  - Turn 2 routes from Main lobby 0.18 to Library 1.28 without asking where they are.
+
+- name: hands-full-voice
+  building: proc-factory-dev-003
+  persona: Technician carrying parts, listening on a headset.
+  turns:
+  - hands full, I'm at the CNC mills, fastest way to the air compressor, keep it short
+  checks:
+  - {turn: 1, tool: route}
+  - {turn: 1, max_words: 70}
+  expect:
+  - Short spoken-style directions from Production zone H-A1 to Logistics zone H-C5 that can be followed without looking at a screen.
+
+- name: wide-pallet
+  building: proc-factory-dev-003
+  persona: Logistics worker moving a wide load.
+  turns:
+  - I'm moving a 1.2 m wide pallet on a pallet truck from Warehouse zone H-C2 to the quality lab. Can I get there?
+  checks:
+  - {turn: 1, tool: route, args: {step_free: true, min_width_m: 1.2}}
+  expect:
+  - Answers whether the pallet fits (every door at least 1.2 m, no steps) and gives the route or says clearly why not.
+
+- name: not-in-this-building
+  building: proc-factory-dev-003
+  persona: Someone asking for something that doesn't exist here.
+  turns:
+  - Where's the swimming pool?
+  checks:
+  - {turn: 1, no_tool: route}
+  expect:
+  - Says plainly there is no swimming pool in this building and does not invent one.
+
+- name: add-a-door
+  building: proc-campus-dev-000
+  persona: Facility manager editing the plan.
+  turns:
+  - Add a door between Seminar room 2.06 and Kitchen 2.07.
+  - Yes, do it.
+  expect:
+  - Before changing the plan, says what it understood (which two rooms, on Floor 2) and what the door would change, and asks to confirm.
+  - After "Yes, do it", the door is really added to the building (later routes can use it) and it says so; it never claims a change it did not make.

@@ -239,5 +239,64 @@ def new(name: str) -> None:
     )
 
 
+@cli.command()
+def scoreboard(
+    run_: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--run", help="Re-run agent suites first: benchmark, warmup, reworded, scenarios or all"
+        ),
+    ] = None,
+    model: Annotated[str | None, typer.Option(help="Model alias or id for --run")] = None,
+    split: Annotated[str, typer.Option(help="Split for the golden tests")] = "dev",
+) -> None:
+    """Points per person and per row (docs/synera/scoreboard.yaml); writes docs/synera/SCOREBOARD.md."""
+    from app import scoreboard as sb
+
+    suites = list(sb.AGENT_SUITES) if run_ and "all" in run_ else (run_ or [])
+    if unknown := set(suites) - set(sb.AGENT_SUITES):
+        raise typer.BadParameter(f"unknown suites {sorted(unknown)}; pick from {sb.AGENT_SUITES} or all")
+    if suites:
+        sb.refresh(suites, resolve_model(model) if model else None)
+    before = sb.previous()
+    board = sb.build(split)
+    sb.save(board)
+
+    def delta(new: float, old: float | None) -> str:
+        if old is None or abs(new - old) < 0.05:
+            return ""
+        return f" [green]+{new - old:.1f}[/]" if new > old else f" [red]{new - old:.1f}[/]"
+
+    people = Table(title=f"Team {board['team']:.1f} / 100{delta(board['team'], before and before['team'])}")
+    people.add_column("Person")
+    people.add_column("Points", justify="right")
+    for person, points in sorted(board["per_person"].items(), key=lambda t: -t[1]):
+        old = before["per_person"].get(person) if before else None
+        people.add_row(person, f"{points:.1f}{delta(points, old)}")
+    console.print(people)
+
+    rows = Table(show_lines=False)
+    for col, justify in (
+        ("Row", "left"),
+        ("Owners", "left"),
+        ("Measured", "left"),
+        ("Points", "right"),
+        ("Failing / next", "left"),
+    ):
+        rows.add_column(col, justify=justify)  # type: ignore[arg-type]
+    for r in board["rows"]:
+        color = "green" if r["rate"] >= 0.999 else "yellow" if r["rate"] > 0 else "red"
+        points = f"{r['points']:.1f}/{r['stake']}" if r["stake"] else "health"
+        rows.add_row(
+            r["id"],
+            ", ".join(r["owners"]),
+            f"[{color}]{sb._bar(r['rate'])} {r['rate']:.0%}[/] {r['detail']}",
+            points,
+            sb.short(r["failing"]),
+        )
+    console.print(rows)
+    console.print(f"wrote {sb.BOARD.relative_to(ROOT)}")
+
+
 def main() -> None:
     cli()

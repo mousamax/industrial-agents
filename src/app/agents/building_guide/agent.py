@@ -8,8 +8,8 @@ cached context (floors, room and item types, lifts, entrances), and a code check
 from __future__ import annotations
 
 import json
-import re
 
+from benchmark.score import committed_answer, numbers_in
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.capabilities import Caching, Thinking
@@ -33,21 +33,13 @@ def _building_context(ctx: RunContext[Deps]) -> str:
     return "Building overview:\n" + json.dumps(overview(ctx.deps.building), ensure_ascii=False)
 
 
-ANSWER_LINE = re.compile(r"^\W*answer\W*:\s*(.*)$", re.I | re.M)
-NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
-
-
-def _numbers(text: str) -> list[float]:
-    return [float(n.replace(",", ".")) for n in NUMBER.findall(text)]
-
-
 def _tool_numbers(ctx: RunContext[Deps]) -> list[float]:
     found: list[float] = []
     for message in ctx.messages:
         if isinstance(message, ModelRequest):
             for part in message.parts:
                 if isinstance(part, ToolReturnPart):
-                    found += _numbers(part.model_response_str())
+                    found += numbers_in(part.model_response_str())
     return found
 
 
@@ -57,15 +49,17 @@ def _grounded(value: float, known: list[float]) -> bool:
 
 def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) -> str:
     """When asked for an 'Answer:' line: there is one, it holds one number, and that number came from a
-    tool. The scorer reads only that line, so this is where a reply wins or loses."""
+    tool. The scorer reads only that line, so this is where a reply wins or loses. Parsing is the scorer's
+    own (benchmark.score), so what passes here is read the same way there."""
     prompt = ctx.prompt if isinstance(ctx.prompt, str) else ""
     if "Answer:" not in prompt:
         return reply
-    lines = ANSWER_LINE.findall(reply)
-    if not lines:
+    line = committed_answer(reply)
+    if line is None:
         raise ModelRetry("End your reply with the line 'Answer: ...' in the form the question asks for.")
-    line = lines[-1]
-    numbers = _numbers(line)
+    numbers = numbers_in(line)
+    if "no route" in prompt and "no route" in line.casefold() and not numbers:
+        return reply
     room_answer = "<room name or number>" in prompt
     wants_number = "<number>" in prompt or "<area>" in prompt
     if wants_number and not room_answer and len(numbers) != 1:

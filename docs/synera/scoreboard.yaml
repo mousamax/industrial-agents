@@ -1,0 +1,126 @@
+# The team scoreboard: Synera's 100 points split into rows we can measure, each with an owner.
+# `uv run ia scoreboard` turns every row into points (stake × measured rate) and writes SCOREBOARD.md.
+#
+# Stakes are OUR estimate of how Synera's judging (docs/synera/README.md) splits its points; change them
+# when Synera tells us more. Rows start red: a row without an eval scores 0 until someone writes one.
+# Owners share a row's points equally.
+#
+# Sources:
+#   pytest: [test name prefixes]  free, run every time (golden tests, strict: unimplemented = fail)
+#   bench: <suite>, kinds: [...]  agent on dev with the judges' scorer; refreshed with --run
+#   scenarios: true               tricky-user scenarios with the rubric judge; refreshed with --run
+#   manual: 0.0-1.0               the owner sets it, with a note saying what's done
+#   missing: <what eval to write> no eval yet: 0 points
+
+people: {A: Magnus, B: Vadim, C: Mousa, D: Maximilian}
+
+rows:
+# ---- Does it work (55) ----------------------------------------------------------------------------------
+- id: test-geometry
+  part: Does it work
+  what: Area, wall, stacking and 3D questions answered right end to end (dev, judges' scorer)
+  owners: [B, C]
+  stake: 14  # 104 of 145 test questions, of ~20 points for the test set
+  bench: benchmark
+  kinds: [largest_room, floor_area_total, shared_walls_count, room_stacked, straight_line_3d]
+- id: test-graph
+  part: Does it work
+  what: Errand, delivery, reachability and what-if questions answered right end to end
+  owners: [A, C]
+  stake: 6  # 41 of 145 test questions
+  bench: benchmark
+  kinds: [errand, wide_delivery_count, step_free_reachable_count, what_if_door]
+- id: sunday-find-and-route
+  part: Does it work
+  what: Sunday-style find, count, route, step-free, closure and tour questions through the agent
+  owners: [C, A]
+  stake: 10
+  bench: warmup
+- id: synera-route-rule
+  part: Does it work
+  what: Routes are the best under Synera's announced rule (per-metre stairs/lifts, forklift, bays)
+  owners: [A]
+  stake: 8
+  pytest: [test_a4_]
+- id: unseen-wording
+  part: Does it work
+  what: The scored kinds asked in other words (reworded dev questions)
+  owners: [C]
+  stake: 4
+  bench: reworded
+- id: level4-from-svg
+  part: Does it work
+  what: Buildings drafted from SVG floor plans match the truth (Level 4)
+  owners: [B]
+  stake: 5
+  pytest: [test_drafted_, test_draft_]
+- id: level4-from-images
+  part: Does it work
+  what: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4)
+  owners: [B]
+  stake: 5
+  missing: draft_from_plans on PNG plans and a compare() score test (ask Synera which input Level 4 uses)
+- id: level3-multibuilding
+  part: Does it work
+  what: Several buildings joined by walkways (Level 3)
+  owners: [A]
+  stake: 3
+  missing: a walkway model and a test that routes across two buildings
+
+# ---- Interaction (25) -----------------------------------------------------------------------------------
+- id: tricky-users
+  part: Interaction
+  what: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable)
+  owners: [C]
+  stake: 15
+  scenarios: true
+- id: voice
+  part: Interaction
+  what: Voice in and out in the app
+  owners: [D]
+  stake: 5
+  manual: 0.0
+  note: not started
+- id: ui-shows-it
+  part: Interaction
+  what: The app draws routes and highlights what the agent understood, on the floor plan
+  owners: [D]
+  stake: 5
+  manual: 0.0
+  note: not started
+
+# ---- Creativity (10) and Submission demo (10) -----------------------------------------------------------
+- id: level5-addin
+  part: Creativity
+  what: One Level 5 add-in done well (pick it as a team)
+  owners: [A, B, C, D]
+  stake: 10
+  manual: 0.0
+  note: not picked yet
+- id: demo-video
+  part: Submission demo
+  what: Demo video and short technical explanation
+  owners: [D]
+  stake: 10
+  manual: 0.0
+  note: not started
+
+# ---- Health: no points, but every row above depends on them -------------------------------------------
+- id: golden-geometry
+  part: Health
+  what: Geometry functions vs every golden answer
+  owners: [B]
+  stake: 0
+  pytest: [test_geometry_]
+- id: golden-graph
+  part: Health
+  what: Routing, queries and state vs golden answers and Owner A's checks
+  owners: [A]
+  stake: 0
+  pytest: [test_route, test_graph_, test_a1_, test_a2_, test_a3_]
+- id: agent-tools
+  part: Health
+  what: Agent tools vs every golden answer, no model
+  owners: [C]
+  stake: 0
+  pytest: [test_largest_room, test_floor_area_total, test_shared_walls_count, test_room_stacked, test_straight_line_3d, test_errand, test_wide_delivery_count, test_step_free_reachable_count, test_what_if_door]

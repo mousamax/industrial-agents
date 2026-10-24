@@ -1,7 +1,15 @@
-"""Benchmark building_guide on the kit's questions with the judges' scorer (benchmark.score), in parallel.
+"""Benchmark building_guide with the judges' scorer (benchmark.score), in parallel, on three suites:
+
+- benchmark: the scored question kinds (questions.jsonl), exactly as Synera sends them.
+- warmup: the Sunday-style kinds (questions_basic.jsonl: locate, count, route, step-free, closures, tours),
+  with an "Answer:" instruction appended so the same scorer applies. Routes count when the length is
+  within 1% of the best route (the kit's own check) or the agent rightly says there is no route.
+- reworded: the scored kinds in other words (evals/datasets/reworded_<split>.jsonl, made by
+  scripts/synera/make_reworded.py), standing in for the unseen Sunday phrasing.
 
     uv run python -m app.agents.building_guide.bench dev --per-kind 3
-    uv run python -m app.agents.building_guide.bench dev --model balanced --thinking medium --label sonnet-med
+    uv run python -m app.agents.building_guide.bench dev --suite warmup --per-kind 10
+    uv run python -m app.agents.building_guide.bench dev --model smart --thinking medium --label opus-med
     uv run python -m app.agents.building_guide.bench test --submission submission/team_answers.csv
 
 Each run writes evals/reports/bench-<label>.jsonl (reply, tool calls, tokens per question) and prints the
@@ -20,10 +28,11 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from benchmark.score import score_reply
+from benchmark.score import committed_answer, numbers_in, score_reply
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 
 from app import observability
+from app.building.model import load_building
 from app.models import model as resolve_model
 from app.settings import ROOT, get_settings
 
@@ -33,14 +42,70 @@ from .tools import Deps
 REPORTS = ROOT / "evals" / "reports"
 
 
-def load_questions(split: str, per_kind: int | None, kinds: list[str] | None, seed: int = 7) -> list[dict]:
+DATASETS = ROOT / "evals" / "datasets"
+SUITES = ("benchmark", "warmup", "reworded")
+NO_ROUTE = "'Answer: no route' if there is none"
+WARMUP_INSTRUCTIONS = {
+    "locate": "Finish with a line 'Answer: <room name or number>'.",
+    "count": "Finish with a line 'Answer: <number>'.",
+    "route": f"Finish with a line 'Answer: <number>' giving the route length in metres, or {NO_ROUTE}.",
+}
+
+
+def warmup_question(q: dict) -> dict:
+    """A warm-up line in the benchmark's shape: an Answer instruction and a kit-format answer."""
+    a, kind = q["answer"], q["kind"]
+    if kind == "locate":  # like the scored kinds: the room's name or its number (refs are unique)
+        ref = load_building(q["building_id"]).spaces[a["space_id"]].ref
+        answer = {"type": "space", "accept": [a["space_name"], *([ref] if ref else [])], "reject": []}
+    elif kind == "count":
+        answer = {"type": "number", "value": a["count"], "relative_tolerance": 0.0, "absolute_tolerance": 0.0}
+    elif a.get("reachable") is False:
+        answer = {"type": "no_route"}
+    else:
+        answer = {
+            "type": "number",
+            "value": a["optimal_length_m"],
+            "relative_tolerance": 0.01,
+            "absolute_tolerance": 0.05,
+        }
+    instruction = WARMUP_INSTRUCTIONS.get(kind, WARMUP_INSTRUCTIONS["route"])
+    return q | {"question": f"{q['question']} {instruction}", "answer": answer}
+
+
+def score(answer: dict | None, reply: str) -> bool:
+    if not answer:
+        return False
+    if answer["type"] == "no_route":
+        text = committed_answer(reply) or ""
+        return "no route" in text.casefold() and not numbers_in(text)
+    return score_reply(answer, reply)
+
+
+def load_questions(
+    split: str, per_kind: int | None, kinds: list[str] | None, suite: str = "benchmark", seed: int = 7
+) -> list[dict]:
+    data = get_settings().synera_kit_dir / "data" / split
+    if suite == "reworded":
+        path = DATASETS / f"reworded_{split}.jsonl"
+        if not path.exists():
+            raise typer.BadParameter(f"{path} missing: run scripts/synera/make_reworded.py {split}")
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        questions = [q | {"building_dir": str(data / q["building_id"])} for q in lines]
+    else:
+        name = "questions.jsonl" if suite == "benchmark" else "questions_basic.jsonl"
+        questions = [
+            json.loads(line) | {"building_dir": str(path.parent)}
+            for path in sorted(data.glob(f"*/{name}"))
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        if suite == "warmup":
+            questions = [warmup_question(q) for q in questions]
     by_kind: dict[str, list[dict]] = defaultdict(list)
-    for path in sorted((get_settings().synera_kit_dir / "data" / split).glob("*/questions.jsonl")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                q = json.loads(line) | {"building_dir": str(path.parent)}
-                if not kinds or q["kind"] in kinds:
-                    by_kind[q["kind"]].append(q)
+    for q in questions:
+        if not kinds or q["kind"] in kinds:
+            by_kind[q["kind"]].append(q)
     if per_kind:
         rng = random.Random(seed)
         by_kind = {k: rng.sample(v, min(per_kind, len(v))) for k, v in by_kind.items()}
@@ -65,7 +130,7 @@ async def answer_one(agent, q: dict) -> dict:
     return {
         "id": q["id"],
         "kind": q["kind"],
-        "ok": bool(q.get("answer")) and score_reply(q["answer"], reply),
+        "ok": score(q.get("answer"), reply),
         "reply": reply,
         "error": error,
         "tool_calls": calls,
@@ -89,21 +154,58 @@ async def run(questions: list[dict], model_name: str | None, thinking: str, conc
     return await asyncio.gather(*(one(q) for q in questions))
 
 
-def report(results: list[dict]) -> None:
+def summary(results: list[dict]) -> dict:
     by_kind: dict[str, list[bool]] = defaultdict(list)
     for r in results:
         by_kind[r["kind"]].append(r["ok"])
+    return {
+        "correct": sum(r["ok"] for r in results),
+        "total": len(results),
+        "by_kind": {k: [sum(v), len(v)] for k, v in sorted(by_kind.items())},
+        "errors": sum(bool(r["error"]) for r in results),
+        "input_tokens": sum(r["input_tokens"] for r in results),
+        "output_tokens": sum(r["output_tokens"] for r in results),
+    }
+
+
+def report(results: list[dict]) -> None:
+    s = summary(results)
     print()
-    for kind, oks in sorted(by_kind.items()):
-        print(f"{kind:<28} {sum(oks):>3}/{len(oks):<3} {sum(oks) / len(oks):>6.0%}")
-    total = sum(r["ok"] for r in results)
-    tokens = sum(r["input_tokens"] for r in results), sum(r["output_tokens"] for r in results)
-    print(f"{'TOTAL':<28} {total:>3}/{len(results):<3} {total / max(len(results), 1):>6.0%}")
-    print(f"tokens in/out: {tokens[0]:,} / {tokens[1]:,}; errors: {sum(bool(r['error']) for r in results)}")
+    for kind, (ok, n) in s["by_kind"].items():
+        print(f"{kind:<28} {ok:>3}/{n:<3} {ok / n:>6.0%}")
+    print(f"{'TOTAL':<28} {s['correct']:>3}/{s['total']:<3} {s['correct'] / max(s['total'], 1):>6.0%}")
+    print(f"tokens in/out: {s['input_tokens']:,} / {s['output_tokens']:,}; errors: {s['errors']}")
+
+
+def run_suite(
+    split: str = "dev",
+    suite: str = "benchmark",
+    *,
+    per_kind: int | None = None,
+    kinds: list[str] | None = None,
+    model: str | None = None,
+    thinking: str = "low",
+    concurrency: int = 8,
+    label: str | None = None,
+) -> tuple[list[dict], Path]:
+    """Run one suite and save its report; used by `main` and by the scoreboard."""
+    observability.setup()
+    questions = load_questions(split, per_kind, kinds, suite)
+    model_name = resolve_model(model) if model else None
+    label = label or f"{split}-{suite}-{(model or 'balanced')}-{thinking}"
+    print(
+        f"{len(questions)} {suite} questions, model {model_name or resolve_model('balanced')}, thinking {thinking}"
+    )
+    results = asyncio.run(run(questions, model_name, thinking, concurrency))
+    REPORTS.mkdir(parents=True, exist_ok=True)
+    out = REPORTS / f"bench-{label}.jsonl"
+    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in results), encoding="utf-8")
+    return results, out
 
 
 def main(
     split: Annotated[str, typer.Argument(help="dev, train or test")] = "dev",
+    suite: Annotated[str, typer.Option(help="benchmark, warmup or reworded")] = "benchmark",
     per_kind: Annotated[int | None, typer.Option(help="Sample this many questions per kind")] = None,
     kinds: Annotated[list[str] | None, typer.Option("--kind", help="Only these kinds (repeatable)")] = None,
     model: Annotated[str | None, typer.Option(help="Alias (smart, balanced, fast) or model id")] = None,
@@ -112,15 +214,18 @@ def main(
     label: Annotated[str | None, typer.Option(help="Report name")] = None,
     submission: Annotated[Path | None, typer.Option(help="Write question_id,answer CSV here")] = None,
 ) -> None:
-    observability.setup()
-    questions = load_questions(split, per_kind, kinds)
-    model_name = resolve_model(model) if model else None
-    label = label or f"{split}-{(model or 'balanced')}-{thinking}"
-    print(f"{len(questions)} questions, model {model_name or resolve_model('balanced')}, thinking {thinking}")
-    results = asyncio.run(run(questions, model_name, thinking, concurrency))
-    REPORTS.mkdir(parents=True, exist_ok=True)
-    out = REPORTS / f"bench-{label}.jsonl"
-    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in results), encoding="utf-8")
+    if suite not in SUITES:
+        raise typer.BadParameter(f"suite must be one of {SUITES}")
+    results, out = run_suite(
+        split,
+        suite,
+        per_kind=per_kind,
+        kinds=kinds,
+        model=model,
+        thinking=thinking,
+        concurrency=concurrency,
+        label=label,
+    )
     if split != "test":
         report(results)
     if submission:
