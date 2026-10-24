@@ -20,7 +20,7 @@ rows:
   part: Does it work
   what: Area, wall, stacking and 3D questions answered right end to end (dev, judges' scorer)
   owners: [B, C]
-  stake: 14  # 104 of 145 test questions, of ~20 points for the test set
+  stake: 12  # 104 of 145 test questions, of ~20 points for the test set
   bench: benchmark
   kinds: [largest_room, floor_area_total, shared_walls_count, room_stacked, straight_line_3d]
 - id: test-graph
@@ -34,8 +34,14 @@ rows:
   part: Does it work
   what: Sunday-style find, count, route, step-free, closure and tour questions through the agent
   owners: [C, A]
-  stake: 8
+  stake: 6
   bench: warmup
+- id: sunday-answers-json
+  part: Does it work
+  what: 'The Sunday run from the PDF: one command, any building folder + questions.json -> answers.json with item/room ids, valid best routes as node ids, lengths; documented in BENCHMARK.md (no model: deterministic answerer)'
+  owners: [C, A]
+  stake: 5
+  pytest: [test_sunday_]
 - id: synera-route-rule
   part: Does it work
   what: Routes are the best under Synera's announced rule (per-metre stairs/lifts, forklift, bays)
@@ -52,20 +58,26 @@ rows:
   part: Does it work
   what: 12 question kinds Synera hasn't shown, on test buildings, answers computed by code (held out, score only)
   owners: [C]
-  stake: 4
+  stake: 3
   bench: holdout
 - id: level4-from-svg
   part: Does it work
   what: Buildings drafted from SVG floor plans match the truth (Level 4)
   owners: [B]
-  stake: 5
+  stake: 4
   pytest: [test_drafted_, test_draft_]
 - id: level4-from-images
   part: Does it work
   what: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4)
   owners: [B]
-  stake: 5
+  stake: 4
   pytest: [test_png_]
+- id: level4-by-chat
+  part: Does it work
+  what: 'Level 4 "by conversation": the agent''s load_floor_plans tool drafts a building from SVG/PNG plans, shows what it understood, switches after a yes, and every tool works on it'
+  owners: [B, C]
+  stake: 2
+  pytest: [test_chat_build_]
 - id: level3-multibuilding
   part: Does it work
   what: Several buildings joined by walkways, routed as one site (Level 3; site.json, demo site in evals/datasets/sites)
@@ -78,8 +90,14 @@ rows:
   part: Interaction
   what: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable)
   owners: [C]
-  stake: 15
+  stake: 11
   scenarios: true
+- id: walk-directions
+  part: Interaction
+  what: 'Directions a person can follow: turns (left/right, never compass), landmarks, "go around the printer", from geometry (app.building.directions, agent tool walk_directions)'
+  owners: [A, C]
+  stake: 4
+  pytest: [test_directions_]
 - id: voice
   part: Interaction
   what: Voice in and out in the app
@@ -136,3 +154,9 @@ rows:
   owners: [C]
   stake: 0
   pytest: [test_largest_room, test_floor_area_total, test_shared_walls_count, test_room_stacked, test_straight_line_3d, test_errand, test_wide_delivery_count, test_step_free_reachable_count, test_what_if_door]
+- id: todo-open-questions
+  part: Health
+  what: 'Open questions to settle with a teammate: a strict-xfail reminder per question in tests/building/test_todo.py (now: ask Mousa about the closure miss on rooms that share a name)'
+  owners: [A]
+  stake: 0
+  pytest: [test_todo_]

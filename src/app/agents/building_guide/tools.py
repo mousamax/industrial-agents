@@ -30,6 +30,7 @@ from typing import Any, Literal
 from pydantic_ai import ModelRetry, RunContext
 
 from app.building import geometry
+from app.building.directions import directions
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
 from app.building.routing import Constraints, Route
 from app.building.state import AddAsset, AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen, Stamp
@@ -433,7 +434,7 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
         if (floor_id is None or s.floor_id == floor_id) and hit(s.name, s.ref, s.room_type)
     ]
     items = [
-        {"item": a.name, "type": a.type, "in": _label(b, a.space_id), "space_id": a.space_id}
+        {"item": a.name, "id": a.id, "type": a.type, "in": _label(b, a.space_id), "space_id": a.space_id}
         | ({"reported": _reported(reports[a.id], now)} if a.id in reports else {})
         for a in b.assets.values()
         if (floor_id is None or a.floor_id == floor_id) and hit(a.name, a.type)
@@ -664,6 +665,51 @@ def route(
             "stops": [_label(b, s) for s in stops],
             "legs": legs,
             "closed_avoided": sorted(ctx.deps.closed),
+            "highlight": stops,
+        }
+    )
+
+
+def walk_directions(
+    ctx: RunContext[Deps],
+    start: str,
+    destination: str,
+    via: list[str] | None = None,
+    step_free: bool = False,
+    min_width_m: float | None = None,
+) -> str:
+    """Turn-by-turn walking directions a person can follow without looking at a screen: where to turn
+    left or right, what they walk past, and what stands in the way ("go around the printer, keeping it on
+    your left"). Use it when the person wants to be guided ("how exactly", "keep it short", on a headset)
+    after or instead of route. Same arguments as route; closures they reported are avoided.
+
+    Args:
+        start: Where the person is: room name/number, id, item name, or "outside".
+        destination: Where they go (room, item name, "outside").
+        via: Stops to visit in order on the way.
+        step_free: No stairs or steps. Lifts are fine.
+        min_width_m: Every door passed must be at least this wide.
+    """
+    b = ctx.deps.building
+    stops = [_space_id(b, p) for p in [start, *(via or []), destination]]
+    tour = route_graph(b, _constraints(ctx, step_free, min_width_m)).tour(stops)
+    if tour is None:
+        return _json({"reachable": False, "stops": [_label(b, s) for s in stops]})
+    try:
+        legs = [[dataclasses.asdict(step) for step in directions(b, leg)] for leg in tour.legs]
+    except NotImplementedError:  # scaffold: app.building.directions isn't built yet
+        return _json(
+            {
+                "available": False,
+                "note": "Turn-by-turn directions aren't available yet. Use route and describe only the "
+                "spaces and doors it lists; never invent turns or compass directions.",
+            }
+        )
+    return _json(
+        {
+            "reachable": True,
+            "total_length_m": round(tour.length_m, 2),
+            "legs": legs,
             "highlight": stops,
         }
     )
@@ -1059,6 +1105,102 @@ def undo_last_change(ctx: RunContext[Deps]) -> str:
     )
 
 
+def load_floor_plans(ctx: RunContext[Deps], plans: list[str], name: str, confirmed: bool = False) -> str:
+    """Set up a new building from its floor plans (Level 4: "here are the plans, learn the building").
+    First call drafts it and shows what was understood (floors, rooms per floor, doors, stairs and lifts,
+    and every guess to check) without switching; after the person says yes, call again with
+    confirmed=true and every later question is about the new building.
+
+    Args:
+        plans: Paths to the floor plans, one per floor: floor_<level>.svg or .png.
+        name: What people call the building.
+        confirmed: True only after the person agreed to switch to this draft.
+    """
+    from app.building.build import draft_from_plans, validate
+    from app.building.model import parse_building
+
+    d = ctx.deps
+    key = ("load_floor_plans", tuple(str(Path(p).expanduser().resolve()) for p in plans), name)
+    if confirmed:
+        pending = d.pending or {}
+        if pending.get("edit") != key:
+            raise ModelRetry("Draft these plans first (confirmed=false), show the person, and get their yes.")
+        if pending["run_id"] == ctx.run_id:
+            raise ModelRetry("The person hasn't answered yet: ask them, and switch after they say yes.")
+        b = pending["building"]
+        d.state, d.pending, d.here = BuildingState(b), None, None
+        return _json(pending["summary"] | {"status": "done: every question is now about " + b.name})
+
+    if not plans:
+        raise ModelRetry("Pass the floor plan files, one per floor: floor_<level>.svg or .png.")
+    paths = [Path(p).expanduser() for p in plans]
+    missing = [str(p) for p in paths if not p.is_file()]
+    if missing:
+        raise ModelRetry(
+            f"No such file: {', '.join(missing)}. Ask the person for the paths of the floor plans."
+        )
+    try:
+        raw = draft_from_plans(paths, name=name)
+        b = parse_building(raw)
+    except Exception as e:  # unreadable or unsupported plan: let the agent ask for better input
+        raise ModelRetry(
+            f"Couldn't read these plans ({type(e).__name__}: {e}). Plans must be one file per floor, "
+            "named floor_<level>.svg or floor_<level>.png, drawn like the kit's plans."
+        ) from None
+    issues = validate(raw)
+    guesses = Counter((g["field"], g["source"]) for g in raw.get("guesses", []))
+    unsure = sorted(
+        (g for g in raw.get("guesses", []) if g.get("confidence") is not None and g["confidence"] < 0.6),
+        key=lambda g: g["confidence"],
+    )
+    summary = {
+        "building": b.name,
+        "id": b.id,
+        "floors": [
+            {
+                "level": f.level,
+                "name": f.name,
+                "spaces": _kinds(b, f.id),
+                "doors": sum(1 for o in b.openings.values() if o.floor_id == f.id),
+            }
+            for f in b.floors_by_level()
+        ],
+        "entrances": len(b.openings_of(OUTSIDE)),
+        "stairs_and_lifts": [
+            {"kind": k.kind, "floors": [b.floors[f].level for f, _ in k.stops], "guessed": k.synthetic}
+            for k in b.connectors.values()
+        ],
+        "items": len(b.assets),
+    }
+    preview = (
+        summary
+        | {
+            "guesses": [{"field": f, "source": s, "count": n} for (f, s), n in guesses.most_common()],
+            "least_sure": [
+                {
+                    "what": _label(b, g["element_id"]) if g["element_id"] in b.spaces else g["element_id"],
+                    "field": g["field"],
+                    "guess": g["value"],
+                    "confidence": round(g["confidence"], 2),
+                }
+                for g in unsure[:5]
+            ],  # fmt: skip
+            "issues": [f"{i.severity}: {i.message}" for i in issues[:8]]
+            + ([f"... {len(issues) - 8} more"] if len(issues) > 8 else []),
+        }
+    )
+    d.pending = {"edit": key, "run_id": ctx.run_id, "building": b, "summary": summary}
+    return _json(
+        preview
+        | {
+            "status": "proposed: still on " + d.building.name + ", nothing switched yet",
+            "next": "Say briefly what you understood (floors, rooms, stairs/lifts) and which guesses to check, "
+            "then ask the person to confirm. Only after they say yes, call again with the same arguments and "
+            "confirmed=true.",
+        }
+    )
+
+
 TOOLS = [
     find,
     room_details,
@@ -1066,6 +1208,7 @@ TOOLS = [
     count_items,
     distance_3d,
     route,
+    walk_directions,
     nearest,
     reachable_rooms,
     what_if,
@@ -1076,4 +1219,5 @@ TOOLS = [
     item_history,
     building_changes,
     undo_last_change,
+    load_floor_plans,
 ]

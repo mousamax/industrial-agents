@@ -43,10 +43,32 @@ uv run --project .. python -m benchmark.evaluate data/dev --per-kind 3 \
 
 ## Sunday building
 
+A new building folder (kit format, anywhere on disk) plus `questions.json` in, `answers.json` out. One
+command, no manual steps:
+
 ```bash
-git submodule update --remote synera-kit    # pulls Synera's release
-# then run the command they specify on the new building directory (TBD)
+uv run python -m app.agents.building_guide.sunday <building_dir> <questions.json> <answers.json>
+# e.g. uv run python -m app.agents.building_guide.sunday data/sunday/building data/sunday/questions.json answers.json
+# --concurrency 8 (default): questions in flight
 ```
+
+`questions.json` is a list (or `{"questions": [...]}`) of `{"id", "text", "constraints"?}`; constraints
+such as `{"step_free": true}` are passed on to the agent. `answers.json` is a list with one record per
+question id, in input order:
+
+```json
+{"id": "...", "reply": "<full reply>", "answer": "<text after the last 'Answer:'>",
+ "item_id": "<asset id>|null", "space_id": "<space id>|null", "count": 3,
+ "reachable": true, "route": ["<space id>", "..."], "elements": ["<door/stair/lift id>", "..."],
+ "length_m": 42.17}
+```
+
+`route` is the ordered list of spaces (what `docs/synera/ROUTE_SCORING.md` scores; a tour's legs joined),
+`elements` the doors, stairs and lifts used; unreachable gives `reachable: false` and null route/length.
+The fields come from the agent's own tool results, never from its prose. A question that crashes still
+gets a record with `"error"`. **Provisional:** Synera hasn't published their schema yet; once they do,
+change `empty_record`/`to_record` in `src/app/agents/building_guide/sunday.py` (the only place it lives).
+Plumbing test (no model): `uv run pytest tests/building/test_sunday.py -q`.
 
 ## If the Sunday release has several buildings (Level 3)
 

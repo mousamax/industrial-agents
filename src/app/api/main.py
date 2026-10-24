@@ -118,31 +118,47 @@ async def list_buildings(split: str | None = None, source: str | None = None) ->
     manifest = get_settings().synera_kit_dir / "data" / "manifest.csv"
     with manifest.open(encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    return [
-        BuildingInfo(
-            id=r["building_id"],
-            name=r["name"],
-            split=r["split"],
-            source=r["source"],
-            floors=int(r["floors"]),
-            has_lift=r["has_lift"] == "True",
-        )
-        for r in rows
-        if (split is None or r["split"] == split) and (source is None or r["source"] == source)
-    ] + [
-        BuildingInfo(
-            id=b.id,
-            name=b.name,
-            split=info.get("split", "local"),
-            source=b.source,
-            floors=len(b.floors),
-            has_lift=any(c.kind == "lift" for c in b.connectors.values()),
-        )
-        for folder, info in _local_buildings().values()
-        if (split is None or info.get("split", "local") == split)
-        and (source is None or info["source"] == source)
-        for b in [load_building(folder)]
-    ]
+    known = {r["building_id"] for r in rows} | set(_local_buildings())
+    return (
+        [
+            BuildingInfo(
+                id=r["building_id"],
+                name=r["name"],
+                split=r["split"],
+                source=r["source"],
+                floors=int(r["floors"]),
+                has_lift=r["has_lift"] == "True",
+            )
+            for r in rows
+            if (split is None or r["split"] == split) and (source is None or r["source"] == source)
+        ]
+        + [
+            BuildingInfo(
+                id=b.id,
+                name=b.name,
+                split=info.get("split", "local"),
+                source=b.source,
+                floors=len(b.floors),
+                has_lift=any(c.kind == "lift" for c in b.connectors.values()),
+            )
+            for folder, info in _local_buildings().values()
+            if (split is None or info.get("split", "local") == split)
+            and (source is None or info["source"] == source)
+            for b in [load_building(folder)]
+        ]
+        + [
+            BuildingInfo(
+                id=b.id,
+                name=b.name,
+                split="drafted",
+                source=b.source,
+                floors=len(b.floors),
+                has_lift=any(c.kind == "lift" for c in b.connectors.values()),
+            )
+            for b in {d.building.id: d.building for d in _sessions.values()}.values()
+            if split in (None, "drafted") and (source is None or b.source == source) and b.id not in known
+        ]
+    )
 
 
 def _local_buildings() -> dict[str, tuple[Path, dict[str, Any]]]:
@@ -160,7 +176,16 @@ _live: dict[str, BuildingState] = {}
 from the plan again, which is fine for a demo."""
 
 
+def _drafted_in_chat(building_id: str) -> BuildingState | None:
+    """A building a chat set up from floor plans (load_floor_plans): the chat's own state switched to it,
+    so it isn't in `_live` yet. The first request for its id adopts that state, so the map, scanners and
+    every other chat see the same building."""
+    return next((d.state for d in _sessions.values() if d.building.id == building_id), None)
+
+
 def live_state(building_id: str) -> BuildingState:
+    if building_id not in _live and (drafted := _drafted_in_chat(building_id)) is not None:
+        _live[building_id] = drafted
     if building_id not in _live:
         try:
             _live[building_id] = BuildingState(
