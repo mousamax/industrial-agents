@@ -1,6 +1,6 @@
 # Team scoreboard
 
-Generated 2026-10-24T15:11:37+00:00 by mousamax with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-24T15:13:37+00:00 by mousamax with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
 **Team: 56.3 / 100 estimated points.** Stakes are our guess at Synera's split.
 
@@ -18,7 +18,7 @@ Generated 2026-10-24T15:11:37+00:00 by mousamax with `uv run ia scoreboard`. Don
 | Does it work | **sunday-find-and-route**: Sunday-style find, count, route, step-free, closure and tour questions through the agent | Mousa, Magnus | ██████████ 100% (368/369 questions) | 10.0 / 10 | route_with_closure 28/29 |
 | Does it work | **synera-route-rule**: Routes are the best under Synera's announced rule (per-metre stairs/lifts, forklift, bays) | Magnus | ████████░░ 80% (160/200 tests) | 6.4 / 8 | test_a4_3_stairs_and_lift_cost_per_metre (xfail) ×30, test_a4_3_stairs_and_lift_cost_per_metre (skipped) ×10 |
 | Does it work | **unseen-wording**: The scored kinds asked in other words (reworded dev questions) | Mousa | ██████████ 100% (45/45 questions) | 4.0 / 4 | – |
-| Does it work | **level4-from-svg**: Buildings drafted from SVG floor plans match the truth (Level 4) | Vadim | ██████████ 100% (7/7 tests) | 5.0 / 5 | – |
+| Does it work | **level4-from-svg**: Buildings drafted from SVG floor plans match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
 | Does it work | **level4-from-images**: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4) | Vadim | ░░░░░░░░░░ 0% (no eval yet) | 0.0 / 5 | draft_from_plans on PNG plans and a compare() score test (ask Synera which input Level 4 uses) |
 | Does it work | **level3-multibuilding**: Several buildings joined by walkways (Level 3) | Magnus | ░░░░░░░░░░ 0% (no eval yet) | 0.0 / 3 | a walkway model and a test that routes across two buildings |
 | Interaction | **tricky-users**: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable) | Mousa | ███████░░░ 73% (8/11 scenarios) | 10.9 / 15 | first-day-coffee, vague-press, add-a-door |
