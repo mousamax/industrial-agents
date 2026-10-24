@@ -4,6 +4,7 @@
 // Fallback (tools that don't send `view` yet): read ids, routes and "no route" errors out of the raw output.
 import type { RouteSegment, ShowRoute, ViewCommand, XY } from '../../api/types'
 import { idsIn, type SceneIndex } from '../../lib/sceneIndex'
+import { walkInside } from '../../lib/walkInside'
 
 export interface ToolEffect {
   /** Commands the tool sent explicitly; when non-empty, the fallback fields below are ignored. */
@@ -72,8 +73,11 @@ function dist(a: XY, b: XY): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1])
 }
 
-/** The door between two neighbouring spaces on one floor, closest to the straight line between anchors. */
-export function doorBetween(index: SceneIndex, a: string, b: string): XY | null {
+/**
+ * The door between two neighbouring spaces on one floor: one the route says it used (`used`, its
+ * element_path) if any, else the one closest to the straight line between anchors.
+ */
+export function doorBetween(index: SceneIndex, a: string, b: string, used: ReadonlySet<string> = new Set()): XY | null {
   const sa = index.spaceById.get(a)
   const sb = index.spaceById.get(b)
   if (!sa || !sb || sa.floor_id !== sb.floor_id) return null
@@ -82,7 +86,7 @@ export function doorBetween(index: SceneIndex, a: string, b: string): XY | null 
   for (const o of index.openingsByFloor.get(sa.floor_id) ?? []) {
     if (!o.space_ids.includes(a) || !o.space_ids.includes(b)) continue
     const p = o.position as XY
-    const cost = dist(sa.anchor as XY, p) + dist(p, sb.anchor as XY)
+    const cost = (used.has(o.id) ? 0 : 1e6) + dist(sa.anchor as XY, p) + dist(p, sb.anchor as XY)
     if (cost < bestCost) {
       bestCost = cost
       best = p
@@ -121,11 +125,14 @@ function onCorridorAxis(s: { polygon: readonly (readonly [number, number])[] }, 
 }
 
 /**
- * Per-floor polylines through the nodes in order: space anchors, plus door positions (`door:<id>` nodes,
- * or the shared door looked up between consecutive spaces). Rectangular pass-through corridors follow their
+ * Per-floor polylines through the nodes in order: door positions (`door:<id>` nodes, or the door between
+ * consecutive spaces, preferring the ones in `elements`, the route's element_path), and inside each space the
+ * walk from where it enters to where it leaves, round corners rather than through walls; a space's anchor only
+ * where the route starts, ends or takes stairs or a lift. Rectangular pass-through corridors follow their
  * centre line (door -> axis -> axis -> door). A new segment starts when the floor changes.
  */
-export function segmentsFor(nodes: string[], index: SceneIndex): RouteSegment[] {
+export function segmentsFor(nodes: string[], index: SceneIndex, elements: string[] = []): RouteSegment[] {
+  const used = new Set(elements)
   // Expand bare space-to-space transitions with their connecting door position when on the same floor.
   const expanded: { kind: 'space' | 'door'; id: string; floorId: string; pos: XY }[] = []
   let prevSpaceId: string | null = null
@@ -140,7 +147,7 @@ export function segmentsFor(nodes: string[], index: SceneIndex): RouteSegment[] 
     const space = index.spaceById.get(node)
     if (!space) continue
     if (prevSpaceId && !prevWasDoor) {
-      const doorPos = doorBetween(index, prevSpaceId, node)
+      const doorPos = doorBetween(index, prevSpaceId, node, used)
       if (doorPos) expanded.push({ kind: 'door', id: `${prevSpaceId}-${node}`, floorId: space.floor_id, pos: doorPos })
     }
     expanded.push({ kind: 'space', id: space.id, floorId: space.floor_id, pos: space.anchor as XY })
@@ -164,17 +171,22 @@ export function segmentsFor(nodes: string[], index: SceneIndex): RouteSegment[] 
     const space = index.spaceById.get(item.id)
     const prev = expanded[i - 1]
     const next = expanded[i + 1]
-    const viaConn = (prev && prev.kind === 'space') || (next && next.kind === 'space')
-    if (!space || i === 0 || i === expanded.length - 1 || viaConn) {
+    const enters = prev?.kind === 'door' && prev.floorId === item.floorId ? prev.pos : null
+    const leaves = next?.kind === 'door' && next.floorId === item.floorId ? next.pos : null
+    if (!space || (!enters && !leaves)) {
       push(item.floorId, item.pos)
       continue
     }
-    if (isCorridorLike(space) && prev?.kind === 'door' && next?.kind === 'door') {
-      push(item.floorId, onCorridorAxis(space, prev.pos))
-      push(item.floorId, onCorridorAxis(space, next.pos))
-    } else {
-      push(item.floorId, item.pos)
+    if (enters && leaves && isCorridorLike(space)) {
+      push(item.floorId, onCorridorAxis(space, enters))
+      push(item.floorId, onCorridorAxis(space, leaves))
+      continue
     }
+    const from = enters ?? item.pos
+    const to = leaves ?? item.pos
+    if (!enters) push(item.floorId, from)
+    for (const p of walkInside(space.polygon as XY[], from, to)) push(item.floorId, p)
+    if (!leaves) push(item.floorId, to)
   }
   return segments
 }
@@ -187,6 +199,9 @@ function routeFromLegs(data: Rec, index: SceneIndex): ShowRoute | null {
     const p = pathIds(l.space_path) ?? []
     return i ? p.slice(1) : p // each leg starts where the previous one ended
   })
+  const elements = legs.flatMap((l) => (Array.isArray(l.element_path) ? l.element_path : [])).filter(
+    (e): e is string => typeof e === 'string',
+  )
   const spaceIds = nodes.filter((id) => index.spaceById.has(id))
   if (spaceIds.length < 2) return null
   const length =
@@ -197,7 +212,7 @@ function routeFromLegs(data: Rec, index: SceneIndex): ShowRoute | null {
   const steps = legs
     .flatMap((l) => (Array.isArray(l.steps) ? l.steps : []))
     .filter((s): s is string => typeof s === 'string' && !/^through the /i.test(s))
-  return { kind: 'route', segments: segmentsFor(nodes, index), length_m: length, space_ids: spaceIds, steps }
+  return { kind: 'route', segments: segmentsFor(nodes, index, elements), length_m: length, space_ids: spaceIds, steps }
 }
 
 /** A ShowRoute built from an output that looks like a route (ordered space path, length in metres). */
@@ -225,9 +240,10 @@ export function routeFromData(data: unknown, index: SceneIndex | null, depth = 0
   const length = lengthKey ? (data[lengthKey] as number) : null
   if (length === null && spaceIds.length < 2) return null
   const steps = ['steps', 'directions'].map((k) => data[k]).find(Array.isArray)
+  const elements = (pathIds(data.element_path) ?? []).filter((id) => index.openingById.has(id))
   return {
     kind: 'route',
-    segments: segmentsFor(nodes, index),
+    segments: segmentsFor(nodes, index, elements),
     length_m: length ?? 0,
     space_ids: spaceIds,
     steps: steps?.filter((s): s is string => typeof s === 'string') ?? [],
