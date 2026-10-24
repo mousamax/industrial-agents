@@ -156,7 +156,9 @@ class BuildingState:
             return f"the {o.kind} between {first} and {second}"
         if element_id in b.spaces:
             return b.label(element_id)
-        raise ValueError(f"unknown element {element_id!r}: give an opening, stair/lift or space id")
+        if element_id in b.walkways:
+            return f"the {b.walkways[element_id].name} (walkway)"
+        raise ValueError(f"unknown element {element_id!r}: give an opening, stair/lift, walkway or space id")
 
     @staticmethod
     def _door_place(b: Building, edit: AddDoor) -> tuple[str, XY]:

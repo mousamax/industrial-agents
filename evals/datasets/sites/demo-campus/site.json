@@ -1,0 +1,28 @@
+{
+  "site": {
+    "id": "demo-campus",
+    "name": "Demo campus: Hörsaalzentrum 024 + Fertigung Ost 27",
+    "note": "Level 3 demo and test site: two kit buildings joined by outdoor walkways (lengths are ours)."
+  },
+  "buildings": ["proc-campus-dev-000", "proc-factory-dev-003"],
+  "walkways": [
+    {
+      "id": "demo-campus-W1",
+      "name": "Covered walkway",
+      "from": "proc-campus-dev-000-F0-O0028",
+      "to": "proc-factory-dev-003-F0-O0054",
+      "length_m": 120.0,
+      "step_free": true,
+      "width_m": 2.5
+    },
+    {
+      "id": "demo-campus-W2",
+      "name": "Service road",
+      "from": "proc-campus-dev-000-F0-O0029",
+      "to": "proc-factory-dev-003-F0-O0020",
+      "length_m": 150.0,
+      "step_free": true,
+      "width_m": 6.0
+    }
+  ]
+}

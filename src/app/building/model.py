@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 from shapely.geometry import Point, Polygon
 
-from app.settings import get_settings
+from app.settings import ROOT, get_settings
 
 OUTSIDE = "outside"
 
@@ -108,6 +108,19 @@ class Connector:
 
 
 @dataclass(frozen=True)
+class Walkway:
+    """Level 3: an outdoor link between entrances of two buildings on one site (site.json). Walked like a
+    corridor of `length_m`; the only way between buildings (there is no free way round the outside)."""
+
+    id: str
+    name: str
+    opening_ids: tuple[str, str]  # an entrance of each building
+    length_m: float
+    step_free: bool = True
+    width_m: float | None = None  # None: no limit
+
+
+@dataclass(frozen=True)
 class Asset:
     id: str
     name: str
@@ -135,6 +148,8 @@ class Building:
     assets: dict[str, Asset]
     raw: dict[str, Any] = field(repr=False)
     """The original building.json, untouched. Export edits through app.building.state, not by mutating this."""
+    walkways: dict[str, Walkway] = field(default_factory=dict)
+    """Level 3 sites only (load_building on a folder with site.json); empty for a single building."""
 
     # ---- indexes -------------------------------------------------------------------------------------
 
@@ -243,10 +258,10 @@ class Building:
 
 
 def building_dir(reference: str | Path) -> Path:
-    """A building directory, or a building id looked up in synera-kit/data/{train,dev,test}/."""
-    path = Path(reference)
-    if (path / "building.json").exists():
-        return path
+    """A building (or site) directory, or a building id looked up in synera-kit/data/{train,dev,test}/."""
+    for path in (Path(reference), ROOT / str(reference)):  # a folder, also relative to the repo root
+        if (path / "building.json").exists() or (path / "site.json").exists():
+            return path
     matches = sorted(get_settings().synera_kit_dir.glob(f"data/*/{reference}/building.json"))
     if not matches:
         raise FileNotFoundError(f"no building {reference!r} (is the synera-kit submodule checked out?)")
@@ -324,9 +339,65 @@ def parse_building(raw: dict[str, Any]) -> Building:
 
 @cache
 def _load(path: str) -> Building:
+    if path.endswith("site.json"):
+        return load_site(Path(path))
     return parse_building(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
 def load_building(reference: str | Path) -> Building:
-    """Load (cached) a building by kit id or directory. The result is shared: treat it as read-only."""
-    return _load(str((building_dir(reference) / "building.json").resolve()))
+    """Load (cached) a building by kit id or directory, or a Level 3 site (a directory with site.json).
+    The result is shared: treat it as read-only."""
+    folder = building_dir(reference)
+    name = "site.json" if (folder / "site.json").exists() else "building.json"
+    return _load(str((folder / name).resolve()))
+
+
+def load_site(path: Path) -> Building:
+    """Level 3: several buildings and the walkways between them, as one Building.
+
+    site.json = {"site": {"id", "name"}, "buildings": [kit id or folder, ...], "walkways": [{"id", "name",
+    "from": entrance opening id, "to": entrance opening id, "length_m", "step_free", "width_m"}]}. Ids stay
+    as they are (kit ids already start with the building id); floor names get the building's name, so
+    "Ground floor" isn't ambiguous. Without length_m a walkway is the straight line between its two doors,
+    which is only right when the buildings share one coordinate frame: give the length when you know it.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    parts = [
+        load_building(path.parent / ref if (path.parent / ref).exists() else ref) for ref in raw["buildings"]
+    ]
+    merged: dict[str, dict] = {"floors": {}, "spaces": {}, "openings": {}, "connectors": {}, "assets": {}}
+    for b in parts:
+        merged["floors"] |= {
+            fid: Floor(f.id, f.level, f"{b.name} · {f.name}", f.elevation_m, f.height_m)
+            for fid, f in b.floors.items()
+        }
+        for key in ("spaces", "openings", "connectors", "assets"):
+            clash = merged[key].keys() & getattr(b, key).keys()
+            if clash:
+                raise ValueError(f"{b.id}: {key} ids also used by another building: {sorted(clash)[:3]}")
+            merged[key] |= getattr(b, key)
+    walkways = {}
+    for w in raw.get("walkways", []):
+        ends = (w["from"], w["to"])
+        for end in ends:
+            if end not in merged["openings"] or not merged["openings"][end].is_entrance:
+                raise ValueError(f"walkway {w['id']}: {end!r} is not an entrance of a site building")
+        a, c = (merged["openings"][e].position for e in ends)
+        length = (
+            float(w["length_m"])
+            if w.get("length_m") is not None
+            else ((a[0] - c[0]) ** 2 + (a[1] - c[1]) ** 2) ** 0.5
+        )
+        walkways[w["id"]] = Walkway(
+            w["id"], w.get("name", w["id"]), ends, length, w.get("step_free", True), w.get("width_m")
+        )
+    info = raw.get("site", {})
+    return Building(
+        id=info.get("id", path.parent.name),
+        name=info.get("name", path.parent.name),
+        source="site",
+        info=info | {"buildings": [b.id for b in parts]},
+        raw=raw,
+        walkways=walkways,
+        **merged,
+    )

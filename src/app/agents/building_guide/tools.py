@@ -87,17 +87,26 @@ def _key(text: str) -> str:
 
 
 def floor_of(b: Building, floor: str | int) -> Floor:
-    """A floor from its level (2, -1), name ("Floor 2", "the ground floor", "Basement 1") or id."""
-    text = str(floor).strip()
-    text = re.sub(r"^(on |at )?the ", "", text.casefold())
-    if re.fullmatch(r"-?\d+", text) and (f := b.floor_at_level(int(text))):
-        return f
-    if (fid := b._floor_id(text)) or (fid := b._floor_id(str(floor))):
-        return b.floors[fid]
-    if m := re.fullmatch(r"(?:floor|level)\s*(-?\d+)", text):
-        if f := b.floor_at_level(int(m.group(1))):
-            return f
-    names = ", ".join(f"{f.level} = {f.name}" for f in b.floors_by_level())
+    """A floor from its level (2, -1), name ("Floor 2", "the ground floor", "Basement 1") or id. On a
+    Level 3 site floor names carry the building ("Fertigung Ost 27 · Ground floor"): a bare level or name
+    that fits floors in several buildings is a question back, never a silent pick."""
+    if str(floor) in b.floors:
+        return b.floors[str(floor)]
+    text = re.sub(r"^(on |at )?the ", "", str(floor).strip().casefold())
+    level = re.fullmatch(r"(?:floor|level)?\s*(-?\d+)", text)
+    hits = [
+        f
+        for f in b.floors_by_level()
+        if f.name.casefold() == text
+        or f.name.casefold().endswith(f" · {text}")
+        or (level is not None and f.level == int(level.group(1)))
+    ]
+    exact = [f for f in hits if f.name.casefold() == text]
+    if len(exact) == 1 or len(hits) == 1:
+        return (exact or hits)[0]
+    names = ", ".join(f"{f.level} = {f.name}" for f in (hits or b.floors_by_level()))
+    if hits:
+        raise ModelRetry(f"{floor!r} fits several floors: {names}. Pass the floor's full name.")
     raise ModelRetry(f"No floor {floor!r}. Floors: {names}.")
 
 
@@ -157,9 +166,14 @@ def _type_of(text: str, known: set[str], what: str) -> str:
 
 def element_of(b: Building, text: str) -> str:
     """A lift, staircase, door or room id from its name or id."""
-    if text in b.connectors or text in b.openings or text in b.spaces:
+    if text in b.connectors or text in b.openings or text in b.spaces or text in b.walkways:
         return text
     needle = text.strip().casefold()
+    walkways = [
+        w.id for w in b.walkways.values() if needle in (w.name.casefold(), f"the {w.name.casefold()}")
+    ]
+    if len(walkways) == 1:
+        return walkways[0]
     named = [k.id for k in b.connectors.values() if k.name.casefold() == needle]
     if len(named) == 1:
         return named[0]
@@ -232,7 +246,24 @@ def overview(b: Building) -> dict:
             for k in b.connectors.values()
         ],
         "entrances_into": [_label(b, sid) for sid in entrances],
-    }
+    } | (
+        {
+            "site_buildings": b.info.get("buildings", []),
+            "walkways": [
+                {
+                    "name": w.name,
+                    "id": w.id,
+                    "length_m": w.length_m,
+                    "step_free": w.step_free,
+                    "width_m": w.width_m,
+                    "joins": [_label(b, b.openings[o].other_side(OUTSIDE)) for o in w.opening_ids],
+                }
+                for w in b.walkways.values()
+            ],
+        }
+        if b.walkways
+        else {}
+    )
 
 
 # ---- tools: look things up -------------------------------------------------------------------------------
@@ -434,6 +465,11 @@ def _steps(b: Building, route: Route) -> list[str]:
         if here == OUTSIDE:
             steps.append(
                 "leave the building through the entrance" if element in b.openings else "leave the building"
+            )
+        elif element in b.walkways:
+            w = b.walkways[element]
+            steps.append(
+                f"leave the building and follow the {w.name} ({w.length_m:g} m outside) into {_label(b, here)}"
             )
         elif element in b.connectors:
             k = b.connectors[element]

@@ -47,3 +47,21 @@ uv run --project .. python -m benchmark.evaluate data/dev --per-kind 3 \
 git submodule update --remote synera-kit    # pulls Synera's release
 # then run the command they specify on the new building directory (TBD)
 ```
+
+## If the Sunday release has several buildings (Level 3)
+
+Put a `site.json` next to them and point the runner at the site folder: every tool, route and answer then
+works across buildings, joined only by the walkways you list (there is no free way round the outside).
+
+```json
+{
+  "site": {"id": "sunday-site", "name": "…"},
+  "buildings": ["<building folder or kit id>", "…"],
+  "walkways": [{"id": "W1", "name": "Covered walkway", "from": "<entrance opening id>", "to": "<entrance opening id>",
+                "length_m": 120.0, "step_free": true, "width_m": 2.5}]
+}
+```
+
+Without `length_m` a walkway is the straight line between its two entrance doors, which is only right when
+the buildings share one coordinate frame. Example and tests: `evals/datasets/sites/demo-campus`,
+`tests/building/test_level3.py`.

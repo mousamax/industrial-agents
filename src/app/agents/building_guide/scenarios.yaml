@@ -128,3 +128,16 @@ scenarios:
   expect:
   - Before changing the plan, says what it understood (which two rooms, on Floor 2) and what the door would change, and asks to confirm.
   - After "Yes, do it", the door is really added to the building (later routes can use it) and it says so; it never claims a change it did not make.
+
+- name: cross-building-wheelchair
+  building: evals/datasets/sites/demo-campus
+  persona: Wheelchair user on a two-building site (Level 3), then the walkway closes.
+  turns:
+  - I'm in Lab 3.06 in the lecture centre and use a wheelchair. How do I get to the factory kitchen with the coffee machine on its ground floor?
+  - The covered walkway is closed today. Can I still get there?
+  checks:
+  - {turn: 1, tool: route, args: {step_free: true}}
+  - {turn: 2, tool: set_closed}
+  expect:
+  - Turn 1 gives a step-free route from Lab 3.06 across to a factory kitchen with a coffee machine, naming the walkway it uses between the buildings.
+  - Turn 2 says there is no step-free way now (the other link starts at an entrance with steps), instead of inventing one.

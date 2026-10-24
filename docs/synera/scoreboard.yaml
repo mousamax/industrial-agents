@@ -68,10 +68,10 @@ rows:
   pytest: [test_png_]
 - id: level3-multibuilding
   part: Does it work
-  what: Several buildings joined by walkways (Level 3)
+  what: Several buildings joined by walkways, routed as one site (Level 3; site.json, demo site in evals/datasets/sites)
   owners: [A]
   stake: 3
-  missing: a walkway model and a test that routes across two buildings
+  pytest: [test_level3_]
 
 # ---- Interaction (25) -----------------------------------------------------------------------------------
 - id: tricky-users
