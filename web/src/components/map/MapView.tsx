@@ -1,5 +1,5 @@
-// Indoor map of the current floor, Google Maps style (2D). Own pan/zoom camera: the world <g> transform and
-// the --inv counter-scale variable are written straight to the DOM every frame, so React only re-renders
+// Indoor map of the current floor, Google Maps style (2D). Own pan/zoom camera: the SVG viewBox and
+// marker counter-scales are written straight to the DOM every frame, so React only re-renders
 // when the zoom crosses a detail threshold (labels, asset dots), never per pan frame.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ShowRoute } from '../../api/types'
@@ -132,18 +132,29 @@ export function MapView() {
     [],
   )
 
+  // The camera is the SVG viewBox and markers are counter-scaled with SVG transform attributes, never CSS
+  // transforms: Firefox draws a CSS-transformed group as a bitmap and then enlarges it, which blurs the map.
+  const counterScale = useCallback(() => {
+    const world = worldRef.current
+    if (!world) return
+    const inv = String(1 / cam.current.k)
+    const scale = `scale(${inv})`
+    if (world.dataset.inv === inv && !world.querySelector('[data-cs]:not([transform])')) return
+    world.dataset.inv = inv
+    for (const el of world.querySelectorAll('[data-cs]')) el.setAttribute('transform', scale)
+  }, [])
+
   const apply = useCallback((settle = false) => {
     const { k, tx, ty } = cam.current
-    const world = worldRef.current
-    if (world) {
-      world.setAttribute('transform', `translate(${tx} ${ty}) scale(${k})`)
-      world.style.setProperty('--inv', String(1 / k))
-    }
+    const svg = svgRef.current
+    const { w, h } = size.current
+    if (svg && w && h) svg.setAttribute('viewBox', `${-tx / k} ${-ty / k} ${w / k} ${h / k}`)
+    counterScale()
     if (settle || Math.abs(Math.log(k / zoomKRef.current)) > 0.18) {
       zoomKRef.current = k
       setZoomK(k)
     }
-  }, [])
+  }, [counterScale])
 
   const stop = useCallback(() => cancelAnimationFrame(raf.current), [])
 
@@ -478,6 +489,8 @@ export function MapView() {
   useLayoutEffect(() => {
     if (geo) apply()
   }, [geo, apply])
+  // Markers mounted by a later render (labels appearing on zoom, a new pin) need their counter-scale too.
+  useLayoutEffect(() => counterScale())
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-map-bg select-none">

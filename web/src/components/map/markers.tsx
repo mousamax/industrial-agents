@@ -1,15 +1,13 @@
-// Screen-size markers drawn inside the world group. Each sits at a world point and is counter-scaled
-// with the CSS variable --inv (= 1 / zoom) that MapView sets on the overlay group every frame.
-import type { CSSProperties, ReactNode } from 'react'
+// Screen-size markers drawn inside the world group. Each sits at a world point inside a `data-cs` group that
+// MapView counter-scales (transform="scale(1 / zoom)") whenever the camera moves.
+import type { ReactNode } from 'react'
 import { ArrowUpDown, Coffee, DoorOpen, Toilet } from 'lucide-react'
 import type { PoiKind, Pt } from './geometry'
-
-const COUNTER_SCALE: CSSProperties = { transform: 'scale(var(--inv, 1))' }
 
 export function At({ p, children }: { p: Pt; children: ReactNode }) {
   return (
     <g transform={`translate(${p[0]} ${p[1]})`}>
-      <g style={COUNTER_SCALE}>{children}</g>
+      <g data-cs="">{children}</g>
     </g>
   )
 }

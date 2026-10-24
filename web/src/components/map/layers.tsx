@@ -112,7 +112,7 @@ export const AssetDots = memo(function AssetDots({ geo, level }: { geo: FloorGeo
         .filter((a) => a.detail <= level)
         .map((a) => (
           <g key={a.id} transform={`translate(${a.p[0]} ${a.p[1]})`} data-asset={a.id} style={{ cursor: 'pointer' }}>
-            <g style={{ transform: 'scale(var(--inv, 1))' }}>
+            <g data-cs="">
               <circle r={11} fill="transparent" />
               <circle r={3.5} fill={ASSET_COLOR[a.category] ?? '#a0a5ab'} stroke="#fff" strokeWidth={1.5} />
             </g>
@@ -138,7 +138,7 @@ export function HighlightDots({ points }: { points: { id: string; p: Pt; tappabl
     <g>
       {points.map(({ id, p, tappable }) => (
         <g key={id} transform={`translate(${p[0]} ${p[1]})`} data-asset={tappable ? id : undefined}>
-          <g style={{ transform: 'scale(var(--inv, 1))' }}>
+          <g data-cs="">
             <circle r={12} fill="transparent" />
             <circle r={9} fillOpacity={0.2} style={{ fill: 'var(--color-accent)' }} />
             <circle r={5} stroke="#fff" strokeWidth={2} style={{ fill: 'var(--color-accent)' }} />
