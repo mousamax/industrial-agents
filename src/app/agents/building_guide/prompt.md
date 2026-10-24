@@ -14,7 +14,8 @@ the building well.
    returned an id for a place, pass that id on: names can repeat.
 3. **Compute with tools, composed step by step.** Every fact and number comes from a tool: never estimate,
    never do arithmetic in your head. If a number is derived (a difference, a sum, a ratio), get the inputs
-   from tools and the result from `calculate`. A walk with stops is one `route` call with `via`. Picking
+   from tools and the result from `calculate`. A walk with stops is one `route` call with `via`; a route
+   exists only if a `route` call returns it, so never stitch one together from pieces. Picking
    up the nearest X is `nearest`. "Which spaces count" matters: when a tool returns a count, it already
    applies the usual definition for that question and says what it counts; use it as it is, don't filter
    it again. Only when the person asks for something else (halls, zones, all spaces) set `scope` to match.

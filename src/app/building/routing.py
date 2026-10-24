@@ -16,6 +16,8 @@ The route model is the one the judges grade with (synera-kit 1.1.0, README secti
   only a start or an end (distances_from([OUTSIDE]) = walk to the nearest entrance), never passed through.
 - Step-free drops stairs and openings with step_free False; closed openings, connectors and spaces are
   dropped; ours adds min_width_m (openings narrower than the load are dropped).
+- Level 3 sites (model.load_site): a walkway joins an entrance of one building to an entrance of another
+  at its length, under the same constraints; it is the only way between buildings.
 The geometry of walking inside one space is the kit's own reference code (starter_agent.building_map:
 door_landing, walking_lengths), imported rather than copied, so the walk is graded the way it's computed.
 
@@ -37,7 +39,7 @@ from functools import lru_cache
 from shapely.geometry import Polygon
 from starter_agent.building_map import door_landing, walking_lengths
 
-from app.building.model import OUTSIDE, Building, Connector, Opening, Space
+from app.building.model import OUTSIDE, Building, Connector, Opening, Space, Walkway
 from app.settings import ROOT
 
 WALK_CACHE = ROOT / ".cache" / "walks"
@@ -192,6 +194,10 @@ class RouteGraph:
                 rise = abs(elevations[high_floor] - elevations[low_floor])
                 cost = LIFT_FIXED_M + LIFT_M_PER_RISE * rise if is_lift else STAIRS_M_PER_RISE * rise
                 self._add_edge(low, high, cost, via=k.id)
+        for w in b.walkways.values():  # Level 3: entrance to entrance between buildings
+            first, second = w.opening_ids
+            if _usable(w, c) and first in open_doors and second in open_doors:
+                self._add_edge(DOOR_PREFIX + first, DOOR_PREFIX + second, w.length_m, via=w.id)
 
     def _sources(self, node: str) -> list[str]:
         """Graph nodes a route starts from: the space, or every open entrance for OUTSIDE."""
@@ -334,11 +340,14 @@ def _step_allowed(b: Building, a: str, z: str, c: Constraints) -> bool:
     return any(_usable(element, c) for element in _connections(b).get(frozenset((a, z)), ()))
 
 
-def _usable(element: Opening | Connector, c: Constraints) -> bool:
-    """The one rule for which doors, stairs and lifts the constraints allow: RouteGraph and validate_route."""
+def _usable(element: Opening | Connector | Walkway, c: Constraints) -> bool:
+    """The one rule for which doors, stairs, lifts and walkways the constraints allow: RouteGraph and
+    validate_route. A walkway without a width has no width limit."""
     if element.id in c.closed or (c.step_free and not element.step_free):
         return False
-    return isinstance(element, Connector) or c.min_width_m is None or element.width_m >= c.min_width_m
+    if isinstance(element, Connector) or c.min_width_m is None or element.width_m is None:
+        return True
+    return element.width_m >= c.min_width_m
 
 
 _CONNECTIONS: dict[int, tuple[Building, dict[frozenset[str], list[Opening | Connector]]]] = {}
@@ -355,6 +364,9 @@ def _connections(b: Building) -> dict[frozenset[str], list[Opening | Connector]]
     for k in b.connectors.values():
         for (_, x), (_, y) in itertools.combinations(k.stops, 2):
             pairs[frozenset((x, y))].append(k)
+    for w in b.walkways.values():
+        x, y = (b.openings[o].other_side(OUTSIDE) for o in w.opening_ids)
+        pairs[frozenset((x, y))].append(w)
     if len(_CONNECTIONS) >= 32:
         _CONNECTIONS.pop(next(iter(_CONNECTIONS)))
     _CONNECTIONS[id(b)] = (b, pairs)

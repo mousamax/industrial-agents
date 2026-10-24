@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T18:35:49+00:00",
+   "at": "2026-10-24T19:06:20+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,8 +45,8 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2124510,
-   "output_tokens": 34535
+   "input_tokens": 2159063,
+   "output_tokens": 34408
   },
   "warmup": {
    "at": "2026-10-24T18:36:52+00:00",
@@ -133,11 +133,11 @@
    "output_tokens": 11271
   },
   "scenarios": {
-   "at": "2026-10-24T18:41:59+00:00",
+   "at": "2026-10-24T19:05:39+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 10,
-   "total": 11,
+   "correct": 11,
+   "total": 12,
    "failing": [
     "hands-full-voice"
    ]
