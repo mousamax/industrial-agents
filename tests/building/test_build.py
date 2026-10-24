@@ -18,7 +18,8 @@ from typing import Any
 import pytest
 from shapely.geometry import Polygon
 
-from app.building.build import compare, draft_from_plans, validate
+from app.building import geometry
+from app.building.build import compare, diff, draft_from_plans, validate
 from app.building.model import OUTSIDE, building_dir, load_building
 from app.settings import get_settings
 
@@ -303,3 +304,108 @@ def test_png_metres_per_pixel_sets_the_scale():
         return sum(Polygon(s["polygon"]).area for s in drafted["spaces"])
 
     assert total_area(0.1) / total_area(0.05) == pytest.approx(4.0, rel=0.01)
+
+
+# ---- diff: what changed between two versions of a building ---------------------------------------------------
+
+
+def kinds(changes) -> list[str]:
+    return sorted(c.kind for c in changes)
+
+
+def rectangle_rooms(raw: dict[str, Any], floor_id: str) -> list[dict[str, Any]]:
+    return [
+        s for s in raw["spaces"]
+        if s["floor_id"] == floor_id and s["type"] == "room" and len(s["polygon"]) == 4
+    ]  # fmt: skip
+
+
+def test_diff_of_a_building_with_itself_is_empty_wherever_it_sits():
+    truth = raw_copy(FACTORY)
+    assert diff(truth, copy.deepcopy(truth)) == []
+    assert diff(truth, moved(truth, 1000.0, -50.0)) == []  # drafts from plans have arbitrary origins
+    assert diff(truth, moved(truth, 1000.0, -50.0), align=False)  # without aligning, everything "moved"
+
+
+def test_diff_finds_edits_made_through_building_state():
+    from app.building.state import AddDoor, BuildingState, MoveAsset
+
+    b = load_building(FACTORY)
+    machine = next(a for a in b.assets.values() if a.category == "machine")
+    office = next(s for s in b.spaces.values() if s.type == "room" and s.floor_id == machine.floor_id
+                  and s.id != machine.space_id)  # fmt: skip
+    first, second = next(
+        (s.id, other)
+        for s in b.spaces.values()
+        if s.type == "room"
+        for other in geometry.shared_wall_rooms(b, s.id)
+        if not any(set(o.space_ids) == {s.id, other} for o in b.openings_of(s.id))
+    )
+    state = BuildingState(b)
+    state.apply(MoveAsset(machine.id, office.id))
+    state.apply(AddDoor(first, second))
+    changes = diff(b.raw, state.export())
+    assert kinds(changes) == ["asset_moved", "door_added"]
+    move = next(c for c in changes if c.kind == "asset_moved")
+    assert move.before_ids == (machine.id,) and move.category == "machine"
+    assert office.name in move.text
+
+
+def test_diff_lists_every_kind_of_change_and_nothing_else():
+    before = raw_copy(FACTORY)
+    after = copy.deepcopy(before)
+    floor_id = after["floors"][0]["id"]
+    rooms = rectangle_rooms(after, floor_id)
+    split, retyped = rooms[0], rooms[1]
+    # split a room into a left and a right half
+    xs, ys = [x for x, _ in split["polygon"]], [y for _, y in split["polygon"]]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    xm = (x0 + x1) / 2
+    split["polygon"] = [[x0, y0], [xm, y0], [xm, y1], [x0, y1]]
+    after["spaces"].append({**split, "id": split["id"] + "-b", "ref": split["ref"] + "b", "name": split["name"] + "b",
+                            "polygon": [[xm, y0], [x1, y0], [x1, y1], [xm, y1]]})  # fmt: skip
+    retyped.update(room_type="server_room", name=f"Server room {retyped['ref']}")
+    doors = [o for o in after["openings"] if OUTSIDE not in o["space_ids"] and o["floor_id"] == floor_id
+             and not {split["id"], retyped["id"]} & set(o["space_ids"])]  # fmt: skip
+    removed_door, widened = doors[0], doors[1]
+    after["openings"].remove(removed_door)
+    widened["width_m"] = widened["width_m"] + 0.7
+    machine = next(a for a in after["assets"] if a["category"] == "machine")
+    after["assets"].append(
+        {**machine, "id": "new-machine", "position": [machine["position"][0] + 5, machine["position"][1]]}
+    )
+    gone = next(a for a in after["assets"] if a["category"] == "fixture" and a["type"] != machine["type"])
+    after["assets"].remove(gone)
+
+    changes = diff(before, after)
+    assert kinds(changes) == sorted(
+        ["space_split", "space_retyped", "door_removed", "door_resized", "asset_added", "asset_removed"]
+    ), [c.text for c in changes]
+    by_kind = {c.kind: c for c in changes}
+    assert by_kind["space_split"].before_ids == (split["id"],)
+    assert set(by_kind["space_split"].after_ids) == {split["id"], split["id"] + "-b"}
+    assert "server room" in by_kind["space_retyped"].text
+    assert by_kind["door_removed"].before_ids == (removed_door["id"],)
+    assert "widened" in by_kind["door_resized"].text
+    assert by_kind["asset_added"].after_ids == ("new-machine",)
+    assert by_kind["asset_removed"].before_ids == (gone["id"],)
+
+
+def test_diff_sees_two_rooms_merged_into_one():
+    before = raw_copy(FACTORY)
+    after = copy.deepcopy(before)
+    b = load_building(FACTORY)
+    first = next(s for s in b.spaces.values() if s.type == "room" and geometry.shared_wall_rooms(b, s.id))
+    second = geometry.shared_wall_rooms(b, first.id)[0]
+    merged = (
+        first.shape.union(b.spaces[second].shape)
+        .buffer(0.2, join_style="mitre")
+        .buffer(-0.2, join_style="mitre")
+    )
+    for s in after["spaces"]:
+        if s["id"] == first.id:
+            s["polygon"] = [list(p) for p in merged.exterior.coords[:-1]]
+    after["spaces"] = [s for s in after["spaces"] if s["id"] != second]
+    changes = diff(before, after)
+    assert kinds(changes) == ["spaces_merged"], [c.text for c in changes]
+    assert set(changes[0].before_ids) == {first.id, second}

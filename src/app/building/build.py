@@ -16,6 +16,11 @@ draft shifted by 0.5 m already loses ~14% of its space matches.
 floors sit differently from the truth (Swiss truth floors aren't aligned either) and Swiss stairs are
 guesses. Room types (95-97%) and asset types (94-95%) are learned from the furniture in train; every
 such value is in the draft's "guesses" with its confidence. Every draft of train and dev passes `validate`.
+
+`diff(before, after)` (Level 5, keep the map current) lists what changed between two versions: spaces
+added, removed, split, merged, reshaped, retyped or renamed; doors added, removed or resized; assets new,
+gone or moved. No false changes on any of the 280 kit buildings against itself, shifted or not; on every
+dev building, a machine moved and a door added through BuildingState come back as exactly those two.
 """
 
 from __future__ import annotations
@@ -1128,3 +1133,189 @@ def compare(predicted: dict[str, Any], truth: dict[str, Any], *, align: bool = F
     )
     scores["score"] = sum(headline) / len(headline)
     return scores
+
+
+# ---- what changed between two versions of a building (Level 5: keep the map current) ---------------------
+#
+# Yesterday's plan against today's, or the building before and after edits: which spaces were added,
+# removed, split, merged, reshaped, retyped or renamed; which doors were added, removed or widened; which
+# machines and furniture are new, gone or moved. Spaces match by overlap, doors by position, assets by
+# type and position, so ids don't need to be stable (drafts from plans number things afresh). Stairs and
+# lifts aren't compared yet.
+
+ChangeKind = Literal[
+    "space_added", "space_removed", "space_split", "spaces_merged", "space_reshaped", "space_retyped",
+    "space_renamed", "door_added", "door_removed", "door_resized", "asset_added", "asset_removed", "asset_moved",
+]  # fmt: skip
+RESHAPED_IOU = 0.95  # a matched space whose outline overlaps less than this changed shape
+PART_OF = 0.8  # a space at least this much inside another is a part of it (splits, merges)
+SAME_DOOR_M = 0.5
+SAME_SPOT_M = 0.3  # an asset this close to where it was hasn't moved
+DOOR_WIDTH_CHANGE_M = 0.05
+ASSET_ORDER = {"machine": 0, "equipment": 1, "fixture": 2, "furniture": 3}
+
+
+@dataclass(frozen=True)
+class Change:
+    kind: ChangeKind
+    text: str
+    """One sentence for people: 'CNC mill H-A1-A moved 14.2 m: from ... to ...'."""
+    before_ids: tuple[str, ...] = ()
+    after_ids: tuple[str, ...] = ()
+    category: str = ""  # asset category for asset changes
+
+
+def _parts(whole: Polygon, pieces: dict[str, Polygon]) -> list[str]:
+    """Ids of the pieces lying mostly inside `whole`."""
+    return [i for i, p in pieces.items() if p.area and whole.intersection(p).area >= PART_OF * p.area]
+
+
+def _space_changes(before: Building, after: Building) -> list[Change]:
+    matched = {b: a for b, (a, _) in _match_spaces(after, before).items()}
+    matched_new = {a: b for b, a in matched.items()}
+    out: list[Change] = []
+    explained_before, explained_after = set(), set()
+    for floor in before.floors_by_level():
+        after_floor = after.floor_at_level(floor.level)
+        olds = {s.id: s.shape for s in before.spaces_on(floor.id)}
+        news = {s.id: s.shape for s in after.spaces_on(after_floor.id)} if after_floor else {}
+        # Parts are new or unchanged pieces of this very space, never spaces matched elsewhere: OSM draws
+        # rooms inside corridors and halls, which aren't a split.
+        for old_id, shape in olds.items():  # one space became several
+            pieces = {i: p for i, p in news.items() if matched_new.get(i, old_id) == old_id}
+            if len(parts := _parts(shape, pieces)) >= 2:
+                names = " and ".join(after.spaces[p].name for p in parts)
+                out.append(
+                    Change(
+                        "space_split",
+                        f"{before.label(old_id)} was split into {names}",
+                        (old_id,),
+                        tuple(parts),
+                    )
+                )
+                explained_before.add(old_id)
+                explained_after.update(parts)
+        for new_id, shape in news.items():  # several spaces became one
+            pieces = {i: p for i, p in olds.items() if matched.get(i, new_id) == new_id}
+            if new_id not in explained_after and len(parts := _parts(shape, pieces)) >= 2:
+                names = " and ".join(before.spaces[p].name for p in parts)
+                out.append(
+                    Change(
+                        "spaces_merged",
+                        f"{names} were merged into {after.label(new_id)}",
+                        tuple(parts),
+                        (new_id,),
+                    )
+                )
+                explained_before.update(parts)
+                explained_after.add(new_id)
+    for old_id, new_id in matched.items():
+        if old_id in explained_before or new_id in explained_after:
+            continue
+        old, new = before.spaces[old_id], after.spaces[new_id]
+        overlap = old.shape.intersection(new.shape).area
+        if overlap / (old.area + new.area - overlap) < RESHAPED_IOU:
+            text = f"{after.label(new_id)} changed shape: {old.area:.1f} → {new.area:.1f} m²"
+            out.append(Change("space_reshaped", text, (old_id,), (new_id,)))
+        if old.room_type != new.room_type:
+            was = old.room_type.replace("_", " ")
+            text = (
+                f"{before.label(old_id)} is now {new.name}, a {new.room_type.replace('_', ' ')} (was {was})"
+            )
+            out.append(Change("space_retyped", text, (old_id,), (new_id,)))
+        elif (old.name, old.ref) != (new.name, new.ref):
+            out.append(
+                Change(
+                    "space_renamed", f"{before.label(old_id)} is now called {new.name}", (old_id,), (new_id,)
+                )
+            )
+    kept_after = set(matched.values()) | explained_after
+    for old_id in before.spaces:
+        if old_id not in matched and old_id not in explained_before:
+            out.append(Change("space_removed", f"{before.label(old_id)} is gone", (old_id,)))
+    for new_id in after.spaces:
+        if new_id not in kept_after:
+            out.append(Change("space_added", f"New space: {after.label(new_id)}", (), (new_id,)))
+    return out
+
+
+def _door_text(b: Building, door: Any) -> str:
+    rooms = [b.label(s) for s in door.space_ids if s != OUTSIDE]
+    return f"the entrance to {rooms[0]}" if door.is_entrance else f"the door between {' and '.join(rooms)}"
+
+
+def _pair_up(
+    olds: list[Any], news: list[Any], within: float
+) -> tuple[list[tuple[Any, Any]], list[Any], list[Any]]:
+    """Closest-first pairs of elements on the same level no further apart than `within` (inf: any),
+    plus the unpaired ones on each side. Elements are (level, position, payload)."""
+    candidates = sorted(
+        (math.dist(o[1], n[1]), i, k)
+        for i, o in enumerate(olds)
+        for k, n in enumerate(news)
+        if o[0] == n[0] or within == math.inf
+    )
+    pairs, used_old, used_new = [], set(), set()
+    for distance, i, k in candidates:
+        if distance <= within and i not in used_old and k not in used_new:
+            pairs.append((olds[i], news[k]))
+            used_old.add(i)
+            used_new.add(k)
+    return (
+        pairs,
+        [o for i, o in enumerate(olds) if i not in used_old],
+        [n for k, n in enumerate(news) if k not in used_new],
+    )
+
+
+def _door_changes(before: Building, after: Building) -> list[Change]:
+    def doors(b: Building) -> list[tuple[int, Any, Any]]:
+        return [(b.floors[o.floor_id].level, o.position, o) for o in b.openings.values()]
+
+    pairs, gone, new = _pair_up(doors(before), doors(after), SAME_DOOR_M)
+    out = []
+    for (_, _, old), (_, _, door) in pairs:
+        if abs(old.width_m - door.width_m) >= DOOR_WIDTH_CHANGE_M:
+            verb = "widened" if door.width_m > old.width_m else "narrowed"
+            text = f"{_door_text(after, door).capitalize()} was {verb} from {old.width_m:g} m to {door.width_m:g} m"
+            out.append(Change("door_resized", text, (old.id,), (door.id,)))
+    out += [Change("door_removed", f"Removed: {_door_text(before, d)}", (d.id,)) for _, _, d in gone]
+    out += [Change("door_added", f"New: {_door_text(after, d)}", (), (d.id,)) for _, _, d in new]
+    return out
+
+
+def _asset_changes(before: Building, after: Building) -> list[Change]:
+    by_type: dict[str, tuple[list, list]] = defaultdict(lambda: ([], []))
+    for side, b in enumerate((before, after)):
+        for a in b.assets.values():
+            by_type[a.type][side].append((b.floors[a.floor_id].level, a.position, a))
+    out = []
+    for olds, news in by_type.values():
+        _, olds, news = _pair_up(olds, news, SAME_SPOT_M)  # where they were: unchanged
+        moved, gone, new = _pair_up(olds, news, math.inf)  # the rest of the same type moved, nearest first
+        for (old_level, _, old), (new_level, _, a) in moved:
+            metres = math.dist(old.position, a.position)
+            how = f"{metres:.1f} m" if old_level == new_level else f"from level {old_level} to {new_level}"
+            text = f"{old.name} moved {how}: from {before.label(old.space_id)} to {after.label(a.space_id)}"
+            out.append(Change("asset_moved", text, (old.id,), (a.id,), a.category))
+        out += [
+            Change(
+                "asset_removed", f"Gone: {a.name} from {before.label(a.space_id)}", (a.id,), (), a.category
+            )
+            for _, _, a in gone
+        ]
+        out += [
+            Change("asset_added", f"New: {a.name} in {after.label(a.space_id)}", (), (a.id,), a.category)
+            for _, _, a in new
+        ]
+    return sorted(out, key=lambda c: ASSET_ORDER.get(c.category, 9))
+
+
+def diff(before: dict[str, Any], after: dict[str, Any], *, align: bool = True) -> list[Change]:
+    """What changed from one version of a building to the next (both kit-format building.json): spaces,
+    then doors, then assets (machines and equipment before furniture). With `align` (the default) the
+    later version is first moved onto the earlier one, so drafts from plans compare whatever their origin."""
+    old, new = parse_building(before), parse_building(after)
+    if align and (shift := _best_shift(new, old)) != (0.0, 0.0):
+        new = parse_building(_shifted(after, *shift))
+    return _space_changes(old, new) + _door_changes(old, new) + _asset_changes(old, new)
