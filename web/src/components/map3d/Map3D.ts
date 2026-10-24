@@ -15,7 +15,8 @@ import { buildAssetLayer, type AssetLayer, type AssetSlot } from './assets'
 import { buildFloorGeometry, type FloorGeometry } from './floorMesh'
 import { buildLink, buildMarks, buildRoute, type FloorY, type SpaceMark } from './overlays'
 import { ACCENT, BG, ROUTE, LOWER_FADE_STEP, LOWER_SLAB, LOWER_WALL, flatMaterial } from './palette'
-import type { Link3D, Map3DEngine, Map3DSettings, ScreenPoint, View3D, XY } from './types'
+import { buildSurroundings, type SurroundingsMesh } from './surroundings3d'
+import type { Link3D, Map3DEngine, Map3DSettings, ScreenPoint, SurroundingFeature, View3D, XY } from './types'
 import { DEFAULT_3D } from './devSettings'
 
 interface FloorEntry {
@@ -92,6 +93,9 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   let route: ShowRoute | null = null
   let link: Link3D | null = null
   let diag = 100 // building extent (m), for the far plane
+  let surroundingFeatures: SurroundingFeature[] | null = null
+  let surroundings: SurroundingsMesh | null = null
+  let groundExtent = 0 // how far the surroundings reach from the origin (m), also for the far plane
 
   const floors = new Map<string, FloorEntry>()
   const geoCache = new Map<string, THREE.BufferGeometry>()
@@ -202,7 +206,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     camera.up.copy(up)
     camera.lookAt(target)
     camera.near = Math.max(0.05, d * 0.02)
-    camera.far = d * 3 + diag * 2.5 + 50
+    camera.far = d * 3 + Math.max(diag * 2.5, groundExtent * 2) + 50
     camera.updateProjectionMatrix()
     camera.updateMatrixWorld()
   }
@@ -470,6 +474,17 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       linkDirty = true
       requestRender()
     },
+    setSurroundings(features) {
+      if (features === surroundingFeatures) return
+      surroundingFeatures = features
+      surroundings?.dispose()
+      surroundings = features?.length ? buildSurroundings(features) : null
+      if (surroundings) scene.add(surroundings.group)
+      groundExtent = 0
+      for (const f of features ?? []) for (const [x, y] of f.points) groundExtent = Math.max(groundExtent, Math.hypot(x, y))
+      updateCamera()
+      requestRender()
+    },
     pick(x, y) {
       if (!index || !floorId) return null
       updateCamera()
@@ -524,6 +539,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       if (raf) cancelAnimationFrame(raf)
       raf = 0
       clearScene()
+      surroundings?.dispose()
       for (const m of [slabMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat, linkFillMat, linkLineMat]) m.dispose()
       for (const l of lowerMats) {
         l.slab.dispose()
