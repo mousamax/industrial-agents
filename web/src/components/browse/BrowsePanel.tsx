@@ -99,7 +99,8 @@ function Header({ title, subtitle, onBack, backLabel, onClose }: {
 
 function Actions({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 pb-3 pt-3" style={{ scrollbarWidth: 'none' }}>
+    // Wraps instead of scrolling: a half-hidden button at the panel edge reads as a layout bug.
+    <div className="flex flex-wrap gap-2 px-4 pb-3 pt-3">
       {children}
     </div>
   )

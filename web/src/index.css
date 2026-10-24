@@ -33,3 +33,11 @@ body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+
+/* The map draws vectors at every zoom; keep text and edges crisp rather than hinted for small sizes. */
+svg text { text-rendering: geometricPrecision; }
+
+/* Horizontally scrolling chip rows fade at whichever edge hides more chips (set by the component). */
+.chip-row { --fade-l: 0px; --fade-r: 0px; mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%); }
+.chip-row[data-fade-left] { --fade-l: 28px; }
+.chip-row[data-fade-right] { --fade-r: 36px; }

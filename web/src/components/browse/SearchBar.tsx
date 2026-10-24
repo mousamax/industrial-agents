@@ -2,7 +2,7 @@
 // things, a building switcher, and Google-Maps-style category chips underneath.
 // Layout renders it inside the map overlay; it is full width of its container (cap it at ~420px on md+).
 import clsx from 'clsx'
-import { ArrowLeft, Box, Building2, MapPin, Search, X } from 'lucide-react'
+import { ArrowLeft, Box, Building2, MapPin, Search, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useApp } from '../../store'
 import {
@@ -15,7 +15,11 @@ import { CategoryGlyph } from './ui'
 const MAX_PLACES = 6
 const MAX_THINGS = 6
 
-type Row = { type: 'category'; cat: Category } | { type: 'item'; item: SearchItem } | { type: 'all'; ids: string[]; label: string }
+type Row =
+  | { type: 'category'; cat: Category }
+  | { type: 'item'; item: SearchItem }
+  | { type: 'all'; ids: string[]; label: string }
+  | { type: 'ask'; text: string }
 
 export function SearchBar({ className }: { className?: string }) {
   const index = useApp((s) => s.index)
@@ -33,6 +37,18 @@ export function SearchBar({ className }: { className?: string }) {
   const [committed, setCommitted] = useState<string | null>(null) // id whose name the pill currently shows
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const chipsRef = useRef<HTMLDivElement>(null)
+  const [chipFade, setChipFade] = useState({ left: false, right: false })
+  const ask = useApp((s) => s.ask)
+
+  // Chips scroll sideways: fade whichever edge has more chips behind it, so the cut reads as "scroll", not a bug.
+  const updateChipFade = () => {
+    const el = chipsRef.current
+    if (!el) return
+    const left = el.scrollLeft > 2
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+    setChipFade((f) => (f.left === left && f.right === right ? f : { left, right }))
+  }
 
   const categories = useMemo(() => (index ? categoriesFor(index) : []), [index])
   const items = useMemo(() => (index ? searchItemsFor(index) : []), [index])
@@ -53,6 +69,25 @@ export function SearchBar({ className }: { className?: string }) {
     }
   }, [selection, committed])
 
+  // Keep the fades right on resize, and let a mouse wheel scroll the chip row sideways (desktop has no swipe).
+  useEffect(() => {
+    const el = chipsRef.current
+    if (!el) return
+    updateChipFade()
+    const ro = new ResizeObserver(updateChipFade)
+    ro.observe(el)
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return
+      e.preventDefault()
+      el.scrollLeft += e.deltaY
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      ro.disconnect()
+      el.removeEventListener('wheel', onWheel)
+    }
+  }, [categories, focused])
+
   // Close the dropdown on outside taps.
   useEffect(() => {
     if (!focused) return
@@ -71,6 +106,8 @@ export function SearchBar({ className }: { className?: string }) {
     for (const item of results.things.slice(0, MAX_THINGS)) out.push({ type: 'item', item })
     if (results.places.length > MAX_PLACES || results.things.length > MAX_THINGS)
       out.push({ type: 'all', ids: [...results.places, ...results.things].map((i) => i.id), label: `“${query.trim()}”` })
+    // Anything the map can't find by name goes to the agent: it's the only row (so Enter asks) when nothing matched.
+    out.push({ type: 'ask', text: query.trim() })
     return out
   }, [typing, categories, catMatches, results, query])
 
@@ -111,7 +148,13 @@ export function SearchBar({ className }: { className?: string }) {
   const runRow = (row: Row) => {
     if (row.type === 'item') pickItem(row.item)
     else if (row.type === 'category') showGroup(row.cat.ids, row.cat.label)
-    else showGroup(row.ids, row.label)
+    else if (row.type === 'all') showGroup(row.ids, row.label)
+    else {
+      ask(row.text)
+      setQuery('')
+      setCommitted(null)
+      close()
+    }
   }
 
   const clear = () => {
@@ -204,10 +247,8 @@ export function SearchBar({ className }: { className?: string }) {
           className="pointer-events-auto absolute inset-x-0 top-12 z-30 max-h-[min(65dvh,520px)] overflow-y-auto overscroll-contain rounded-b-3xl border-t border-line bg-surface pb-2 shadow-[0_4px_6px_2px_rgba(60,64,67,.15)]"
         >
           {!typing && rows.length > 0 && <GroupLabel>Explore this building</GroupLabel>}
-          {typing && rows.length === 0 && (
-            <p className="px-4 py-5 text-sm text-ink-soft">
-              Nothing called “{query.trim()}” here. Try a room number, a type like “kitchen”, or ask the building.
-            </p>
+          {typing && rows.length === 1 && (
+            <p className="px-4 pt-4 pb-1 text-sm text-ink-soft">Nothing on the map is called “{query.trim()}”.</p>
           )}
           {rows.map((row, i) => {
             const prev = rows[i - 1]
@@ -218,7 +259,7 @@ export function SearchBar({ className }: { className?: string }) {
                   : `Things · ${results.things.length}`
                 : null
             return (
-              <div key={row.type === 'item' ? row.item.id : row.type === 'category' ? `c:${row.cat.key}` : 'all'}>
+              <div key={row.type === 'item' ? row.item.id : row.type === 'category' ? `c:${row.cat.key}` : row.type}>
                 {heading && <GroupLabel>{heading}</GroupLabel>}
                 <ResultRow row={row} active={i === active} onHover={() => setActive(i)} onClick={() => runRow(row)} floorOf={(id) => (index ? floorName(index, id) : '')} />
               </div>
@@ -230,7 +271,11 @@ export function SearchBar({ className }: { className?: string }) {
       {/* Category chips */}
       {!open && categories.length > 0 && (
         <div
-          className="pointer-events-auto -mx-3 mt-2 flex gap-2 overflow-x-auto px-3 pb-1 md:mx-0 md:px-0"
+          ref={chipsRef}
+          onScroll={updateChipFade}
+          className="chip-row pointer-events-auto -mx-3 mt-2 flex gap-2 overflow-x-auto px-3 pt-0.5 pb-2 md:mx-0 md:px-1"
+          data-fade-left={chipFade.left || undefined}
+          data-fade-right={chipFade.right || undefined}
           style={{ scrollbarWidth: 'none' }}
         >
           {categories.map((c) => {
@@ -277,6 +322,10 @@ function ResultRow({
     icon = <Search className="size-5" />
     title = `See all results for ${row.label}`
     sub = `${row.ids.length} matches`
+  } else if (row.type === 'ask') {
+    icon = <Sparkles className="size-5" />
+    title = `Ask the building: “${row.text}”`
+    sub = 'Directions, questions, anything not on the map'
   } else {
     const it = row.item
     icon = it.kind === 'space' ? <MapPin className="size-5" /> : <Box className="size-5" />

@@ -1,5 +1,5 @@
 // Floating map buttons (bottom-right, above the phone bottom sheet via --sheet-offset).
-import { LocateFixed, Minus, Plus } from 'lucide-react'
+import { Maximize, Minus, Plus } from 'lucide-react'
 
 export interface MapControlsProps {
   onFit: () => void
@@ -33,7 +33,7 @@ export function MapControls({ onFit, onZoomIn, onZoomOut }: MapControlsProps) {
         className={`${btn} pointer-events-auto rounded-full shadow-md`}
         onClick={onFit}
       >
-        <LocateFixed size={20} />
+        <Maximize size={20} />
       </button>
     </div>
   )
