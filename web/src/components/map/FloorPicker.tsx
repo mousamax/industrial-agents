@@ -18,11 +18,12 @@ export function FloorPicker() {
   return (
     <nav
       aria-label="Floors"
-      className="absolute right-3 z-10 flex w-11 -translate-y-1/2 flex-col overflow-y-auto rounded-lg bg-surface shadow-md"
+      className="absolute right-3 z-10 flex w-11 flex-col overflow-y-auto rounded-lg bg-surface shadow-md"
       style={{
-        // centred in the visible map: below the search bar + chips (110px), above the bottom sheet
-        top: 'calc(110px + (100% - 110px - var(--sheet-offset, 0px)) / 2)',
-        maxHeight: 'calc(100% - 110px - var(--sheet-offset, 0px) - 72px)',
+        // Directly above the map controls (Google Maps style), never under the search bar + chips (110px);
+        // scrolls when a tall building has more levels than fit.
+        bottom: 'calc(var(--sheet-offset, 0px) + 12px + var(--map-controls-h, 0px) + 12px)',
+        maxHeight: 'calc(100% - 118px - var(--sheet-offset, 0px) - var(--map-controls-h, 0px) - 24px)',
         scrollbarWidth: 'none',
       }}
     >

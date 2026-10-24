@@ -302,6 +302,33 @@ function buildFloorGeo(index: SceneIndex, floorId: string): FloorGeo {
   }
 }
 
+// ---------- lower floors ----------
+
+export interface LowerFloor {
+  floorId: string
+  /** All of that floor's spaces as one path (SVG coordinates). */
+  d: string
+  /** 0 = deepest drawn floor ... 1 = the floor directly below the current one. */
+  nearness: number
+}
+
+const lowerCache = new WeakMap<SceneIndex, Map<string, LowerFloor[]>>()
+
+/** Floors below `floorId`, lowest first, for the greyed-out context under the current floor. */
+export function lowerFloors(index: SceneIndex, floorId: string): LowerFloor[] {
+  let perIndex = lowerCache.get(index)
+  if (!perIndex) lowerCache.set(index, (perIndex = new Map()))
+  const hit = perIndex.get(floorId)
+  if (hit) return hit
+  const level = index.floorById.get(floorId)?.level ?? -Infinity
+  const below = index.floors.filter((f) => f.level < level) // index.floors is ordered lowest first
+  const out = below
+    .map((f, i) => ({ floorId: f.id, d: floorGeo(index, f.id).allD, nearness: below.length > 1 ? i / (below.length - 1) : 1 }))
+    .filter((f) => f.d)
+  perIndex.set(floorId, out)
+  return out
+}
+
 // ---------- camera ----------
 
 /** screen = svg * k + t (CSS px inside the map container). */

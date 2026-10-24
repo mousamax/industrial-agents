@@ -1,10 +1,11 @@
 // SVG layers of the map. World-unit layers (floor, footprints, highlight, route lines) use
 // non-scaling strokes; screen-size things (labels, POIs, dots, pins, chips) go through <At>.
 import { memo, useEffect, useMemo, useState } from 'react'
-import type { SceneIndex } from '../../lib/sceneIndex'
 import type { ShowRoute } from '../../api/types'
+import type { SceneIndex } from '../../lib/sceneIndex'
+import { LINE_H, labelFor, routeOnFloor, showsPoi } from './derive'
 import { At, FloorChip, Pin, PoiBadge, StartDot } from './markers'
-import { TONES, TONE_FILL, toSvg, type FloorGeo, type Pt, type SpaceGeo } from './geometry'
+import { TONES, TONE_FILL, type FloorGeo, type LowerFloor, type Pt, type SpaceGeo } from './geometry'
 
 const NS = 'non-scaling-stroke' as const
 
@@ -28,6 +29,25 @@ export const FloorBase = memo(function FloorBase({ geo }: { geo: FloorGeo }) {
   )
 })
 
+/** Floors below the current one, flat grey, lowest first; the current floor's opaque fills cover what they hide.
+ * Nearer floors are a touch darker. No labels, no assets, not tappable. */
+export const LowerFloors = memo(function LowerFloors({ floors }: { floors: LowerFloor[] }) {
+  if (!floors.length) return null
+  return (
+    <g pointerEvents="none">
+      {floors.map((f) => (
+        <path key={f.floorId} d={f.d} fill={mix('#e7e9ec', '#dcdfe3', f.nearness)} stroke="#cfd3d8" strokeWidth={1}
+          vectorEffect={NS} strokeLinejoin="round" />
+      ))}
+    </g>
+  )
+})
+
+function mix(a: string, b: string, t: number): string {
+  const ch = (hex: string, i: number) => parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16)
+  return `rgb(${[0, 1, 2].map((i) => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t)).join(',')})`
+}
+
 export const Footprints = memo(function Footprints({ geo, visible }: { geo: FloorGeo; visible: boolean }) {
   if (!geo.footprintD) return null
   return (
@@ -37,24 +57,6 @@ export const Footprints = memo(function Footprints({ geo, visible }: { geo: Floo
 })
 
 // ---------- labels and POIs ----------
-
-const CHAR_W = 6
-const LINE_H = 13
-const POI_D = 22
-
-function fits(s: SpaceGeo, lines: string[], k: number, withPoi: boolean): boolean {
-  if (!lines.length) return false
-  const tw = Math.max(...lines.map((l) => l.length)) * CHAR_W + 8
-  const th = lines.length * LINE_H + (withPoi ? POI_D : 0) + 4
-  return s.fitW * k >= tw && s.fitH * k >= th
-}
-
-/** Full name if it fits, else the short ref, else nothing. */
-function labelFor(s: SpaceGeo, k: number, withPoi: boolean): string[] | null {
-  if (fits(s, s.lines, k, withPoi)) return s.lines
-  if (fits(s, s.short, k, withPoi)) return s.short
-  return null
-}
 
 function LabelText({ lines, y0, weight = 500, fill = 'var(--color-map-label)', size = 11 }: {
   lines: string[]
@@ -80,7 +82,7 @@ export const Labels = memo(function Labels({ geo, k, skipId }: { geo: FloorGeo; 
     const out: { s: SpaceGeo; poi: boolean; label: string[] | null }[] = []
     for (const s of geo.spaces) {
       if (s.id === skipId) continue
-      const poi = !!s.poi && Math.min(s.fitW, s.fitH) * k >= POI_D
+      const poi = showsPoi(s, k)
       const label = labelFor(s, k, poi)
       if (poi || label) out.push({ s, poi, label })
     }
@@ -166,52 +168,6 @@ export function SelectedPin({ p, lines }: { p: Pt; lines: string[] }) {
 }
 
 // ---------- route ----------
-
-interface RouteDrawing {
-  lines: Pt[][]
-  start: Pt | null
-  end: Pt | null
-  chips: { p: Pt; text: string; floorId: string }[]
-}
-
-function floorWord(index: SceneIndex, floorId: string): string {
-  const f = index.floorById.get(floorId)
-  return f ? f.name : floorId
-}
-
-function routeOnFloor(route: ShowRoute, floorId: string, index: SceneIndex): RouteDrawing {
-  const segs = route.segments
-  const lines: Pt[][] = []
-  const chips: RouteDrawing['chips'] = []
-  segs.forEach((seg, i) => {
-    if (seg.floor_id === floorId && seg.points.length) lines.push(seg.points.map(toSvg))
-    const next = segs[i + 1]
-    if (!next || next.floor_id === seg.floor_id) return
-    const from = index.floorById.get(seg.floor_id)
-    const to = index.floorById.get(next.floor_id)
-    const up = (to?.level ?? 0) > (from?.level ?? 0)
-    if (seg.floor_id === floorId && seg.points.length)
-      chips.push({
-        p: toSvg(seg.points[seg.points.length - 1]),
-        text: `Continue on ${floorWord(index, next.floor_id)} ${up ? '↑' : '↓'}`,
-        floorId: next.floor_id,
-      })
-    if (next.floor_id === floorId && next.points.length)
-      chips.push({
-        p: toSvg(next.points[0]),
-        text: `Back to ${floorWord(index, seg.floor_id)} ${up ? '↓' : '↑'}`,
-        floorId: seg.floor_id,
-      })
-  })
-  const first = segs[0]
-  const last = segs[segs.length - 1]
-  return {
-    lines,
-    chips,
-    start: first?.floor_id === floorId && first.points.length ? toSvg(first.points[0]) : null,
-    end: last?.floor_id === floorId && last.points.length ? toSvg(last.points[last.points.length - 1]) : null,
-  }
-}
 
 function truncate(lines: Pt[][], frac: number): Pt[][] {
   if (frac >= 1) return lines

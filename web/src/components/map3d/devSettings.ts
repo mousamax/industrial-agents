@@ -8,13 +8,13 @@ export const DEFAULT_3D: Map3DSettings = {
   autoTiltDeg: 45,
   maxPitchDeg: 65,
   fovDeg: 35,
-  wallHeightM: 2.4,
+  wallHeightM: 1.5,
   floorGapScale: 1,
   showLowerFloors: true,
   objectDetail: 2,
 }
 
-const KEY = 'map3d-settings-v1'
+const KEY = 'map3d-settings-v2'
 
 function load(): Map3DSettings {
   try {
