@@ -99,9 +99,10 @@ def _spaces_named(b: Building, text: str, floor: str | int | None) -> list[Space
     if not hits and (asset := _asset_named(b, text)):
         hits = [b.spaces[asset.space_id]]
     if not hits and (
-        m := re.fullmatch(r"(.+?)\s+(\S+)\s*\(([^()]*)\)", text.strip())
-    ):  # "Büro 1.02 (Floor 1)"
-        hits = [s for s in b.resolve(m[2], m[3]) if s.name.casefold() == m[1].casefold()]
+        m := re.fullmatch(r"(.+?)\s+(\S+)\s*(?:\(([^()]*)\))?", text.strip())
+    ):  # "Büro 1.02 (Floor 1)", "Main lobby 0.18": the labels our tools print, name + ref
+        on = m[3] if m[3] is not None else floor_id
+        hits = [s for s in b.resolve(m[2], on) if s.name.casefold() == m[1].casefold()]
     if not hits:  # "Room 2.03" when the ref is "2.03", "the Main lobby"
         bare = re.sub(r"^(the|room|space)\s+", "", text.strip(), flags=re.I)
         hits = b.resolve(bare, floor_id) if bare != text.strip() else []
@@ -414,24 +415,26 @@ def distance_3d(ctx: RunContext[Deps], first: str, second: str) -> str:
 
 
 def _steps(b: Building, route: Route) -> list[str]:
-    """A skeleton of the walk for the agent to turn into directions people can follow."""
-    steps: list[str] = []
-    floor = None
-    nodes = route.node_path or route.space_path
-    for i, node in enumerate(nodes):
-        if node.startswith("door:"):
-            o = b.openings[node.removeprefix("door:")]
-            steps.append(f"through the {o.kind} ({o.width_m} m wide)")
-        elif node == OUTSIDE:
-            steps.append("outside")
+    """A skeleton of the walk for the agent to turn into directions people can follow: one line per
+    space entered, saying how (which door, stairs or lift). Each step between two consecutive spaces of
+    `space_path` uses the next element of `element_path`."""
+    path, elements = route.space_path, route.element_path
+    if not path:
+        return []
+    steps = [f"start in {_label(b, path[0])}"]
+    for here, element in zip(path[1:], elements, strict=False):
+        if here == OUTSIDE:
+            steps.append(
+                "leave the building through the entrance" if element in b.openings else "leave the building"
+            )
+        elif element in b.connectors:
+            k = b.connectors[element]
+            steps.append(f"take {k.name} ({k.kind}) to {_label(b, here)}")
+        elif element in b.openings:
+            o = b.openings[element]
+            steps.append(f"through the {o.kind} ({o.width_m:g} m wide) into {_label(b, here)}")
         else:
-            s = b.spaces[node]
-            if floor is not None and s.floor_id != floor:
-                k = next((k for k in b.connectors_at(node) if k.id in route.element_path), None)
-                how = f"{k.name} ({k.kind})" if k else "the stairs or lift"
-                steps.append(f"take {how} to {b.floors[s.floor_id].name}")
-            steps.append(_label(b, node) if i else f"start in {_label(b, node)}")
-            floor = s.floor_id
+            steps.append(f"into {_label(b, here)}")
     return steps
 
 

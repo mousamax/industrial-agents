@@ -14,3 +14,4 @@ challenges/IGNOREME*/
 challenges/**/.DS_Store
 agent_output/
 synera-kit/agent_output/
+.cache/
