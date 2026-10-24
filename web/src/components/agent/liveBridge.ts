@@ -16,14 +16,41 @@ import {
   type MemoryChip,
   type ScenarioAsk,
   type ScenarioResult,
+  type StepIcon,
   type TraceItem,
+  type WalkStep,
 } from '../../lib/buildingGraph'
 import { idsIn, spaceLabel, type SceneIndex } from '../../lib/sceneIndex'
 import { formatToolArgs, splitAnswer, stripPreferences, toolLabel } from '../chat/text'
-import { parseOutput, resolveMessage, toolEffect, type ToolEffect } from '../chat/viewSync'
+import { parseOutput, resolveMessage, toolEffect, type RouteDirection, type ToolEffect } from '../chat/viewSync'
 
 type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Tools whose result is a walk between places. */
+const isRouteTool = (name: string) => name === 'route' || name === 'walk_directions'
+
+const ACTION_ICON: Record<string, StepIcon> = {
+  start: 'circle-dot',
+  arrive: 'flag',
+  left: 'corner-up-left',
+  right: 'corner-up-right',
+  up: 'arrow-up',
+  down: 'arrow-down',
+  leave: 'door-open',
+}
+
+/** walk_directions steps as the walk view's steps: the backend's own sentences, distances and polylines. */
+function walkStepsOf(directions: RouteDirection[], index: SceneIndex, fallbackFloor: string): WalkStep[] {
+  return directions.map((d) => ({
+    icon: ACTION_ICON[d.action] ?? 'arrow-right',
+    text: d.text,
+    d: d.distance_m,
+    floorId: index.spaceById.get(d.space_id)?.floor_id ?? fallbackFloor,
+    spaceId: d.space_id,
+    points: d.points.length ? d.points : undefined,
+  }))
+}
 
 export interface LiveExtraction {
   trace: TraceItem[]
@@ -178,7 +205,7 @@ export function extractLiveTurn(
       })
     }
     // Also check if the agent ran a `route` tool in the same turn to compare before/after distance
-    const routeTool = toolRecords.find((t) => t.name === 'route' && typeof t.data.total_length_m === 'number')
+    const routeTool = toolRecords.find((t) => isRouteTool(t.name) && typeof t.data.total_length_m === 'number')
     if (stats.length === 0 && routeTool && typeof routeTool.data.total_length_m === 'number') {
       stats.push({
         n: `${fmtM(routeTool.data.total_length_m)}`,
@@ -265,7 +292,7 @@ export function extractLiveTurn(
         (t.name === 'what_if' && Array.isArray(t.input.close)) ||
         (t.name === 'reachable_rooms' && Array.isArray(t.input.closed)),
     )
-  if (closeTool && !toolRecords.some((t) => t.name === 'route')) {
+  if (closeTool && !toolRecords.some((t) => isRouteTool(t.name))) {
     const whatIfTool = toolRecords.find((t) => t.name === 'what_if')
     const reachTool = toolRecords.find((t) => t.name === 'reachable_rooms')
     const setClosedTool = toolRecords.find((t) => t.name === 'set_closed')
@@ -376,6 +403,8 @@ export function extractLiveTurn(
   if (res.routeAt !== null) {
     const showRoute = effects[res.routeAt].route!
     const enriched = enrichShowRoute(index, showRoute)
+    const directions = effects[res.routeAt].directions
+    if (directions) enriched.steps = walkStepsOf(directions, index, enriched.floors[0] ?? '')
     const startId = showRoute.space_ids[0]
     const goalId = showRoute.space_ids[showRoute.space_ids.length - 1]
     const startSpace = startId ? index.spaceById.get(startId) : undefined
@@ -484,7 +513,7 @@ export function extractLiveTurn(
     )
   const asksWhichOne = /which one|which of|which warehouse|which zone|which meeting|which office|\?/i.test(cleanBody)
 
-  if (asksWhereYouAre && !toolRecords.some((t) => t.name === 'route')) {
+  if (asksWhereYouAre && !toolRecords.some((t) => isRouteTool(t.name))) {
     const seen = new Set<string>()
     const starts = [...findSpaces(index, /^lobby$/i), ...entrancesOf(index).map((e) => e.space)].filter((sp) => {
       if (seen.has(sp.id)) return false
@@ -510,7 +539,7 @@ export function extractLiveTurn(
     }
   }
 
-  if (asksWhichOne && !asksWhereYouAre && !toolRecords.some((t) => t.name === 'route')) {
+  if (asksWhichOne && !asksWhereYouAre && !toolRecords.some((t) => isRouteTool(t.name))) {
     // Extract candidate rooms returned by the backend's `find`, `list_rooms`, or `nearest` tools, or mentioned in the text
     const findTools = toolRecords.filter((t) => t.name === 'find' || t.name === 'list_rooms' || t.name === 'nearest')
     const lastFind = findTools[findTools.length - 1]

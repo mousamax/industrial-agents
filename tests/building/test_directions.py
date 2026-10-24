@@ -22,12 +22,17 @@ then checks the same contract on real buildings (start, arrive, lengths add up, 
 
 from __future__ import annotations
 
+import json
 import re
+from types import SimpleNamespace
 
 import pytest
+from shapely.geometry import LineString, Point, Polygon
+from shapely.ops import unary_union
 
-from app.building.directions import directions
-from app.building.model import load_building, parse_building
+from app.agents.building_guide.tools import Deps, route, walk_directions
+from app.building.directions import directions, walk_in_space, walk_path
+from app.building.model import OUTSIDE, load_building, parse_building
 from app.building.routing import RouteGraph
 
 from .test_golden import WARMUP, call, cases, route_length_ok
@@ -168,3 +173,152 @@ def test_directions_on_real_routes(q):
     assert not COMPASS.search(texts(steps)), texts(steps)
     rides = [e for e in route.element_path if e in b.connectors]
     assert len([s for s in steps if s.action in ("up", "down")]) == len(rides), texts(steps)
+
+
+# ---- the walk itself (walk_in_space / walk_path): what the map draws ------------------------------------
+
+
+def _rect(x: float, y: float, w: float, d: float) -> Polygon:
+    return Polygon(
+        [(x - w / 2, y - d / 2), (x + w / 2, y - d / 2), (x + w / 2, y + d / 2), (x - w / 2, y + d / 2)]
+    )
+
+
+def test_directions_walk_goes_round_the_printer(floor):
+    b, route_, _ = floor
+    walk = walk_in_space(b, "T-S3", b.openings["T-D2"].position, b.openings["T-D3"].position)
+    assert walk[0] == b.openings["T-D2"].position and walk[-1] == b.openings["T-D3"].position
+    printer = _rect(5, 3.3, 2.0, 1.5)
+    assert not LineString(walk).intersects(printer), walk
+    room = b.spaces["T-S3"].shape
+    assert all(room.covers(Point(p)) for p in walk), walk
+
+
+def test_directions_walk_path_is_continuous_through_doors(floor):
+    b, route_, _ = floor
+    path = walk_path(b, route_)
+    assert len(path) == 1 and path[0]["floor_id"] == "T-F0", path
+    points = path[0]["points"]
+    assert points[0] == [3.0, 10.0] and points[-1] == [13.0, 3.0]  # representative points of start and end
+    line = LineString(points)
+    for door in ("T-D1", "T-D2", "T-D3"):  # passes through every door it uses, no gaps
+        assert line.distance(Point(b.openings[door].position)) < 0.2, (door, points)
+    rooms = unary_union([b.spaces[s].shape for s in route_.space_path])
+    assert all(rooms.buffer(0.01).covers(Point(p)) for p in points), points
+    assert not line.intersects(_rect(5, 3.3, 2.0, 1.5)), points
+
+
+def test_directions_steps_carry_their_piece_of_the_walk(floor):
+    _, _, steps = floor
+    walked = [s for s in steps if s.action not in ("arrive",)]
+    assert all(len(s.points) >= 2 for s in walked), texts(steps)
+    for a, z in zip(walked, walked[1:], strict=False):  # each step starts where the last one ended
+        assert a.points[-1] == z.points[0], (a.text, z.text)
+
+
+def test_directions_turn_at_the_corner_of_an_l_corridor():
+    raw = {
+        "building": {"id": "L", "name": "L corridor", "source": "procedural"},
+        "floors": [{"id": "T-F0", "level": 0, "name": "Ground floor", "elevation_m": 0.0, "height_m": 3.0}],
+        "spaces": [
+            _space("L-W", "Office 1", "1", "room", "office", [[-4, 0], [0, 0], [0, 2], [-4, 2]]),
+            _space(
+                "L-C",
+                "Corridor 2",
+                "2",
+                "corridor",
+                "corridor",
+                [[0, 0], [10, 0], [10, 10], [8, 10], [8, 2], [0, 2]],
+            ),
+            _space("L-N", "Office 3", "3", "room", "office", [[8, 10], [10, 10], [10, 14], [8, 14]]),
+        ],
+        "openings": [_door("L-D1", "L-W", "L-C", [0, 1]), _door("L-D2", "L-C", "L-N", [9, 10])],
+        "vertical_connectors": [],
+        "assets": [],
+    }
+    b = parse_building(raw)
+    route_ = RouteGraph(b).shortest("L-W", "L-N")
+    steps = directions(b, route_)
+    corridor = [s for s in steps if s.space_id == "L-C"]
+    assert [s.action for s in corridor] == ["straight", "left"], texts(steps)
+    assert route_length_ok(sum(s.distance_m for s in steps), route_.length_m)
+
+
+def _real_route(q):
+    a = q["answer"]
+    if a.get("reachable") is False:
+        pytest.skip("not applicable: no route to draw")
+    b = load_building(q["building_id"])
+    route_ = RouteGraph(b).shortest(a["from_space_id"], a["to_space_id"])
+    assert route_ is not None
+    return b, route_
+
+
+@pytest.mark.parametrize("q", cases(WARMUP, "route"))
+def test_directions_walk_path_on_real_routes(q):
+    b, route_ = _real_route(q)
+    path = call(walk_path, b, route_)
+    rides = [e for e in route_.element_path if e in b.connectors or e in b.walkways]
+    assert len(path) == 1 + len(rides), [p["floor_id"] for p in path]
+    assert all(x["floor_id"] != y["floor_id"] for x, y in zip(path, path[1:], strict=False))
+    for segment in path:
+        rooms = unary_union(
+            [
+                b.spaces[s].shape.buffer(0)
+                for s in route_.space_path
+                if s != OUTSIDE and b.spaces[s].floor_id == segment["floor_id"]
+            ]
+        ).buffer(0.05)
+        doors = [Point(b.openings[e].position) for e in route_.element_path if e in b.openings]
+        outside = [  # a door can sit in the wall's thickness, between its two rooms
+            p
+            for p in segment["points"]
+            if not rooms.covers(Point(p)) and not any(Point(p).distance(d) < 0.02 for d in doors)
+        ]
+        assert not outside, (segment["floor_id"], outside[:3])
+    first, last = path[0]["points"][0], path[-1]["points"][-1]
+    for end, sid in ((first, route_.from_space_id), (last, route_.to_space_id)):
+        anchor = Polygon(b.spaces[sid].polygon).buffer(0).representative_point()
+        assert Point(end).distance(anchor) < 0.02, (sid, end)
+
+
+def _ctx(building_id: str) -> SimpleNamespace:
+    return SimpleNamespace(deps=Deps.load(building_id))
+
+
+def _first_route_question():
+    return next(
+        p.values[0] for p in cases(WARMUP, "route") if p.values[0]["answer"].get("reachable") is not False
+    )
+
+
+def test_directions_route_tool_legs_carry_the_walk():
+    q = _first_route_question()
+    a = q["answer"]
+    out = json.loads(route(_ctx(q["building_id"]), a["from_space_id"], a["to_space_id"]))
+    for leg in out["legs"]:
+        assert all(isinstance(s, str) for s in leg["steps"])
+        assert leg["path"] and all(seg["floor_id"] and len(seg["points"]) >= 1 for seg in leg["path"])
+
+
+def test_directions_walk_directions_legs_have_steps_and_path():
+    q = _first_route_question()
+    a = q["answer"]
+    out = json.loads(walk_directions(_ctx(q["building_id"]), a["from_space_id"], a["to_space_id"]))
+    b = load_building(q["building_id"])
+    for leg in out["legs"]:
+        assert {"length_m", "space_path", "steps", "path"} <= set(leg)
+        assert leg["path"] and all(seg["floor_id"] for seg in leg["path"])
+        for step in leg["steps"]:
+            assert {
+                "action",
+                "text",
+                "space_id",
+                "floor_id",
+                "distance_m",
+                "landmarks",
+                "around",
+                "points",
+            } <= set(step)
+            if step["space_id"] in b.spaces:
+                assert step["floor_id"] == b.spaces[step["space_id"]].floor_id

@@ -11,6 +11,7 @@ const STATUS: Record<string, [string, string]> = {
   count_items: ['Counting them up…', 'Doing a quick headcount of the equipment…'],
   distance_3d: ['Measuring straight through the floors…', 'Measuring as the crow flies…'],
   route: ['Finding the easiest way there…', 'Planning your route…'],
+  walk_directions: ['Working out each turn for you…', 'Writing down the way, step by step…'],
   nearest: ['Checking what’s closest to you…', 'Finding the nearest one…'],
   reachable_rooms: ['Checking where you can get to…', 'Walking every corridor for you…'],
   what_if: ['Trying the change out on the map…', 'Playing it through, nothing changes yet…'],
@@ -37,7 +38,7 @@ function pick(pair: [string, string], seed: string): string {
 export function workingLine(trace: TraceItem[]): string {
   const cur = [...trace].reverse().find((t) => t.running) ?? trace[trace.length - 1]
   if (!cur) return 'Thinking about that…'
-  if (cur.tool === 'route' || cur.tool === 'nearest') {
+  if (cur.tool === 'route' || cur.tool === 'walk_directions' || cur.tool === 'nearest') {
     if (/min_width|wide|≥/i.test(cur.args)) return WIDE_ROUTE
     if (/step.?free/i.test(cur.args)) return STEP_FREE_ROUTE
   }

@@ -25,6 +25,8 @@ export interface WalkStep {
   connector?: string
   kind?: string
   outdoor?: boolean
+  /** The step's own polyline on `floorId`, when the backend drew it (walk_directions). */
+  points?: XY[]
 }
 
 export interface SharedWall {

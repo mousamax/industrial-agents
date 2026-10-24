@@ -11,6 +11,8 @@ export interface ToolEffect {
   views: ViewCommand[]
   /** Route found in the output (from `view`, or built from a space path). */
   route: ShowRoute | null
+  /** walk_directions steps behind `route` (text, distance, own polyline), when the output has them. */
+  directions: RouteDirection[] | null
   /** Reason when the tool says no route exists. */
   unreachable: string | null
   /** Fallback ids to highlight (search hits, an edited element...). */
@@ -191,28 +193,118 @@ export function segmentsFor(nodes: string[], index: SceneIndex, elements: string
   return segments
 }
 
-/** building_guide `route` output: {reachable, total_length_m, legs: [{length_m, steps, space_path, element_path}]}. */
+/** One spoken step of building_guide `walk_directions`; `points` is its own polyline on its space's floor. */
+export interface RouteDirection {
+  action: string
+  text: string
+  space_id: string
+  distance_m: number
+  landmarks: string[]
+  around: string | null
+  points: XY[]
+}
+
+const isXY = (v: unknown): v is XY =>
+  Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number'
+
+/** A leg's backend-drawn walk (`path`: RouteSegment[]), or null when the leg doesn't carry one or it's malformed. */
+export function legPath(leg: unknown): RouteSegment[] | null {
+  if (!isRec(leg) || !Array.isArray(leg.path) || !leg.path.length) return null
+  const segments: RouteSegment[] = []
+  for (const s of leg.path) {
+    if (!isRec(s) || typeof s.floor_id !== 'string' || !Array.isArray(s.points) || !s.points.every(isXY)) return null
+    segments.push({ floor_id: s.floor_id, points: s.points.map((p) => [p[0], p[1]] as XY) })
+  }
+  return segments
+}
+
+const SAME_POINT_M = 0.01
+
+/**
+ * Legs' paths joined in walking order. A segment continues the previous one when it is on the same floor and
+ * starts where that one ended (the shared point is kept once); otherwise it starts a new segment.
+ */
+export function joinPaths(paths: RouteSegment[][]): RouteSegment[] {
+  const out: RouteSegment[] = []
+  for (const seg of paths.flat()) {
+    if (!seg.points.length) continue
+    const last = out[out.length - 1]
+    const end = last?.points[last.points.length - 1]
+    if (last && end && last.floor_id === seg.floor_id && dist(end, seg.points[0]) <= SAME_POINT_M) {
+      last.points.push(...seg.points.slice(1))
+    } else {
+      out.push({ floor_id: seg.floor_id, points: [...seg.points] })
+    }
+  }
+  return out
+}
+
+/** A leg's steps: `walk_directions` legs may be the step list itself, or an object with `steps`. */
+function legSteps(leg: unknown): unknown[] {
+  if (Array.isArray(leg)) return leg
+  return isRec(leg) && Array.isArray(leg.steps) ? leg.steps : []
+}
+
+function asDirection(v: unknown): RouteDirection | null {
+  if (!isRec(v) || typeof v.text !== 'string' || typeof v.space_id !== 'string') return null
+  return {
+    action: typeof v.action === 'string' ? v.action : '',
+    text: v.text,
+    space_id: v.space_id,
+    distance_m: typeof v.distance_m === 'number' ? v.distance_m : 0,
+    landmarks: Array.isArray(v.landmarks) ? v.landmarks.filter((x): x is string => typeof x === 'string') : [],
+    around: typeof v.around === 'string' ? v.around : null,
+    points: Array.isArray(v.points) ? v.points.filter(isXY).map((p) => [p[0], p[1]] as XY) : [],
+  }
+}
+
+/** building_guide `walk_directions` steps (objects with text, space_id, points...) across all legs, or null. */
+export function directionsFromData(data: unknown): RouteDirection[] | null {
+  if (!isRec(data) || !Array.isArray(data.legs)) return null
+  const steps = data.legs.flatMap(legSteps).map(asDirection)
+  return steps.length && steps.every((s) => s !== null) ? (steps as RouteDirection[]) : null
+}
+
+/** Consecutive distinct space ids the steps happen in (a walk_directions leg's space path). */
+function spacesOfSteps(steps: unknown[]): string[] {
+  const ids: string[] = []
+  for (const s of steps) {
+    const id = isRec(s) && typeof s.space_id === 'string' ? s.space_id : null
+    if (id && ids[ids.length - 1] !== id) ids.push(id)
+  }
+  return ids
+}
+
+/**
+ * building_guide `route` output: {reachable, total_length_m, legs: [{length_m, steps, space_path, element_path,
+ * path}]}, and `walk_directions` (same legs, steps are objects). When every leg carries `path` (the backend's
+ * walk, round walls and obstacles) the map draws that; otherwise it is rebuilt here from the space path.
+ */
 function routeFromLegs(data: Rec, index: SceneIndex): ShowRoute | null {
   if (!Array.isArray(data.legs) || !data.legs.length) return null
-  const legs = data.legs.filter(isRec)
+  const legs = data.legs.filter((l) => isRec(l) || Array.isArray(l))
   const nodes = legs.flatMap((l, i) => {
-    const p = pathIds(l.space_path) ?? []
+    const p = (isRec(l) ? pathIds(l.space_path) : null) ?? spacesOfSteps(legSteps(l))
     return i ? p.slice(1) : p // each leg starts where the previous one ended
   })
-  const elements = legs.flatMap((l) => (Array.isArray(l.element_path) ? l.element_path : [])).filter(
-    (e): e is string => typeof e === 'string',
-  )
+  const elements = legs
+    .flatMap((l) => (isRec(l) && Array.isArray(l.element_path) ? l.element_path : []))
+    .filter((e): e is string => typeof e === 'string')
   const spaceIds = nodes.filter((id) => index.spaceById.has(id))
-  if (spaceIds.length < 2) return null
+  const paths = legs.map(legPath)
+  const backendPath = paths.length && paths.every((p) => p !== null) ? joinPaths(paths as RouteSegment[][]) : null
+  if (spaceIds.length < (backendPath?.length ? 1 : 2)) return null
   const length =
     typeof data.total_length_m === 'number'
       ? data.total_length_m
-      : legs.reduce((sum, l) => sum + (typeof l.length_m === 'number' ? l.length_m : 0), 0)
-  // The tool's steps are a skeleton for the agent; drop the door-by-door lines a walker doesn't need.
-  const steps = legs
-    .flatMap((l) => (Array.isArray(l.steps) ? l.steps : []))
-    .filter((s): s is string => typeof s === 'string' && !/^through the /i.test(s))
-  return { kind: 'route', segments: segmentsFor(nodes, index, elements), length_m: length, space_ids: spaceIds, steps }
+      : legs.reduce((sum: number, l) => sum + (isRec(l) && typeof l.length_m === 'number' ? l.length_m : 0), 0)
+  const directions = directionsFromData(data)
+  // The route tool's steps are a skeleton for the agent; drop the door-by-door lines a walker doesn't need.
+  const steps = directions
+    ? directions.map((d) => d.text)
+    : legs.flatMap(legSteps).filter((s): s is string => typeof s === 'string' && !/^through the /i.test(s))
+  const segments = backendPath?.length ? backendPath : segmentsFor(nodes, index, elements)
+  return { kind: 'route', segments, length_m: length, space_ids: spaceIds, steps }
 }
 
 /** A ShowRoute built from an output that looks like a route (ordered space path, length in metres). */
@@ -282,6 +374,7 @@ export function toolEffect(
   const effect: ToolEffect = {
     views: [],
     route: null,
+    directions: null,
     unreachable: null,
     highlight: [],
     label: isRec(input) && typeof input.query === 'string' ? input.query : null,
@@ -311,6 +404,7 @@ export function toolEffect(
     effect.route = (effect.views.find((v) => v.kind === 'route') as ShowRoute | undefined) ?? null
   } else if (!effect.error && index) {
     effect.route = routeFromData(data, index)
+    if (effect.route) effect.directions = directionsFromData(data)
     if (!effect.route && !NO_HIGHLIGHT_TOOLS.test(toolName)) {
       // building_guide tools put the ids to light up in `highlight`.
       const explicit = isRec(data) ? pathIds(data.highlight)?.filter((id) => idsIn(index, id).length > 0) : null
@@ -406,7 +500,8 @@ export function resolveMessage(
     for (const n of numbers) {
       for (const i of routeIdx) {
         const gap = Math.abs(effects[i].route!.length_m - n)
-        if (gap < bestGap) {
+        // route and walk_directions for the same walk tie; keep the one with spoken directions.
+        if (gap < bestGap || (gap === bestGap && best !== null && !effects[best].directions && effects[i].directions)) {
           bestGap = gap
           best = i
         }

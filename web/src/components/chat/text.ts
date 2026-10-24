@@ -140,7 +140,8 @@ export function toolLabel(toolName: string, rawInput: unknown, index: SceneIndex
     // ---- building_guide tools (src/app/agents/building_guide/tools.py on main)
     case 'find':
       return `Searched: ${input.query ?? '…'}${floor}`
-    case 'route': {
+    case 'route':
+    case 'walk_directions': {
       if (input.start === undefined && input.destination === undefined) return 'Route'
       const via = Array.isArray(input.via) && input.via.length ? ` via ${list(input.via, index)}` : ''
       return `Route: ${placeName(input.start, index)} → ${placeName(input.destination, index)}${via}${sf}${width}`

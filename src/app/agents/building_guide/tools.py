@@ -30,7 +30,7 @@ from typing import Any, Literal
 from pydantic_ai import ModelRetry, RunContext
 
 from app.building import geometry
-from app.building.directions import directions
+from app.building.directions import directions, walk_path
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
 from app.building.routing import Constraints, Route
 from app.building.state import AddAsset, AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen, Stamp
@@ -624,6 +624,7 @@ def _route_result(b: Building, route: Route) -> dict:
         "steps": _steps(b, route),
         "space_path": route.space_path,
         "element_path": list(dict.fromkeys(route.element_path)),
+        "path": walk_path(b, route),  # the walk for the map: [{floor_id, points}], round walls and obstacles
     }
 
 
@@ -671,6 +672,23 @@ def route(
     )
 
 
+def _directions_leg(b: Building, route: Route) -> dict:
+    """One walk_directions leg: the spoken steps (each with its floor and its own polyline) and the walk."""
+    steps = []
+    for step in directions(b, route):
+        d = dataclasses.asdict(step)
+        space = b.spaces.get(step.space_id)
+        d["floor_id"] = space.floor_id if space is not None else None
+        d["points"] = [[round(x, 2), round(y, 2)] for x, y in step.points]
+        steps.append(d)
+    return {
+        "length_m": round(route.length_m, 2),
+        "space_path": route.space_path,
+        "steps": steps,
+        "path": walk_path(b, route),
+    }
+
+
 def walk_directions(
     ctx: RunContext[Deps],
     start: str,
@@ -697,7 +715,7 @@ def walk_directions(
     if tour is None:
         return _json({"reachable": False, "stops": [_label(b, s) for s in stops]})
     try:
-        legs = [[dataclasses.asdict(step) for step in directions(b, leg)] for leg in tour.legs]
+        legs = [_directions_leg(b, leg) for leg in tour.legs]
     except NotImplementedError:  # scaffold: app.building.directions isn't built yet
         return _json(
             {

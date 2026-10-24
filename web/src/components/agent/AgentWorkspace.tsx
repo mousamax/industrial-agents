@@ -778,7 +778,7 @@ function Workspace({ phone }: { phone: boolean }) {
         ghostDoor: null,
         walkMarker:
           curSpace && activeFloor
-            ? { floorId: activeFloor, pos: curSpace.anchor as [number, number] }
+            ? { floorId: activeFloor, pos: curStep?.points?.[0] ?? (curSpace.anchor as [number, number]) }
             : null,
       })
     } else {
