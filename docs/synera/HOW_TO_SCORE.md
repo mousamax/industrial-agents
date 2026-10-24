@@ -35,8 +35,8 @@ then let Claude iterate against that check.** In practice:
    Claude at `docs/synera/ROUTE_SCORING.md`, not at the golden tests.
 2. **Build the measurement before the fix.** Ask Claude for a script or test that reports the score you
    care about (mean best ÷ ours, % within 1%, invalid count) on dev. Then ask it to improve that number.
-3. **Read the worst five cases yourself.** Draw them and look: ask Claude for a plot of the floor and both
-   routes (the kit's `starter_agent/viewer.py` shows how), or use the web app once it draws floors.
+3. **Read the worst five cases yourself.** Draw them and look: Magnus's `scripts/viz_owner_a.py route <building>
+   "<from>" "<to>"` puts a route on the floor plan; ask Claude to add the Synera-rule route next to it.
    Your judgment on "is this the route a person would take" is the thing Claude lacks.
 4. **Hold out a split.** Tune on train, report on dev. The Sunday building is unseen; anything that only
    works because it knows the 280 buildings scores 0 there.
@@ -113,8 +113,12 @@ cd synera-kit && uv run --project .. --env-file ../.env python -m benchmark.eval
   --per-kind 3 --agent app.agents.building_guide.benchmark:answer
 ```
 
-Mousa's parallel runner (`uv run python -m app.agents.building_guide.bench dev`, same scorer, much
-faster) lands with the next role C push; `BENCHMARK.md` will list it.
+Faster, same scorer, in parallel (details in `BENCHMARK.md`):
+
+```bash
+uv run python -m app.agents.building_guide.bench dev --per-kind 3   # saves evals/reports/bench-<label>.jsonl
+uv run python -m app.agents.building_guide.bench dev                # all 138 dev questions
+```
 
 | Command | Tells you | Doesn't tell you |
 |---|---|---|
