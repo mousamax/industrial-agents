@@ -1,12 +1,14 @@
 """Golden tests: every domain interface against Synera's own answers. No LLM, no API calls, seconds.
 
 This is each owner's scoreboard. An interface that still raises NotImplementedError is skipped, not failed,
-so the suite is green from the start and turns into real checks as each part lands.
+so the suite is green from the start and turns into real checks as each part lands. Set GOLDEN_STRICT=1 to
+fail on unimplemented interfaces instead, so the scoreboard shows everything still missing.
 
     uv run pytest tests/building -q -rs                       # dev split, 6 questions per kind
     GOLDEN_SAMPLE=all uv run pytest tests/building -q         # every dev question
     GOLDEN_SPLIT=train GOLDEN_SAMPLE=all uv run pytest tests/building -q -x
     uv run pytest tests/building -k "errand or wide_delivery"  # just your kinds
+    GOLDEN_STRICT=1 uv run pytest tests/building -k "route or graph"  # stubs fail, not skip
 
 Inputs come from the questions' `inputs` (benchmark) or answer ids (warm-up), so these tests check the
 computation only. Whether the agent turns the question text into those inputs is checked separately
@@ -32,6 +34,7 @@ from app.settings import get_settings
 DATA = get_settings().synera_kit_dir / "data"
 SPLIT = os.environ.get("GOLDEN_SPLIT", "dev")
 SAMPLE = os.environ.get("GOLDEN_SAMPLE", "6")
+STRICT = os.environ.get("GOLDEN_STRICT", "") not in ("", "0")
 
 if not (DATA / SPLIT).exists():
     pytest.skip("synera-kit data missing: git submodule update --init", allow_module_level=True)
@@ -62,7 +65,10 @@ def call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     try:
         return fn(*args, **kwargs)
     except NotImplementedError as e:
-        pytest.skip(f"not implemented yet: {e or fn.__qualname__}")
+        message = f"not implemented yet: {e or fn.__qualname__}"
+        if STRICT:
+            pytest.fail(message)
+        pytest.skip(message)
 
 
 def close_to(value: float | None, answer: dict[str, Any]) -> bool:
