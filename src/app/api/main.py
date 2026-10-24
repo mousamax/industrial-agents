@@ -15,6 +15,8 @@
     POST /buildings/draft               Level 4: upload floor plans (multipart `plans`, `name`) -> a new
                                         building, chat about it to settle what the plans don't say
 
+    GET  /voice/session, /voice/tts     live voice through ElevenLabs (app/voice/api.py)
+
 Every chat and the scene of one building share one live state (Level 5 "live building"): what one colleague
 or scanner reports, the others' answers and the map show at once.
 
@@ -49,10 +51,12 @@ from app.building.view import Scene, scene
 from app.core import AgentCard
 from app.registry import Entry, get, registry
 from app.settings import ROOT, get_settings
+from app.voice.api import router as voice_router
 
 observability.setup()
 app = FastAPI(title="Industrial Agents")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(voice_router)
 
 
 class AgentInfo(BaseModel):

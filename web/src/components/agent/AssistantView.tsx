@@ -294,6 +294,7 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
     onUndoChange,
     onForgetOne,
     onArrive,
+    voiceBar,
   } = props
 
   const [showSteps, setShowSteps] = useState(false)
@@ -363,7 +364,8 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
     thread.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
   }, [phase, result, ask, history.length])
 
-  const composer = (inPanel: boolean) => (
+  // During a live voice call the call itself sits where the guide bar was.
+  const composer = (inPanel: boolean) => voiceBar?.(inPanel) ?? (
     <div
       className={clsx(
         'flex w-full items-center gap-3 rounded-full pr-2 pl-2.5',
@@ -663,6 +665,11 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
       {/* Walk mode: one instruction at a time, the map follows. */}
       {isWalk && curStep && (
         <>
+          {voiceBar && (
+            <div className="absolute inset-x-3 bottom-[calc(186px+env(safe-area-inset-bottom))] z-30 mx-auto max-w-[560px]">
+              {voiceBar(false)}
+            </div>
+          )}
           <div
             className={clsx(
               'anim-spring absolute inset-x-3 top-[calc(12px+env(safe-area-inset-top))] z-30 mx-auto flex max-w-[560px] items-center gap-3 rounded-[26px] p-4',
