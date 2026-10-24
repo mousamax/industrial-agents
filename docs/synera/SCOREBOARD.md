@@ -1,23 +1,24 @@
 # Team scoreboard
 
-Generated 2026-10-24T16:17:37+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-24T16:35:08+00:00 by vadim-spiro with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
-**Team: 62.4 / 100 estimated points.** Stakes are our guess at Synera's split.
+**Team: 66.5 / 100 estimated points.** Stakes are our guess at Synera's split.
 
 | Person | Points |
 |---|---|
 | Mousa | 34.9 |
 | Vadim | 17.0 |
-| Magnus | 15.5 |
+| Magnus | 14.5 |
 | Maximilian | 0.0 |
 
 | Part | Row | Owners | Measured | Points | Failing / next |
 |---|---|---|---|---|---|
 | Does it work | **test-geometry**: Area, wall, stacking and 3D questions answered right end to end (dev, judges' scorer) | Vadim, Mousa | ██████████ 100% (97/97 questions) | 14.0 / 14 | – |
 | Does it work | **test-graph**: Errand, delivery, reachability and what-if questions answered right end to end | Magnus, Mousa | ██████████ 100% (41/41 questions) | 6.0 / 6 | – |
-| Does it work | **sunday-find-and-route**: Sunday-style find, count, route, step-free, closure and tour questions through the agent | Mousa, Magnus | ██████████ 100% (368/369 questions) | 10.0 / 10 | route_with_closure 28/29 |
+| Does it work | **sunday-find-and-route**: Sunday-style find, count, route, step-free, closure and tour questions through the agent | Mousa, Magnus | ██████████ 100% (368/369 questions) | 8.0 / 8 | route_with_closure 28/29 |
 | Does it work | **synera-route-rule**: Routes are the best under Synera's announced rule (per-metre stairs/lifts, forklift, bays) | Magnus | █████████░ 94% (509/539 tests) | 7.6 / 8 | test_a4_3_stairs_and_lift_cost_per_metre (xfail) ×30 |
-| Does it work | **unseen-wording**: The scored kinds asked in other words (reworded dev questions) | Mousa | ██████████ 100% (45/45 questions) | 4.0 / 4 | – |
+| Does it work | **unseen-wording**: The scored kinds asked in other words (reworded dev questions) | Mousa | ██████████ 100% (45/45 questions) | 2.0 / 2 | – |
+| Does it work | **unseen-kinds**: 12 question kinds Synera hasn't shown, on test buildings, answers computed by code (held out, score only) | Mousa | ██████████ 99% (95/96 questions) | 4.0 / 4 | within_distance_count 7/8 |
 | Does it work | **level4-from-svg**: Buildings drafted from SVG floor plans match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
 | Does it work | **level4-from-images**: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
 | Does it work | **level3-multibuilding**: Several buildings joined by walkways (Level 3) | Magnus | ░░░░░░░░░░ 0% (no eval yet) | 0.0 / 3 | a walkway model and a test that routes across two buildings |
