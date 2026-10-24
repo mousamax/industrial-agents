@@ -92,29 +92,29 @@ rows:
   what: Voice in and out in the app
   owners: [D]
   stake: 5
-  manual: 0.0
-  note: not started
+  manual: 0.8
+  note: "in: mic button, Web Speech API (Chrome, Edge, Safari); out: Read aloud + spoken answers on request. Gap: hands-full-voice scenario"
 - id: ui-shows-it
   part: Interaction
   what: The app draws routes and highlights what the agent understood, on the floor plan
   owners: [D]
   stake: 5
-  manual: 0.0
-  note: not started
+  manual: 1.0
+  note: "checked in the browser 2026-10-25: routes, highlights, the right floor and 3D on factory, campus, MUCL"
 
 # ---- Creativity (10) and Submission demo (10) -----------------------------------------------------------
 - id: level5-addin
   part: Creativity
   what: 'Level 5 "live building": things move and deliveries arrive ("this is now here" in chat, or a barcode/RFID scan), every colleague and the map see it at once, and time questions work (delivered yesterday, where was it, arriving Monday)'
   owners: [A, B, C, D]
-  stake: 10
+  stake: 0
   pytest: [test_live_]
   scenarios: [live-]
 - id: room-calendar
   part: Creativity
   what: "Room calendar add-in: rooms are calendar resources (as in Google or Outlook), so a guest asking for an event (\"where is the hackathon?\") is guided to the room it's booked in today (demo bookings in data/calendars/)"
   owners: [C]
-  stake: 0
+  stake: 10
   pytest: [test_calendar_]
   scenarios: [calendar-]
 - id: demo-video
