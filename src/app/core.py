@@ -50,16 +50,20 @@ class AgentCard[InputT, DepsT, OutputT]:
     The built-in chat UI (`/ui`, `ia ui`) builds them once at startup and shares them across chats, so
     keep per-run state (scratchpads, collected results) out of deps, or demo through /chat instead.
     """
+    deps_from_input: Callable[[InputT], DepsT] | None = None
+    """Optional: build deps from the run's input (e.g. load the building the question is about).
+    Used by `run` (CLI, /run, evals) instead of `deps`; chats without an input still use `deps`."""
 
     def coerce(self, inputs: Any) -> InputT:
         return TypeAdapter(self.input_type).validate_python(inputs)
 
     async def run(self, inputs: InputT | dict[str, Any] | str, *, model: str | None = None) -> OutputT:
-        result = await self.agent.run(
-            to_prompt(self.coerce(inputs)),
-            deps=self.deps() if self.deps else None,  # type: ignore[arg-type]
-            model=model,
-        )
+        inputs = self.coerce(inputs)
+        if self.deps_from_input:
+            deps = self.deps_from_input(inputs)
+        else:
+            deps = self.deps() if self.deps else None
+        result = await self.agent.run(to_prompt(inputs), deps=deps, model=model)  # type: ignore[arg-type]
         return result.output
 
 

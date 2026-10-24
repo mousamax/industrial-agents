@@ -1,0 +1,4 @@
+[submodule "synera-kit"]
+	path = synera-kit
+	url = https://github.com/Synera-GmbH/industrial-agents-hackathon-2026.git
+	ignore = untracked

@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=../../../../evals/schema.json
+# One dev question per scored benchmark kind (picked from synera-kit/data/dev, mostly procedural),
+# graded with the judges' own scorer (SyneraScore), plus one interaction case.
+# Run: ia eval building_guide   |   full official run: see BENCHMARK.md
+cases:
+- name: errand-proc-factory-dev-007-H04
+  inputs:
+    building: proc-factory-dev-007
+    question: 'I''m in Hall access 0.20 (Ground floor). I need to grab a filing cabinet from the room that has one
+      closest to me, then carry it to the largest server room on the ground floor. I can carry it on the stairs.
+      How far will I walk in total, in metres? Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 37.91
+    unit: m
+    relative_tolerance: 0.01
+    absolute_tolerance: 1.0
+    via: proc-factory-dev-007-F0-S024
+    target: proc-factory-dev-007-F0-S015
+  metadata:
+    kind: errand
+    skill: chain nearest-item, area and routing
+- name: floor_area_total-proc-campus-dev-002-H01
+  inputs:
+    building: proc-campus-dev-002
+    question: 'Facilities want the total floor area of every office on the floor 2 added together. How many square
+      metres is that? Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 174.3
+    unit: m2
+    relative_tolerance: 0.05
+    absolute_tolerance: 0.0
+  metadata:
+    kind: floor_area_total
+    skill: 'room geometry: summed area'
+- name: largest_room-proc-factory-dev-008-H01
+  inputs:
+    building: proc-factory-dev-008
+    question: 'Which is the largest kitchen on the floor 1, and how big is it in m²? Finish with a line ''Answer:
+      <room name or number>, <area> m²''.'
+  expected_output:
+    type: space
+    space_id: proc-factory-dev-008-F1-S010
+    accept:
+    - '1.10'
+    - Kitchen 1.10
+    reject:
+    - '1.22'
+    - Kitchen 1.22
+    - '1.26'
+    - Kitchen 1.26
+    area:
+      type: number
+      value: 22.4
+      unit: m2
+      relative_tolerance: 0.05
+      absolute_tolerance: 0.0
+  metadata:
+    kind: largest_room
+    skill: 'room geometry: area'
+- name: room_stacked-osm-way22744230-H05
+  inputs:
+    building: osm-way22744230
+    question: 'A washing machine is leaking onto the floor of Generic room N2324 (Floor 2). Which room directly
+      below it will the water reach? Finish with a line ''Answer: <room name or number>''.'
+  expected_output:
+    type: space
+    space_id: osm-way22744230-F1-S026
+    accept:
+    - N1318
+    - Generic room N1318
+    reject:
+    - N1357
+    - Generic room N1357
+    - N1317
+    - Generic room N1317
+  metadata:
+    kind: room_stacked
+    skill: '3D stacking: polygon overlap between floors'
+- name: shared_walls_count-proc-factory-dev-004-H03
+  inputs:
+    building: proc-factory-dev-004
+    question: 'We''re soundproofing Assembly zone H-A1 (Ground floor). How many other rooms on that floor share
+      a wall with it? Count every room whose wall runs along it for at least 1 m, with or without a door between
+      them; corridors, stairwells and lifts don''t count. Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 4
+    unit: rooms
+    relative_tolerance: 0.0
+    absolute_tolerance: 0.0
+  metadata:
+    kind: shared_walls_count
+    skill: wall adjacency from polygons
+- name: step_free_reachable_count-osm-way22744230-H03
+  inputs:
+    building: osm-way22744230
+    question: 'Lift 1 is out of service. A wheelchair user comes in through the entrance into Stairwell N0320A (Ground
+      floor). How many rooms on the floor 2 can they still reach? Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 30
+    unit: rooms
+    relative_tolerance: 0.0
+    absolute_tolerance: 0.0
+  metadata:
+    kind: step_free_reachable_count
+    skill: reachability under constraints
+- name: straight_line_3d-proc-campus-dev-013-H03
+  inputs:
+    building: proc-campus-dev-013
+    question: 'We''re planning a wireless sensor link between Seminar room 2.12 (Floor 2) and Lecture hall 0.18
+      (Ground floor). What is the straight-line distance in metres between the centres of the two rooms (each room''s
+      floor-plan centroid, at its floor''s elevation)? Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 20.34
+    unit: m
+    relative_tolerance: 0.02
+    absolute_tolerance: 0.0
+  metadata:
+    kind: straight_line_3d
+    skill: '3D geometry: centroids and floor elevations'
+- name: what_if_door-osm-way27917482-H08
+  inputs:
+    building: osm-way27917482
+    question: 'What if we add a door between Corridor 02.06.001 (Floor 2) and Corridor 2.402 (Floor 2), in the middle
+      of the wall they share? How many rooms on the floor 3 would then have a shorter walk out of the building,
+      to their nearest entrance, by more than 1 m? Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 6
+    unit: rooms
+    relative_tolerance: 0.0
+    absolute_tolerance: 0.0
+  metadata:
+    kind: what_if_door
+    skill: what-if edit with effects on another floor
+- name: wide_delivery_count-proc-factory-dev-005-H03
+  inputs:
+    building: proc-factory-dev-005
+    question: 'I''m moving a 1.0 m wide hospital bed. It can''t go on stairs or steps (lifts are fine), and every
+      door it passes through must be at least 1.0 m wide. It arrives through the entrance into Main aisle H-B6 (Ground
+      floor). Into how many rooms on the ground floor can it be delivered? Finish with a line ''Answer: <number>''.'
+  expected_output:
+    type: number
+    value: 12
+    unit: rooms
+    relative_tolerance: 0.0
+    absolute_tolerance: 0.0
+  metadata:
+    kind: wide_delivery_count
+    skill: door widths + reachability
+- name: interaction-vague-first-day
+  inputs:
+    building: proc-factory-dev-003
+    question: Hi, it's my first day. Where can I get a coffee?
+  evaluators:
+  - LLMJudge:
+      rubric: The reply finds a real kitchen/canteen-type place from the building data (or asks one short clarifying
+        question listing concrete options), says where it is in plain words with room name and floor, and does not
+        invent rooms.
+      include_input: true
+evaluators:
+- SyneraScore
+- MaxDuration: 180

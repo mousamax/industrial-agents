@@ -55,4 +55,27 @@ class FieldsMatch(Evaluator[Any, Any, Any]):
         return EvaluationReason(value=not problems, reason="; ".join(problems)[:1000] or "all fields match")
 
 
-CUSTOM_EVALUATORS: list[type[Evaluator[Any, Any, Any]]] = [FieldsMatch]
+@dataclass
+class SyneraScore(Evaluator[Any, Any, Any]):
+    """The Synera judges' scorer (synera-kit/benchmark/score.py) on the reply's last `Answer:` line.
+
+    `expected_output` is the `answer` object of a kit question, copied as-is from questions.jsonl.
+    """
+
+    def evaluate(self, ctx: EvaluatorContext[Any, Any, Any]) -> EvaluationReason:
+        from benchmark.score import committed_answer, score_reply
+
+        if ctx.expected_output is None:
+            return EvaluationReason(value=True, reason="no expected answer (interaction case)")
+        reply = str(ctx.output)
+        committed = committed_answer(reply)
+        if committed is None:
+            return EvaluationReason(value=False, reason="no 'Answer:' line")
+        expected = ctx.expected_output
+        target = expected.get("value", expected.get("accept"))
+        return EvaluationReason(
+            value=score_reply(expected, reply), reason=f"got {committed!r}, expected {target!r}"
+        )
+
+
+CUSTOM_EVALUATORS: list[type[Evaluator[Any, Any, Any]]] = [FieldsMatch, SyneraScore]

@@ -32,6 +32,11 @@ class Settings(BaseSettings):
 
     data_dir: Path = ROOT / "data"
 
+    # Synera track: their kit is the `synera-kit/` git submodule (data, starter tools, official scorer).
+    synera_kit_dir: Path = ROOT / "synera-kit"
+    default_building: str = "proc-factory-dev-003"
+    """Building for chats that don't name one (`ia chat building_guide`, `/ui`). Set DEFAULT_BUILDING."""
+
 
 @lru_cache
 def get_settings() -> Settings:

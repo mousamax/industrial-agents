@@ -10,3 +10,7 @@ dist/
 evals/reports/
 data/private/
 .DS_Store
+challenges/IGNOREME*/
+challenges/**/.DS_Store
+agent_output/
+synera-kit/agent_output/

@@ -16,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
+    "track01-student-kit",
     "typer>=0.27.3",
 ]
 
@@ -46,3 +47,11 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = ["live: calls the real model API (skipped unless ANTHROPIC_API_KEY is set)"]
+
+[tool.uv.workspace]
+members = [
+    "synera-kit",
+]
+
+[tool.uv.sources]
+track01-student-kit = { workspace = true, editable = true }

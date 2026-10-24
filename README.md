@@ -14,6 +14,11 @@ weekend on **agent design, prompts and flows**.
 | Serving | FastAPI: `/run`, `/chat` (Vercel AI protocol), `/ui` (built-in chat UI) | A demo in zero lines of frontend |
 | Tooling | uv, ruff, pytest. No Docker, no Makefile, no CI: just Python | |
 
+**Track: Synera, "Talk to Your Building".** Start at [docs/synera/README.md](docs/synera/README.md)
+(brief, scoring, questions for Synera) and [BENCHMARK.md](BENCHMARK.md). Clone with
+`git clone --recurse-submodules`, or run `git submodule update --init` after cloning: Synera's kit and data
+are the `synera-kit/` submodule.
+
 ## Start in 3 minutes
 
 ```bash

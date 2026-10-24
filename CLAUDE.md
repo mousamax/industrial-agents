@@ -10,6 +10,14 @@ Hackathon repo. Python 3.12, uv, Pydantic AI 2.60 on Claude (Anthropic API or Op
 tracing, pydantic-evals. Built for fast iteration: no Docker, no Makefile, no CI. Every agent change is
 checked with its evals, not by eyeballing one output.
 
+## Track: Synera "Talk to Your Building"
+We chose Synera's track. Brief, scoring and open questions: `docs/synera/README.md`. Finalists are picked
+from the online submission, where 55 of 100 points are an automatic benchmark on unseen buildings: never
+hard-code anything to a building or question.
+- `synera-kit/`: Synera's kit as a git submodule (data, `starter_agent/building_map.py` with the exact
+  route model, `benchmark/score.py` the judges' scorer). Don't edit it; import from it.
+- `src/app/agents/building_guide/`: baseline agent on that kit. `BENCHMARK.md`: the official run command.
+
 ## Map
 - `src/app/agents/<name>/`: one folder per agent: `agent.py` (Agent + tools + `card`), `prompt.md`,
   `evals.yaml`, optional `schemas.py`, `tools.py`. Copy via `uv run ia new <name>`, never by hand.
