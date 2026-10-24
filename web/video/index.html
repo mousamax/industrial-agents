@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Navi pitch video</title>
+<script type="importmap">{ "imports": { "three": "/three/three.module.js" } }</script>
+<style>
+  :root {
+    --navy: #070b18; --ink: #0f172a; --panel: #0d1428; --line: #1e2a47;
+    --teal: #2dd4bf; --teal2: #5eead4; --amber: #fbbf24; --red: #e35d5b;
+    --text: #e6edf7; --muted: #8a9bbd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--navy);
+    font-family: "Segoe UI", system-ui, sans-serif; color: var(--text); }
+  .layer { position: absolute; inset: 0; width: 1920px; height: 1080px; opacity: 0; visibility: hidden; }
+  #gl { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+  svg text { font-family: "Segoe UI", system-ui, sans-serif; }
+  .mono { font-family: "Cascadia Code", Consolas, monospace; }
+
+  /* captions */
+  #caption { position: absolute; left: 0; right: 0; bottom: 92px; text-align: center; opacity: 0; }
+  #caption span { display: inline-block; padding: 18px 34px; border-radius: 14px; font-size: 44px; font-weight: 600;
+    background: rgba(7, 11, 24, .78); border: 1px solid rgba(94, 234, 212, .35); letter-spacing: .2px; }
+  #caption small { display: block; font-size: 26px; font-weight: 400; color: var(--muted); margin-top: 6px; }
+
+  .label3d { position: absolute; transform: translate(-50%, -100%); padding: 8px 16px; border-radius: 10px;
+    font-size: 26px; font-weight: 600; white-space: nowrap; background: rgba(7, 11, 24, .85);
+    border: 1.5px solid var(--teal); color: var(--teal2); opacity: 0; }
+  .label3d.amber { border-color: var(--amber); color: var(--amber); }
+  .label3d::after { content: ""; position: absolute; left: 50%; bottom: -12px; width: 2px; height: 12px;
+    background: currentColor; }
+
+  /* tablet close-up */
+  #tablet { background: radial-gradient(ellipse at 50% 40%, #1a2645 0%, #070b18 75%); }
+  .device { position: absolute; left: 190px; top: 90px; width: 1540px; height: 900px; border-radius: 48px;
+    background: #050812; border: 3px solid #2a3557; box-shadow: 0 40px 120px rgba(0,0,0,.6); padding: 34px; }
+  .screen { width: 100%; height: 100%; border-radius: 22px; background: var(--panel); display: flex; overflow: hidden; }
+  .chat { flex: 1.15; padding: 34px 40px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--line); }
+  .side { flex: 1; padding: 34px 36px; display: flex; flex-direction: column; gap: 14px; }
+  .hdr { display: flex; align-items: center; gap: 14px; font-size: 28px; font-weight: 700; }
+  .hdr .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 18px var(--teal); }
+  .hdr .sub { font-weight: 400; color: var(--muted); font-size: 22px; margin-left: auto; }
+  .mic { display: flex; align-items: center; gap: 6px; height: 70px; }
+  .mic i { display: block; width: 8px; border-radius: 4px; background: var(--teal); }
+  .mic b { margin-left: 18px; font-size: 22px; color: var(--muted); font-weight: 400; }
+  .bubble-user { align-self: flex-end; max-width: 80%; background: #2b3a63; padding: 16px 24px; border-radius: 22px 22px 6px 22px;
+    font-size: 30px; min-height: 66px; }
+  .tool { display: flex; gap: 14px; align-items: flex-start; font-size: 21px; padding: 12px 16px; border-radius: 12px;
+    background: #0a1022; border: 1px solid var(--line); opacity: 0; }
+  .tool .st { width: 28px; height: 28px; flex: none; border-radius: 50%; border: 3px solid #33456f; border-top-color: var(--teal);
+    margin-top: 2px; }
+  .tool.done .st { border: none; background: var(--teal); color: #04201c; text-align: center; font-weight: 900; line-height: 28px; font-size: 18px; }
+  .tool .call { color: #c4d4f5; }
+  .tool .call em { color: var(--teal2); font-style: normal; }
+  .tool .res { color: var(--amber); margin-top: 4px; opacity: 0; }
+  .bubble-navi { background: linear-gradient(135deg, #0f3b3a, #10284a); border: 1px solid rgba(45,212,191,.5);
+    padding: 20px 26px; border-radius: 22px 22px 22px 6px; font-size: 29px; line-height: 1.38; min-height: 60px; opacity: 0; }
+  .bubble-navi strong { color: var(--teal2); }
+  .side h4 { margin: 0; font-size: 22px; color: var(--muted); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  #minimap { width: 100%; flex: 1; }
+  .legend { font-size: 22px; color: var(--muted); display: flex; gap: 22px; }
+  .legend span::before { content: ""; display: inline-block; width: 16px; height: 16px; border-radius: 4px; margin-right: 8px;
+    vertical-align: -2px; background: var(--c); }
+
+  /* mail */
+  #mail { background: #dfe5ee; }
+  .win { position: absolute; left: 150px; top: 80px; width: 1620px; height: 920px; border-radius: 18px; background: #fff;
+    box-shadow: 0 30px 90px rgba(15,23,42,.25); color: #1f2937; display: flex; overflow: hidden; }
+  .inbox { width: 430px; background: #f4f6fa; border-right: 1px solid #e3e8ef; padding: 26px 0; }
+  .inbox h3 { margin: 0 28px 18px; font-size: 26px; }
+  .mi { padding: 18px 28px; border-left: 5px solid transparent; font-size: 20px; color: #4b5563; }
+  .mi b { display: block; color: #111827; font-size: 22px; margin-bottom: 4px; }
+  .mi.sel { background: #e6eefc; border-left-color: #3b82f6; }
+  .msg { flex: 1; padding: 40px 54px; position: relative; }
+  .msg h2 { margin: 0 0 14px; font-size: 38px; }
+  .meta { font-size: 21px; color: #6b7280; margin-bottom: 28px; line-height: 1.5; }
+  .body { font-size: 28px; line-height: 1.6; color: #1f2937; }
+  .hl { background-image: linear-gradient(#fde68a, #fde68a); background-repeat: no-repeat; background-size: 0% 100%;
+    border-radius: 4px; padding: 0 3px; }
+  .reply { position: absolute; left: 40px; right: 40px; bottom: 34px; height: 250px; border-radius: 16px; border: 2px solid #3b82f6;
+    background: #fff; box-shadow: 0 -10px 40px rgba(59,130,246,.15); padding: 22px 28px; font-size: 30px; }
+  .reply .to { font-size: 20px; color: #6b7280; margin-bottom: 16px; }
+  .chip { display: inline-block; padding: 2px 14px; border-radius: 10px; background: linear-gradient(135deg, #14b8a6, #3b82f6);
+    color: #fff; font-weight: 700; }
+  .send { position: absolute; right: 26px; bottom: 22px; padding: 14px 34px; border-radius: 12px; background: #3b82f6; color: #fff;
+    font-size: 24px; font-weight: 700; }
+  .caret { display: inline-block; width: 3px; height: 34px; background: #3b82f6; vertical-align: -6px; margin-left: 2px; }
+  .cursor { position: absolute; width: 40px; height: 40px; opacity: 0; z-index: 5; }
+  .ripple { position: absolute; width: 90px; height: 90px; margin: -45px 0 0 -45px; border-radius: 50%;
+    border: 4px solid #3b82f6; opacity: 0; z-index: 4; }
+
+  /* agent console */
+  #console { background: radial-gradient(ellipse at 30% 20%, #13203f 0%, #070b18 70%); }
+  .con { position: absolute; left: 110px; top: 80px; width: 1700px; height: 920px; border-radius: 22px; background: var(--panel);
+    border: 1px solid #22305a; box-shadow: 0 30px 100px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
+  .con .top { display: flex; align-items: center; gap: 14px; padding: 24px 34px; border-bottom: 1px solid var(--line); font-size: 28px; font-weight: 700; }
+  .con .top .sub { margin-left: auto; font-size: 22px; color: var(--muted); font-weight: 400; }
+  .cols { flex: 1; display: flex; }
+  .think { width: 640px; padding: 30px 34px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; }
+  .think .q { font-size: 25px; line-height: 1.5; color: #c4d4f5; min-height: 150px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 12px; }
+  .need { padding: 10px 18px; border-radius: 12px; background: #11203d; border: 1px solid #2c4170; font-size: 24px; opacity: 0; }
+  .need b { color: var(--teal2); }
+  .tools2 { flex: 1; padding: 30px 34px; display: flex; flex-direction: column; gap: 14px; }
+  .tools2 .tool { font-size: 22px; }
+  .sec { font-size: 21px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-weight: 600; }
+
+  /* options */
+  #options { background: radial-gradient(ellipse at 50% 30%, #13203f 0%, #070b18 70%); }
+  #options h1 { position: absolute; top: 90px; left: 0; right: 0; text-align: center; font-size: 46px; margin: 0; font-weight: 700; }
+  #options h1 small { display: block; font-size: 26px; color: var(--muted); font-weight: 400; margin-top: 10px; }
+  .cards { position: absolute; top: 250px; left: 120px; right: 120px; display: flex; gap: 40px; }
+  .card { flex: 1; height: 600px; border-radius: 24px; background: var(--panel); border: 2px solid #22305a; padding: 36px; opacity: 0;
+    display: flex; flex-direction: column; gap: 18px; position: relative; }
+  .card.rec { border-color: var(--teal); box-shadow: 0 0 60px rgba(45,212,191,.25); }
+  .card .tag { font-size: 22px; font-weight: 700; color: var(--muted); letter-spacing: 1px; }
+  .card.rec .tag { color: var(--teal2); }
+  .card h3 { margin: 0; font-size: 34px; line-height: 1.25; }
+  .card ul { margin: 0; padding-left: 28px; font-size: 25px; line-height: 1.6; color: #c4d4f5; }
+  .card .pro { color: var(--teal2); } .card .con2 { color: #f59e8b; }
+  .book { position: absolute; left: 36px; right: 36px; bottom: 36px; padding: 20px; border-radius: 14px; text-align: center;
+    font-size: 28px; font-weight: 700; background: #1b2747; color: #c4d4f5; }
+  .card.rec .book { background: var(--teal); color: #04201c; }
+
+  /* stamp, toast, end card */
+  #stamp { position: absolute; top: 70px; left: 0; right: 0; text-align: center; opacity: 0; }
+  #stamp span { display: inline-block; padding: 14px 40px; border: 4px solid #1f2937; border-radius: 10px; font-size: 48px;
+    font-weight: 800; letter-spacing: 8px; color: #1f2937; background: rgba(255,255,255,.75); }
+  #toast { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); padding: 22px 40px; border-radius: 16px;
+    background: rgba(7, 11, 24, .9); border: 2px solid var(--amber); font-size: 36px; font-weight: 700; color: var(--amber);
+    opacity: 0; white-space: nowrap; }
+  #toast small { display: block; font-size: 24px; color: var(--text); font-weight: 400; margin-top: 4px; }
+  #endcard { background: radial-gradient(ellipse at 50% 50%, rgba(7,11,24,.55) 0%, rgba(7,11,24,.92) 70%); text-align: center; }
+  #endcard .word { margin-top: 330px; font-size: 200px; font-weight: 800; letter-spacing: -4px; line-height: 1;
+    background: linear-gradient(90deg, var(--teal2), #60a5fa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #endcard .tag { font-size: 58px; font-weight: 600; margin-top: 24px; }
+  #endcard .foot { font-size: 26px; color: var(--muted); margin-top: 60px; }
+  #fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="gl" width="1920" height="1080"></canvas>
+<div id="labels"></div>
+
+<!-- Scene 1: reception -->
+<div id="reception" class="layer">
+<svg viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f0e9"/><stop offset="1" stop-color="#e7dfd2"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d6e9f6"/><stop offset="1" stop-color="#b9d6ea"/></linearGradient>
+    <radialGradient id="glow"><stop offset="0" stop-color="#2dd4bf" stop-opacity=".75"/><stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/></radialGradient>
+  </defs>
+  <g id="recWorld">
+    <rect width="1920" height="820" fill="url(#wall)"/>
+    <rect x="60" y="110" width="560" height="640" rx="6" fill="url(#glass)"/>
+    <circle cx="200" cy="560" r="120" fill="#9cc5a8" opacity=".55"/><circle cx="380" cy="600" r="90" fill="#8bb99a" opacity=".5"/>
+    <g stroke="#7d8796" stroke-width="10"><line x1="340" y1="110" x2="340" y2="750"/><line x1="60" y1="430" x2="620" y2="430"/></g>
+    <rect x="60" y="110" width="560" height="640" rx="6" fill="none" stroke="#5b6574" stroke-width="14"/>
+    <rect x="0" y="800" width="1920" height="280" fill="#d6ccbc"/>
+    <rect x="0" y="800" width="1920" height="8" fill="#c4b8a5"/>
+    <text x="1400" y="215" text-anchor="middle" font-size="46" font-weight="700" letter-spacing="10" fill="#2f3b52">MUNICH URBAN COLAB</text>
+    <text x="1400" y="262" text-anchor="middle" font-size="28" letter-spacing="4" fill="#6b7280">EMPFANG · RECEPTION</text>
+    <g transform="translate(700,800)">
+      <path d="M-40 0 L-52 -110 L52 -110 L40 0 Z" fill="#b5653f"/>
+      <ellipse cx="-30" cy="-190" rx="26" ry="80" fill="#4f8a5b" transform="rotate(-25 -30 -190)"/>
+      <ellipse cx="25" cy="-200" rx="26" ry="90" fill="#5c9a67" transform="rotate(20 25 -200)"/>
+      <ellipse cx="0" cy="-220" rx="24" ry="95" fill="#3f7a4c"/>
+    </g>
+    <!-- receptionist -->
+    <g>
+      <rect x="1408" y="455" width="150" height="190" rx="50" fill="#5b7db1"/>
+      <rect x="1468" y="428" width="30" height="36" fill="#d9a07a"/>
+      <g id="recHead" transform="rotate(14 1483 400)">
+        <circle cx="1483" cy="392" r="54" fill="#e0ac85"/>
+        <path d="M1429 385 Q1432 330 1483 328 Q1540 330 1537 388 Q1520 360 1483 360 Q1450 362 1429 385 Z" fill="#2e2119"/>
+        <path d="M1424 392 Q1426 318 1483 316 Q1542 318 1543 392" fill="none" stroke="#1f2430" stroke-width="12"/>
+        <rect x="1410" y="372" width="26" height="46" rx="10" fill="#e35d5b"/>
+        <rect x="1531" y="372" width="26" height="46" rx="10" fill="#e35d5b"/>
+        <circle cx="1460" cy="402" r="5" fill="#2e2119"/>
+      </g>
+      <g id="notes" fill="#7c5cff" font-size="44"><text x="1560" y="330">♪</text><text x="1600" y="290">♫</text></g>
+      <!-- right arm with phone -->
+      <rect x="1505" y="500" width="34" height="110" rx="16" fill="#4d6ea0" transform="rotate(30 1522 500)"/>
+      <rect x="1452" y="535" width="40" height="66" rx="8" fill="#111827"/>
+      <rect x="1457" y="541" width="30" height="50" rx="4" fill="#60a5fa" opacity=".8"/>
+      <!-- pointing arm -->
+      <g id="recArm" transform="translate(1428,485) rotate(-80)">
+        <rect x="-170" y="-16" width="176" height="32" rx="16" fill="#4d6ea0"/>
+        <circle cx="-176" cy="0" r="18" fill="#e0ac85"/>
+        <rect x="-210" y="-6" width="34" height="12" rx="6" fill="#e0ac85"/>
+      </g>
+    </g>
+    <!-- counter -->
+    <rect x="1060" y="588" width="700" height="30" rx="8" fill="#4a5873"/>
+    <rect x="1080" y="612" width="660" height="196" rx="10" fill="#2f3b52"/>
+    <rect x="1080" y="660" width="660" height="6" fill="#3d4a66"/>
+    <!-- tablet on stand -->
+    <circle id="tabGlow" cx="1195" cy="535" r="120" fill="url(#glow)" opacity=".4"/>
+    <rect x="1185" y="560" width="22" height="30" fill="#1f2937"/>
+    <g transform="rotate(-6 1195 520)">
+      <rect x="1120" y="470" width="150" height="100" rx="12" fill="#0b1020"/>
+      <rect x="1129" y="479" width="132" height="82" rx="6" fill="#0f2a48"/>
+      <circle cx="1195" cy="512" r="14" fill="#2dd4bf"/>
+      <text x="1195" y="550" text-anchor="middle" font-size="18" font-weight="700" fill="#5eead4">Navi</text>
+    </g>
+    <!-- guest -->
+    <g id="guest" transform="translate(-250,0)">
+      <g id="legL" transform="rotate(0 0 660)"><rect x="-20" y="650" width="34" height="150" rx="14" fill="#2f3b52"/><rect x="-22" y="788" width="50" height="16" rx="8" fill="#111827"/></g>
+      <g id="legR" transform="rotate(0 0 660)"><rect x="-14" y="650" width="34" height="150" rx="14" fill="#3a4863"/><rect x="-16" y="788" width="50" height="16" rx="8" fill="#111827"/></g>
+      <rect x="-92" y="520" width="58" height="120" rx="18" fill="#3b5b8f"/>
+      <rect x="-50" y="505" width="104" height="168" rx="40" fill="#e35d5b"/>
+      <rect x="-12" y="530" width="30" height="120" rx="15" fill="#c94a48"/>
+      <rect x="-12" y="458" width="26" height="40" fill="#e8b894"/>
+      <circle cx="2" cy="440" r="48" fill="#f1c7a1"/>
+      <path d="M-46 432 Q-44 386 6 386 Q50 388 50 424 Q30 404 0 408 Q-26 410 -46 432 Z" fill="#6b4226"/>
+      <circle cx="28" cy="440" r="5" fill="#2e2119"/>
+    </g>
+    <!-- speech bubble -->
+    <g id="bubble" opacity="0">
+      <rect x="560" y="250" width="560" height="120" rx="30" fill="#fff" stroke="#2f3b52" stroke-width="4"/>
+      <path d="M760 366 L790 420 L810 366 Z" fill="#fff" stroke="#2f3b52" stroke-width="4" stroke-linejoin="round"/>
+      <rect x="758" y="358" width="56" height="12" fill="#fff"/>
+      <text id="bubbleText" x="840" y="327" text-anchor="middle" font-size="44" font-weight="600" fill="#1f2937"></text>
+    </g>
+  </g>
+</svg>
+</div>
+
+<!-- Scene 1: tablet close-up -->
+<div id="tablet" class="layer">
+  <div class="device"><div class="screen">
+    <div class="chat">
+      <div class="hdr"><span class="dot"></span>Navi<span class="sub">Empfang · front desk tablet</span></div>
+      <div class="mic" id="mic"></div>
+      <div class="bubble-user" id="tUser"></div>
+      <div class="tool" id="t1"><div class="st"></div><div><div class="call mono"><em>calendar.find_event</em>("hackathon", date="today")</div><div class="res mono">→ Industrial Agents Hackathon · today, 09:00–18:00</div></div></div>
+      <div class="tool" id="t2"><div class="st"></div><div><div class="call mono"><em>find</em>("Besprechung 03.21")</div><div class="res mono">→ Floor 3 · meeting rooms 03.21–03.25</div></div></div>
+      <div class="tool" id="t3"><div class="st"></div><div><div class="call mono"><em>route</em>("Empfang", "Besprechung 03.21", step_free=True)</div><div class="res mono">→ 58.7 m · Aufzug Mitte → 3. OG → Flur Besprechungsräume</div></div></div>
+      <div class="bubble-navi" id="tAns"></div>
+    </div>
+    <div class="side">
+      <h4>3. Obergeschoss · Floor 3</h4>
+      <svg id="minimap" viewBox="24 6 40 28"></svg>
+      <div class="legend"><span style="--c:#2dd4bf">Hackathon</span><span style="--c:#fbbf24">Your route</span><span style="--c:#60a5fa">Elevator</span></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- Scene 2: facility manager's desk -->
+<div id="desk" class="layer">
+<svg viewBox="0 0 1920 1080" width="1920" height="1080">
+  <g id="deskWorld">
+    <rect width="1920" height="1080" fill="#e8edf4"/>
+    <rect x="1360" y="120" width="440" height="420" rx="8" fill="#cfe2f5" stroke="#9aa8ba" stroke-width="12"/>
+    <line x1="1580" y1="120" x2="1580" y2="540" stroke="#9aa8ba" stroke-width="10"/>
+    <circle cx="1480" cy="230" r="44" fill="#fde68a"/>
+    <rect x="0" y="770" width="1920" height="310" fill="#cbd3de"/>
+    <!-- facility manager (seated behind the desk edge, facing the monitor) -->
+    <g id="fm" transform="translate(0,130)">
+      <rect x="1230" y="560" width="150" height="40" rx="14" fill="#334155"/>
+      <rect x="1350" y="440" width="36" height="200" rx="14" fill="#334155"/>
+      <rect x="1225" y="420" width="130" height="190" rx="48" fill="#0f766e"/>
+      <rect x="1150" y="480" width="130" height="34" rx="16" fill="#0d655e" transform="rotate(12 1270 497)"/>
+      <circle cx="1137" cy="510" r="18" fill="#c68b62"/>
+      <rect x="1275" y="390" width="30" height="40" fill="#c68b62"/>
+      <circle cx="1288" cy="350" r="56" fill="#d39a70"/>
+      <path d="M1232 345 Q1235 288 1292 290 Q1346 296 1344 350 Q1330 318 1300 316 Q1262 314 1232 345 Z" fill="#1c1917"/>
+      <circle cx="1252" cy="352" r="5" fill="#1c1917"/>
+    </g>
+    <!-- desk -->
+    <rect x="300" y="700" width="1300" height="34" rx="8" fill="#8b6b4f"/>
+    <rect x="340" y="734" width="30" height="300" fill="#6f553f"/><rect x="1530" y="734" width="30" height="300" fill="#6f553f"/>
+    <!-- monitor -->
+    <rect x="590" y="640" width="200" height="22" rx="6" fill="#374151"/>
+    <rect x="675" y="560" width="30" height="90" fill="#4b5563"/>
+    <rect x="380" y="200" width="620" height="380" rx="18" fill="#1f2937"/>
+    <rect x="398" y="218" width="584" height="344" rx="8" fill="#f8fafc"/>
+    <rect x="398" y="218" width="160" height="344" fill="#eef2f7"/>
+    <g fill="#cbd5e1"><rect x="414" y="250" width="128" height="16" rx="6"/><rect x="414" y="290" width="110" height="16" rx="6"/><rect x="414" y="330" width="120" height="16" rx="6"/></g>
+    <g fill="#e2e8f0"><rect x="580" y="250" width="380" height="22" rx="6"/><rect x="580" y="300" width="340" height="22" rx="6"/><rect x="580" y="350" width="360" height="22" rx="6"/><rect x="580" y="400" width="300" height="22" rx="6"/></g>
+    <!-- mail toast on monitor -->
+    <g id="mailToast" opacity="0">
+      <rect x="580" y="440" width="390" height="104" rx="14" fill="#1e293b"/>
+      <circle cx="624" cy="492" r="24" fill="#3b82f6"/><text x="624" y="501" text-anchor="middle" font-size="26" fill="#fff">✉</text>
+      <text x="660" y="482" font-size="22" font-weight="700" fill="#fff">New mail · Events Team</text>
+      <text x="660" y="514" font-size="19" fill="#cbd5e1">Hackathon at MUCL, Sat 24 Oct</text>
+    </g>
+    <!-- mug -->
+    <rect x="1080" y="620" width="70" height="80" rx="12" fill="#e35d5b"/>
+    <path d="M1150 640 Q1185 650 1150 680" fill="none" stroke="#e35d5b" stroke-width="10"/>
+    <g id="steam" stroke="#94a3b8" stroke-width="5" fill="none" opacity=".7"><path d="M1100 600 q-14 -20 0 -40 q14 -20 0 -40"/><path d="M1130 600 q-14 -20 0 -40 q14 -20 0 -40"/></g>
+    <!-- keyboard -->
+    <rect x="1040" y="684" width="150" height="16" rx="5" fill="#475569"/>
+  </g>
+</svg>
+</div>
+
+<!-- Scene 2: mail -->
+<div id="mail" class="layer">
+  <div class="win">
+    <div class="inbox"><h3>Inbox</h3>
+      <div class="mi sel"><b>Events Team</b>Hackathon at MUCL, Sat 24 Oct</div>
+      <div class="mi"><b>Building services</b>Elevator maintenance, Thu</div>
+      <div class="mi"><b>Cleaning</b>Updated schedule for floor 4</div>
+      <div class="mi"><b>IT</b>New Wi-Fi password in the foyer</div>
+    </div>
+    <div class="msg">
+      <h2>Hackathon at MUCL, Sat 24 Oct</h2>
+      <div class="meta">From: Events Team · To: Facility Management · 08:42</div>
+      <div class="body">Hi! We're hosting a hackathon on <span class="hl" id="h1">Saturday, 24 October</span>.<br>
+        We expect <span class="hl" id="h2">60 participants in about 12 teams</span>.<br>
+        We need <span class="hl" id="h3">one room for the kickoff and pitches</span>, plus <span class="hl" id="h4">breakout rooms for the teams</span>.<br>
+        Everything has to be <span class="hl" id="h5">step-free</span>, ideally with <span class="hl" id="h6">coffee close by</span>.<br>
+        Could you book the rooms? Thanks!</div>
+      <div class="reply" id="reply">
+        <div class="to">Reply to: Events Team · Cc: Navi</div>
+        <div><span id="rChip"></span><span id="rText"></span><span class="caret" id="caret"></span></div>
+        <div class="send" id="sendBtn">Send</div>
+      </div>
+    </div>
+  </div>
+  <svg class="cursor" id="cur1" viewBox="0 0 24 24"><path d="M3 2 L3 20 L8 15 L11.5 22 L14.5 20.6 L11 14 L18 14 Z" fill="#111827" stroke="#fff" stroke-width="1.5"/></svg>
+  <div class="ripple" id="rip1"></div>
+</div>
+
+<!-- Scene 2: agent console -->
+<div id="console" class="layer">
+  <div class="con">
+    <div class="top"><span class="hdr"><span class="dot"></span>Navi</span><span style="font-weight:400;color:var(--muted)">Facility agent</span><span class="sub">Task from Facility Management · via email · Munich Urban Colab</span></div>
+    <div class="cols">
+      <div class="think">
+        <div class="sec">Reading the request</div>
+        <div class="q" id="cQ"></div>
+        <div class="chips">
+          <div class="need" id="n1"><b>60</b> people</div><div class="need" id="n2"><b>12</b> teams × 5</div>
+          <div class="need" id="n3"><b>1</b> plenary room</div><div class="need" id="n4"><b>5+</b> breakout rooms</div>
+          <div class="need" id="n5"><b>step-free</b></div><div class="need" id="n6"><b>coffee</b> nearby</div>
+          <div class="need" id="n7"><b>Sat</b> 24 Oct</div>
+        </div>
+      </div>
+      <div class="tools2">
+        <div class="sec">Checking the building</div>
+        <div class="tool" id="c1"><div class="st"></div><div><div class="call mono"><em>list_rooms</em>(room_type="meeting", building="MUCL")</div><div class="res mono">→ 22 candidate rooms on 4 floors</div></div></div>
+        <div class="tool" id="c2"><div class="st"></div><div><div class="call mono"><em>room_details</em>("Arena (Obergeschoss)")</div><div class="res mono">→ 219 m² · 1st floor · fits kickoff for 60</div></div></div>
+        <div class="tool" id="c3"><div class="st"></div><div><div class="call mono"><em>calendar.free_slots</em>(date="2026-10-24")</div><div class="res mono">→ 14 of 22 rooms free all day</div></div></div>
+        <div class="tool" id="c4"><div class="st"></div><div><div class="call mono"><em>nearest</em>("Besprechung 03.21", item_type="coffee_machine")</div><div class="res mono">→ Küche 03.26 · 32 m walk</div></div></div>
+        <div class="tool" id="c5"><div class="st"></div><div><div class="call mono"><em>route</em>("Arena (Obergeschoss)", "Besprechung 03.21", step_free=True)</div><div class="res mono">→ 59 m · elevator only, no steps</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scene 2: options -->
+<div id="options" class="layer">
+  <h1>3 room plans for Sat 24 Oct<small>60 people · 12 teams · step-free · Munich Urban Colab</small></h1>
+  <div class="cards">
+    <div class="card rec" id="o1"><div class="tag">A · ★ RECOMMENDED</div><h3>Arena (1st floor) + Besprechung 03.21–03.25</h3>
+      <ul><li class="pro">Kickoff in 219 m² Arena</li><li class="pro">5 team rooms on one corridor</li><li class="pro">59 m step-free via Aufzug Mitte</li><li class="pro">Coffee 32 m away (Küche 03.26)</li></ul>
+      <div class="book" id="bookA">Book A</div></div>
+    <div class="card" id="o2"><div class="tag">B</div><h3>Seminarraum 1–3 (1st floor)</h3>
+      <ul><li class="pro">Everything on one floor</li><li class="con2">Largest room 109 m², tight for 60</li><li class="con2">Only 3 rooms for 12 teams</li></ul>
+      <div class="book">Book B</div></div>
+    <div class="card" id="o3"><div class="tag">C</div><h3>Foyer/Eventbereich + Projektraum 1–2 (ground floor)</h3>
+      <ul><li class="pro">Most space, 445 m² in total</li><li class="con2">Public foyer, noisy</li><li class="con2">No quiet team rooms</li></ul>
+      <div class="book">Book C</div></div>
+  </div>
+  <svg class="cursor" id="cur2" viewBox="0 0 24 24"><path d="M3 2 L3 20 L8 15 L11.5 22 L14.5 20.6 L11 14 L18 14 Z" fill="#fff" stroke="#111827" stroke-width="1.5"/></svg>
+  <div class="ripple" id="rip2" style="border-color:#2dd4bf"></div>
+</div>
+
+<div id="stamp"><span>3 WEEKS EARLIER</span></div>
+<div id="toast"></div>
+<div id="caption"><span><b id="capMain"></b><small id="capSub"></small></span></div>
+<div id="endcard" class="layer">
+  <div class="word">Navi</div>
+  <div class="tag">Talk to your building.</div>
+  <div class="foot">Industrial Agents · Synera track · built on the Munich Urban Colab floor plans</div>
+</div>
+<div id="fade"></div>
+<script type="module" src="scene.js"></script>
+</body>
+</html>
