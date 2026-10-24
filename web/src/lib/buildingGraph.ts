@@ -362,13 +362,13 @@ export function sharedWall(index: SceneIndex, aId: string, bId: string): SharedW
   return best
 }
 
-/** Static starter prompts sent directly to the live `building_guide` backend agent. */
-export function buildStarterPrompts(activeId: string | null, activeName: string): Scenario[] {
-  const isDefaultBuilding = !activeId || activeId === 'proc-campus-dev-000' || activeId === 'proc-factory-dev-003'
-  const campusId = isDefaultBuilding ? 'proc-campus-dev-000' : activeId
-  const campusName = isDefaultBuilding ? 'Office campus' : activeName
-  const factoryId = isDefaultBuilding ? 'proc-factory-dev-003' : activeId
-  const factoryName = isDefaultBuilding ? 'Factory & office' : activeName
+/** Prepared starter prompts for the two demo buildings. They name real rooms there, so they belong to those
+ *  buildings only; every other building gets suggestions from its own plan (buildingSuggestions). */
+export function buildStarterPrompts(): Scenario[] {
+  const campusId = 'proc-campus-dev-000'
+  const campusName = 'Office campus'
+  const factoryId = 'proc-factory-dev-003'
+  const factoryName = 'Factory & office'
 
   return [
     {
@@ -427,4 +427,40 @@ export function buildStarterPrompts(activeId: string | null, activeName: string)
       user: 'Add a door between Seminar room 2.06 and Kitchen 2.07.',
     },
   ]
+}
+
+export interface Suggestion {
+  label: string
+  text: string
+}
+
+/** Questions this building can answer, from what its plan holds: no room named that isn't there. A building
+ *  drafted from plans leads with what the guide still needs to know about it. */
+export function buildingSuggestions(index: SceneIndex | null, drafted: boolean): Suggestion[] {
+  if (!index) return []
+  const spaces = [...index.spaceById.values()]
+  const assets = [...index.assetById.values()]
+  const has = (pattern: RegExp) => spaces.some((s) => pattern.test(s.room_type)) || assets.some((a) => pattern.test(a.type))
+  const out: Suggestion[] = []
+  if (drafted) {
+    out.push({ label: 'What do you still need from me?', text: 'You drafted this building from my floor plans. What do you still need from me?' })
+  }
+  if (has(/coffee|kitchen|canteen|cafeteria/)) {
+    out.push({ label: 'Where can I get a coffee?', text: 'Where can I get a coffee?' })
+  }
+  if (has(/toilet|\bwc\b|restroom|bathroom/)) {
+    out.push({ label: 'Where are the toilets?', text: 'Where is the nearest toilet?' })
+  }
+  const lift = [...index.connectorById.values()].find((c) => c.kind === 'lift' && c.name)
+  if (lift && index.floors.length > 1) {
+    out.push({
+      label: `What if ${lift.name} is out?`,
+      text: `What if ${lift.name} is out of service today? Which rooms lose step-free access?`,
+    })
+  }
+  if (has(/warehouse|logistics/)) {
+    out.push({ label: 'Forklift route to the warehouse', text: 'Forklift run (3 m wide, no steps) from the nearest entrance to the warehouse. Which way?' })
+  }
+  out.push({ label: 'Which room is the biggest?', text: 'Which room in this building is the biggest?' })
+  return out
 }

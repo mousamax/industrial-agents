@@ -60,11 +60,34 @@ import { useApp } from '../../store'
 import { BuildingPicker } from '../browse/BuildingPicker'
 import { useBrowseUi } from '../browse/browseStore'
 import { getBuildingChat, resetChat, useBuildingChat, type ChatMessage } from '../chat/chats'
-import { withPreferences } from '../chat/text'
+import { splitAnswer, stripPreferences, withPreferences } from '../chat/text'
 import { MapView } from '../map/MapView'
 import { mapLabel, shapeAnswer } from './assistantCopy'
 import { AssistantView } from './AssistantView'
 import { extractLiveTurn } from './liveBridge'
+
+/** One finished exchange of the conversation, shown above the current answer. */
+export interface PastTurn {
+  user: string
+  reply: string
+}
+
+/** The finished exchanges in a chat, oldest first, without the one still on screen (the last question). */
+function pastTurns(messages: ChatMessage[]): PastTurn[] {
+  const turns: PastTurn[] = []
+  for (const m of messages) {
+    const text = m.parts
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .join('')
+      .trim()
+    if (m.role === 'user') turns.push({ user: stripPreferences(text).text, reply: '' })
+    else if (m.role === 'assistant' && turns.length) {
+      const last = turns[turns.length - 1]
+      last.reply = [last.reply, splitAnswer(text).body].filter(Boolean).join('\n\n')
+    }
+  }
+  return turns.slice(0, -1).filter((t) => t.user && t.reply)
+}
 
 /** Tools that change the drafted plan itself (Level 4): the map must reload the corrected building. */
 const PLAN_EDITS = new Set(['fix_draft', 'draft_building'])
@@ -153,8 +176,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
   }, [buildingId, scene?.name, buildings])
 
   const starterList = useMemo(
-    () => buildStarterPrompts(buildingId, activeBuildingName),
-    [buildingId, activeBuildingName],
+    () => buildStarterPrompts(),
+    [],
   )
 
   // Flow state
@@ -200,6 +223,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     ]
     return () => unsub.forEach((u) => u())
   }, [chat])
+
+  const history = useMemo(() => pastTurns(liveMessages), [liveMessages])
 
   const clearLiveError = useCallback(() => {
     chat?.clearError()
@@ -300,6 +325,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         setPhase('working')
         setReplyText(text)
       }
+      setInput('')
       setLiveMode(true)
       const currentMem = useApp.getState().memory
       void targetChat.sendMessage({
@@ -534,8 +560,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     void sendToBackend('Undo the last change.', buildingId ?? undefined, scenario, true)
   }, [result, sendToBackend, buildingId, scenario])
 
-  // Reset to home
-  const reset = useCallback(() => {
+  // Back to the welcome screen: no answer, route or highlight left on the map
+  const clearView = useCallback(() => {
     stopSpeech()
     recognitionRef.current?.stop()
     recognitionRef.current = null
@@ -559,8 +585,22 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     setMapInsets({ top: 0, right: 0, bottom: 0, left: 0 })
     // Where you were belongs to the last question; preferences (step-free, short answers) carry over.
     useApp.setState((s) => ({ memory: s.memory.filter((m) => !m.spaceId) }))
+  }, [stopSpeech, setRoute, setHighlight, setMapOverlays, setMapInsets])
+
+  // Start over: the welcome screen, and the guide forgets this conversation
+  const reset = useCallback(() => {
+    clearView()
     if (buildingId) resetChat(buildingId)
-  }, [stopSpeech, setRoute, setHighlight, setMapOverlays, setMapInsets, buildingId])
+  }, [clearView, buildingId])
+
+  // Another building: the last one's answer, route and highlights mean nothing here. A question already on
+  // its way to the new building (a starter, an upload) sets its own state after the switch.
+  const shownBuilding = useRef(buildingId)
+  useEffect(() => {
+    if (shownBuilding.current === buildingId) return
+    shownBuilding.current = buildingId
+    clearView()
+  }, [buildingId, clearView])
 
   // A place remembered in one building means nothing in another.
   useEffect(() => {
@@ -631,7 +671,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
             : { top: 84, right: 32, bottom: 52, left: 32 }
           : phone
             ? { top: 72, right: 16, bottom: 420, left: 16 }
-            : { top: 88, right: 40, bottom: 120, left: 440 },
+            : { top: 88, right: 40, bottom: 40, left: 460 },
       )
       setRoute(result.route?.showRoute ?? null)
       setHighlight(
@@ -672,6 +712,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         <AssistantView
           phone={phone}
           buildingId={buildingId}
+          history={history}
+          drafted={buildings.find((b) => b.id === buildingId)?.source === 'floor_plans'}
           phase={phase}
           buildingName={result?.buildingName ?? activeBuildingName}
           memory={memory}

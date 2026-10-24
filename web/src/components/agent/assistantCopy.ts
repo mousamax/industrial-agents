@@ -90,7 +90,9 @@ export function shapeAnswer(result: ScenarioResult): ShapedAnswer {
     .split(SENTENCE)
     .map((s) => s.trim())
     .filter((s) => s && !isNoteFragment(s) && !isThinkingAloud(s) && !/^answer:/i.test(s))
-  const headline = sentences[0] ?? result.title
+  // "I made two changes:" followed by a list is a headline of its own, not the start of a long sentence.
+  const firstLine = clean(result.understood.split('\n')[0] ?? '')
+  const headline = /:$/.test(firstLine) ? firstLine : (sentences[0] ?? result.title)
   const len = result.route?.length
   const meta = result.kind === 'route' && len ? `${fmtM(len)} · about ${fmtWalk(len)}` : ''
   // A supporting sentence that only repeats the distance already shown in `meta` adds nothing.
@@ -107,6 +109,34 @@ export function shapeAnswer(result: ScenarioResult): ShapedAnswer {
       ? sentences.slice(ask > 1 && !sentences[ask - 1].endsWith('?') ? ask - 1 : ask, ask + 1).join(' ')
       : (sentences.slice(1).find((s) => !restatesDistance(s)) ?? '')
   return { headline, detail, meta }
+}
+
+export interface ReplyBlock {
+  kind: 'p' | 'li'
+  text: string
+}
+
+/** The whole reply after its headline, as paragraphs and list items, so nothing the guide said is cut. */
+export function replyBlocks(text: string, headline: string): ReplyBlock[] {
+  const blocks: ReplyBlock[] = []
+  for (const raw of text.replace(/\*\*/g, '').split('\n')) {
+    const line = raw.replace(/^#+\s*/, '').trim()
+    if (!line || /^answer:/i.test(line)) continue
+    const item = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/)
+    blocks.push(item ? { kind: 'li', text: item[1] } : { kind: 'p', text: line })
+  }
+  const first = blocks[0]
+  if (first && clean(first.text).startsWith(headline)) {
+    const rest = clean(first.text).slice(headline.length).trim()
+    if (rest) first.text = rest
+    else blocks.shift()
+  }
+  return blocks.filter((b) => !isThinkingAloud(b.text))
+}
+
+/** An earlier reply in the thread, as one plain paragraph. */
+export function plainReply(text: string): string {
+  return clean(text.replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, ''))
 }
 
 /** A short label to pin on the map next to the answer room, or null when the headline is too long for it. */
