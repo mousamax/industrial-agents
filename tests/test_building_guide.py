@@ -90,3 +90,13 @@ async def test_a_reply_that_keeps_failing_the_answer_check_is_returned_not_crash
         result = await agent.run("How far? Finish with a line 'Answer: <number>'.", deps=Deps.load(FACTORY))
     assert result.output.endswith("Answer: 12")
     assert len(calls) == 5  # the check still asked four times for a grounded number before giving way
+
+
+def test_location_resolves_and_reaches_the_context():
+    from app.agents.building_guide.agent import _location_context
+
+    deps = Deps.load("osm-way37850565", here="Büro 0.10 (Ground floor)")
+    assert deps.here == "osm-way37850565-F0-S010"
+    text = _location_context(SimpleNamespace(deps=deps))
+    assert "Büro 0.10 (Ground floor)" in text and "osm-way37850565-F0-S010" in text
+    assert _location_context(SimpleNamespace(deps=Deps.load("osm-way37850565"))) == ""

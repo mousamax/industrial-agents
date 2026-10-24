@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T16:02:49+00:00",
+   "at": "2026-10-24T17:14:05+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,11 +45,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2199895,
-   "output_tokens": 37278
+   "input_tokens": 2177846,
+   "output_tokens": 35531
   },
   "warmup": {
-   "at": "2026-10-24T15:52:54+00:00",
+   "at": "2026-10-24T17:15:06+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 368,
@@ -81,11 +81,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 5134939,
-   "output_tokens": 84857
+   "input_tokens": 5280719,
+   "output_tokens": 81720
   },
   "reworded": {
-   "at": "2026-10-24T16:03:57+00:00",
+   "at": "2026-10-24T17:17:39+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 45,
@@ -129,22 +129,24 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 714497,
-   "output_tokens": 11328
+   "input_tokens": 725827,
+   "output_tokens": 11531
   },
   "scenarios": {
-   "at": "2026-10-24T16:04:20+00:00",
+   "at": "2026-10-24T17:20:33+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 11,
+   "correct": 10,
    "total": 11,
-   "failing": []
+   "failing": [
+    "hands-full-voice"
+   ]
   },
   "unseen": {
-   "at": "2026-10-24T15:55:54+00:00",
+   "at": "2026-10-24T17:17:59+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 95,
+   "correct": 96,
    "total": 96,
    "by_kind": {
     "area_difference": [
@@ -192,16 +194,16 @@
      8
     ],
     "within_distance_count": [
-     7,
+     8,
      8
     ]
    },
    "errors": 0,
-   "input_tokens": 2249256,
-   "output_tokens": 41354
+   "input_tokens": 2302397,
+   "output_tokens": 42904
   },
   "holdout": {
-   "at": "2026-10-24T15:57:11+00:00",
+   "at": "2026-10-24T17:19:27+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 95,
@@ -257,8 +259,8 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2141634,
-   "output_tokens": 41492
+   "input_tokens": 2231686,
+   "output_tokens": 42145
   }
  }
 }

@@ -1,12 +1,12 @@
 # Team scoreboard
 
-Generated 2026-10-24T16:35:08+00:00 by vadim-spiro with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-24T18:02:57+00:00 by mousamax with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
-**Team: 66.5 / 100 estimated points.** Stakes are our guess at Synera's split.
+**Team: 65.1 / 100 estimated points.** Stakes are our guess at Synera's split.
 
 | Person | Points |
 |---|---|
-| Mousa | 34.9 |
+| Mousa | 33.6 |
 | Vadim | 17.0 |
 | Magnus | 14.5 |
 | Maximilian | 0.0 |
@@ -22,17 +22,17 @@ Generated 2026-10-24T16:35:08+00:00 by vadim-spiro with `uv run ia scoreboard`. 
 | Does it work | **level4-from-svg**: Buildings drafted from SVG floor plans match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
 | Does it work | **level4-from-images**: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
 | Does it work | **level3-multibuilding**: Several buildings joined by walkways (Level 3) | Magnus | ░░░░░░░░░░ 0% (no eval yet) | 0.0 / 3 | a walkway model and a test that routes across two buildings |
-| Interaction | **tricky-users**: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable) | Mousa | ██████████ 100% (11/11 scenarios) | 15.0 / 15 | – |
+| Interaction | **tricky-users**: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable) | Mousa | █████████░ 91% (10/11 scenarios) | 13.6 / 15 | hands-full-voice |
 | Interaction | **voice**: Voice in and out in the app | Maximilian | ░░░░░░░░░░ 0% (0% (owner's call)) | 0.0 / 5 | not started |
 | Interaction | **ui-shows-it**: The app draws routes and highlights what the agent understood, on the floor plan | Maximilian | ░░░░░░░░░░ 0% (0% (owner's call)) | 0.0 / 5 | not started |
 | Creativity | **level5-addin**: One Level 5 add-in done well (pick it as a team) | Magnus, Vadim, Mousa, Maximilian | ░░░░░░░░░░ 0% (0% (owner's call)) | 0.0 / 10 | not picked yet |
 | Submission demo | **demo-video**: Demo video and short technical explanation | Maximilian | ░░░░░░░░░░ 0% (0% (owner's call)) | 0.0 / 10 | not started |
 | Health | **golden-geometry**: Geometry functions vs every golden answer | Vadim | ██████████ 100% (97/97 tests) | health | – |
 | Health | **golden-graph**: Routing, queries and state vs golden answers and Owner A's checks | Magnus | ██████████ 100% (702/702 tests) | health | – |
-| Health | **unseen-kinds-dev**: The same 12 new kinds on dev buildings (the set we may read and tune on) | Mousa | ██████████ 99% (95/96 questions) | health | within_distance_count 7/8 |
+| Health | **unseen-kinds-dev**: The same 12 new kinds on dev buildings (the set we may read and tune on) | Mousa | ██████████ 100% (96/96 questions) | health | – |
 | Health | **agent-tools**: Agent tools vs every golden answer, no model | Mousa | ██████████ 100% (138/138 tests) | health | – |
 
-Agent suites last run: benchmark 2026-10-24T16:02:49+00:00 by mousamax (default); warmup 2026-10-24T15:52:54+00:00 by mousamax (default); reworded 2026-10-24T16:03:57+00:00 by mousamax (default); scenarios 2026-10-24T16:04:20+00:00 by mousamax (default); unseen 2026-10-24T15:55:54+00:00 by mousamax (default); holdout 2026-10-24T15:57:11+00:00 by mousamax (default)
+Agent suites last run: benchmark 2026-10-24T17:14:05+00:00 by mousamax (default); warmup 2026-10-24T17:15:06+00:00 by mousamax (default); reworded 2026-10-24T17:17:39+00:00 by mousamax (default); scenarios 2026-10-24T17:20:33+00:00 by mousamax (default); unseen 2026-10-24T17:17:59+00:00 by mousamax (default); holdout 2026-10-24T17:19:27+00:00 by mousamax (default)
 
 How a row moves: write or fix the failing eval first (red), then the code (green), then
 `uv run ia scoreboard` and commit SCOREBOARD.md with your change.

@@ -43,6 +43,9 @@ from .agent import make_agent
 from .tools import Deps
 
 REPORTS = ROOT / "evals" / "reports"
+WITH_LOCATION = True
+"""Pass a question's inputs.start as where the person is (Synera: good agents know the start point).
+`--no-location` turns it off to measure the agent from the text alone."""
 
 
 DATASETS = ROOT / "evals" / "datasets"
@@ -125,7 +128,9 @@ def load_questions(
 async def answer_one(agent, q: dict) -> dict:
     started = time.perf_counter()
     try:
-        result = await agent.run(q["question"], deps=Deps.load(q["building_dir"]))
+        # Only the start point from `inputs` (where the person is): the other fields would give answers away.
+        here = (q.get("inputs") or {}).get("start") if WITH_LOCATION else None
+        result = await agent.run(q["question"], deps=Deps.load(q["building_dir"], here=here))
         reply, messages, usage = result.output, result.all_messages(), result.usage
         error = None
     except Exception as e:  # a crash is a wrong answer, not a stopped run
@@ -237,7 +242,10 @@ def main(
     concurrency: Annotated[int, typer.Option(help="Questions in flight")] = 8,
     label: Annotated[str | None, typer.Option(help="Report name")] = None,
     submission: Annotated[Path | None, typer.Option(help="Write question_id,answer CSV here")] = None,
+    location: Annotated[bool, typer.Option(help="Pass inputs.start as where the person is")] = True,
 ) -> None:
+    global WITH_LOCATION
+    WITH_LOCATION = location
     if suite not in SUITES:
         raise typer.BadParameter(f"suite must be one of {SUITES}")
     results, out = run_suite(

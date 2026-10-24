@@ -46,6 +46,9 @@ class Deps:
     state: BuildingState
     pending: dict[str, Any] | None = None
     """An edit proposed to the person and waiting for their yes: {"edit": Edit, "run_id": str}."""
+    here: str | None = None
+    """Space id where the person is, when the app knows it (a QR code at a door, a tap on the map, or the
+    `start` a benchmark line carries). The agent gets it as context; it never overrides what they say."""
 
     @property
     def building(self) -> Building:
@@ -57,8 +60,11 @@ class Deps:
         return self.state.closed()
 
     @classmethod
-    def load(cls, reference: str | Path) -> Deps:
-        return cls(state=BuildingState(load_building(reference)))
+    def load(cls, reference: str | Path, here: str | None = None) -> Deps:
+        deps = cls(state=BuildingState(load_building(reference)))
+        if here:
+            deps.here = _space_id(deps.building, here)  # an id, or a name the person would use
+        return deps
 
 
 # ---- resolving what people say ---------------------------------------------------------------------------
@@ -315,7 +321,12 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
             ],
             "lifts_and_stairs": [k.name for k in b.connectors_at(s.id)],
             "items": dict(Counter(a.type for a in b.assets_in(s.id))),
-            "shares_a_wall_with": {"count": len(walls), "rooms": [_label(b, r) for r in walls]},
+            "shares_a_wall_with": {
+                "count": len(walls),
+                "rooms": [_label(b, r) for r in walls],
+                "counts": "rooms and halls (zones, hall access) whose outline runs >=1 m along this one; "
+                "corridors, stairwells and lifts already left out: use this count as it is",
+            },
             "directly_above": above and _label(b, above),
             "directly_below": below and _label(b, below),
             "highlight": [s.id],

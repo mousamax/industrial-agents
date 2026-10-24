@@ -19,7 +19,7 @@ from app.core import AgentCard, load_prompt
 from app.models import model
 from app.settings import get_settings
 
-from .tools import TOOLS, Deps, overview
+from .tools import TOOLS, Deps, _label, overview
 
 
 class Question(BaseModel):
@@ -27,10 +27,23 @@ class Question(BaseModel):
         description="Building id (e.g. proc-factory-dev-003) or path to a building directory"
     )
     question: str
+    location: str | None = Field(
+        default=None, description="Where the person is, if the app knows: a space id or room name"
+    )
 
 
 def _building_context(ctx: RunContext[Deps]) -> str:
     return "Building overview:\n" + json.dumps(overview(ctx.deps.building), ensure_ascii=False)
+
+
+def _location_context(ctx: RunContext[Deps]) -> str:
+    """After the overview, so the cached prefix stays the same for every person in the building."""
+    if not ctx.deps.here:
+        return ""
+    return (
+        f"The person is in {_label(ctx.deps.building, ctx.deps.here)} [{ctx.deps.here}] (from the app, not "
+        "from them). Use it when they say here, this room, or don't say where they start; their own words win."
+    )
 
 
 def _tool_numbers(ctx: RunContext[Deps]) -> list[float]:
@@ -90,6 +103,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         defer_model_check=True,
     )
     built.instructions(_building_context)
+    built.instructions(_location_context)
     built.output_validator(_answer_line_is_committed_and_grounded)
     return built
 
@@ -103,5 +117,5 @@ card = AgentCard(
     agent=agent,
     input_type=Question,
     deps=lambda: Deps.load(get_settings().default_building),
-    deps_from_input=lambda q: Deps.load(q.building),
+    deps_from_input=lambda q: Deps.load(q.building, here=q.location),
 )

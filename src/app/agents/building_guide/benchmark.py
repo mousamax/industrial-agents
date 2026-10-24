@@ -20,8 +20,9 @@ from .agent import agent
 from .tools import Deps
 
 
-def answer(building_directory: Path, question_text: str) -> str:
+def answer(building_directory: Path, question_text: str, location: str | None = None) -> str:
+    """`location`: where the person is (a space id), when the question file gives one (e.g. inputs.start)."""
     observability.setup()
     with observability.entrypoint("building_guide", kind="eval", tags=["synera-benchmark"]):
-        result = asyncio.run(agent.run(question_text, deps=Deps.load(building_directory)))
+        result = asyncio.run(agent.run(question_text, deps=Deps.load(building_directory, here=location)))
     return result.output

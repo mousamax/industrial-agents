@@ -9,6 +9,7 @@
     GET  /buildings                     ids, names, split, source (filter with ?split=dev&source=procedural)
     GET  /buildings/{id}/scene          floors, space polygons, openings, stairs/lifts, assets, in metres
     POST /buildings/{id}/chat           the building guide for that building, Vercel AI SDK stream
+                                        (?location=<space id or room> = where the user is)
 
 Run: `uv run uvicorn app.api.main:app --reload` -> http://localhost:8000/docs
 """
@@ -21,10 +22,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, TypeAdapter
+from pydantic_ai import ModelRetry
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from starlette.responses import Response
 
 from app import observability
+from app.agents.building_guide.tools import _space_id
 from app.building import load_building
 from app.building.view import Scene, scene
 from app.core import AgentCard
@@ -133,11 +136,12 @@ In memory: a restart starts every conversation fresh, which is fine for a demo."
 
 
 @app.post("/buildings/{building_id}/chat")
-async def building_chat(building_id: str, request: Request) -> Response:
+async def building_chat(building_id: str, request: Request, location: str | None = None) -> Response:
     """Chat with the building guide about one building (Vercel AI SDK protocol, like /chat/{name}).
 
     The SDK sends the whole message history every turn; state the tools changed (closures) is kept per
-    chat `id` from the request body."""
+    chat `id` from the request body. `?location=<space id or room name>` tells the agent where the user is
+    (QR code at a door, a tap on the map); send it whenever it changes."""
     card = _entry("building_guide").card
     assert isinstance(card, AgentCard) and card.deps_from_input
     chat_id = str((await request.json()).get("id") or "default")  # Starlette caches the body for dispatch
@@ -147,4 +151,9 @@ async def building_chat(building_id: str, request: Request) -> Response:
             _sessions[key] = card.deps_from_input(card.coerce({"building": building_id, "question": ""}))
         except FileNotFoundError as e:
             raise HTTPException(404, str(e)) from None
+    if location:
+        try:
+            _sessions[key].here = _space_id(_sessions[key].building, location)
+        except ModelRetry as e:
+            raise HTTPException(400, str(e)) from None
     return await VercelAIAdapter.dispatch_request(request, agent=card.agent, deps=_sessions[key])
