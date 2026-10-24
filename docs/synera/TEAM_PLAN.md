@@ -118,24 +118,28 @@ The code is the contract: typed stubs with docstrings in `src/app/building/`. Su
 | view (done) | `scene(b) -> Scene`; `route_view(b, route) -> ShowRoute`; ViewCommand = `Highlight \| ShowRoute \| FocusFloor \| SceneChanged` | C + D |
 | HTTP (done) | `GET /buildings`, `GET /buildings/{id}/scene`, `POST /buildings/{id}/chat` | C |
 
-### Agent tools (C builds them on the interfaces; D renders their `view`)
+### Agent tools (C, in `src/app/agents/building_guide/tools.py`; D renders their ids)
+
+One agent, small tools it composes. Every number comes from code; the model picks tools and writes the
+reply. `tests/building/test_agent_tools.py` checks each tool against every dev and train golden answer.
 
 | Tool | Arguments | Backed by | Covers |
 |---|---|---|---|
-| `building_overview` | | model, state | context: floors, lifts, entrances, closures |
+| context (not a tool) | | `overview()` | floors, room and item type vocabulary, lifts, entrances (static, so it caches) |
 | `find` | `query`, `floor?` | `b.resolve`, assets | FIND, locate |
+| `room_details` | `room` | `geometry.*` | area, doors and widths, shared walls, above/below, items |
+| `list_rooms` | `floor`, `room_type?` | `geometry.rooms_by_area` | largest room, total area |
 | `count_items` | `item_type`, `floor?` | `b.assets_of_type` | count |
-| `route` | `start`, `destination`, `via=[]`, `step_free`, `min_width_m?` | `RouteGraph` + state closures | ROUTE, step-free, closures, tours |
-| `rooms` | `floor`, `room_type?`, `sort="area"` | `geometry.rooms_by_area`, `total_area` | largest room, total area |
-| `room_facts` | `room` | `geometry.*` | area, centre, neighbours, above/below |
 | `distance_3d` | `first`, `second` | `geometry.straight_line_3d` | 3D distance |
-| `reachable_rooms` | `start`, `floor`, `step_free`, `min_width_m?`, `closed=[]` | `queries.*` | deliveries, wheelchair reach |
-| `errand` | `start`, `item_type`, `then_to_room_type`, `floor`, `can_use_stairs` | `queries.errand` | errand |
-| `close` / `reopen` | `element` | `state` | REACT |
-| `add_door` / `move_item` | spaces / item, place | `state` | EDIT, "make things move" |
-| `what_if_door` | `first`, `second`, `affected_floor` | `queries.what_if_door` | what-if |
+| `route` | `start`, `destination`, `via=[]`, `step_free`, `min_width_m?` | `RouteGraph.tour` + session closures | ROUTE, step-free, tours, errands |
+| `nearest` | `start`, `item_type` or `room_type`, `step_free` | `RouteGraph.distances_from` | nearest coffee, errand pickup |
+| `reachable_rooms` | `start`, `floor`, `step_free`, `min_width_m?`, `closed=[]` | `RouteGraph.reachable` | deliveries, wheelchair reach |
+| `what_if` | `floor`, `add_door_between?`, `close=[]` | `geometry.shared_wall_midpoint` + `distances_from` | what-if door, "what changes if X closes" |
+| `set_closed` | `element`, `closed` | session state | REACT |
 
-Every tool returns compact JSON for the model plus `view: [...]` for the UI, never raw polygons.
+Results carry space ids for the UI: `highlight` (spaces to light up) and, for routes, `space_path` and
+`element_path` per leg; draw them from `GET /buildings/{id}/scene`. Until Owner A's `RouteGraph` lands, the
+tools use a stand-in port of the kit's route model (`building_guide/graph.py`); it switches over by itself.
 
 ## Rules so we don't crash into each other
 

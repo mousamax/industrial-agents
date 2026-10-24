@@ -1,8 +1,18 @@
 # yaml-language-server: $schema=../../../../evals/schema.json
 # One dev question per scored benchmark kind (picked from synera-kit/data/dev, mostly procedural),
-# graded with the judges' own scorer (SyneraScore), plus one interaction case.
+# graded with the judges' own scorer (SyneraScore), plus one interaction case (first, so the TestModel smoke test runs a plain chat turn).
 # Run: ia eval building_guide   |   full official run: see BENCHMARK.md
 cases:
+- name: interaction-vague-first-day
+  inputs:
+    building: proc-factory-dev-003
+    question: Hi, it's my first day. Where can I get a coffee?
+  evaluators:
+  - LLMJudge:
+      rubric: The reply finds a real kitchen/canteen-type place from the building data (or asks one short clarifying
+        question listing concrete options), says where it is in plain words with room name and floor, and does not
+        invent rooms.
+      include_input: true
 - name: errand-proc-factory-dev-007-H04
   inputs:
     building: proc-factory-dev-007
@@ -152,16 +162,6 @@ cases:
   metadata:
     kind: wide_delivery_count
     skill: door widths + reachability
-- name: interaction-vague-first-day
-  inputs:
-    building: proc-factory-dev-003
-    question: Hi, it's my first day. Where can I get a coffee?
-  evaluators:
-  - LLMJudge:
-      rubric: The reply finds a real kitchen/canteen-type place from the building data (or asks one short clarifying
-        question listing concrete options), says where it is in plain words with room name and floor, and does not
-        invent rooms.
-      include_input: true
 evaluators:
 - SyneraScore
 - MaxDuration: 180

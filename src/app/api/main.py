@@ -127,19 +127,24 @@ async def building_scene(building_id: str) -> Scene:
         raise HTTPException(404, str(e)) from None
 
 
+_sessions: dict[tuple[str, str], Any] = {}
+"""One building_guide Deps per (building, chat id): closures and other session state survive between turns.
+In memory: a restart starts every conversation fresh, which is fine for a demo."""
+
+
 @app.post("/buildings/{building_id}/chat")
 async def building_chat(building_id: str, request: Request) -> Response:
-    """Chat with the building guide about one building (Vercel AI SDK protocol, like /chat/{name})."""
+    """Chat with the building guide about one building (Vercel AI SDK protocol, like /chat/{name}).
+
+    The SDK sends the whole message history every turn; state the tools changed (closures) is kept per
+    chat `id` from the request body."""
     card = _entry("building_guide").card
     assert isinstance(card, AgentCard) and card.deps_from_input
-    try:
-        deps = card.deps_from_input(card.coerce({"building": building_id, "question": ""}))
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e)) from None
-    return await VercelAIAdapter.dispatch_request(request, agent=card.agent, deps=deps)
-
-
-# `to_web` takes one deps object for the app's lifetime (see AgentCard.deps); /chat builds them per request.
-for _name, _e in registry().items():
-    if isinstance(_e.card, AgentCard):
-        app.mount(f"/ui/{_name}", _e.card.agent.to_web(deps=_e.card.deps() if _e.card.deps else None))
+    chat_id = str((await request.json()).get("id") or "default")  # Starlette caches the body for dispatch
+    key = (building_id, chat_id)
+    if key not in _sessions:
+        try:
+            _sessions[key] = card.deps_from_input(card.coerce({"building": building_id, "question": ""}))
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e)) from None
+    return await VercelAIAdapter.dispatch_request(request, agent=card.agent, deps=_sessions[key])
