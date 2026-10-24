@@ -14,6 +14,8 @@
 # colleague in their own chat on the same building; `setup` lists scanner events recorded before anyone
 # talks: {item, to, type (new item), day (0 today, -1 yesterday, 2 = in two days), time, by, source}.
 #
+# Creativity "room calendar" (calendar-* scenarios): events booked in rooms, data/calendars/<building id>.json.
+#
 # Level 4 "build by conversation" (draft-* scenarios, scored as level4-conversation): `plans` is a glob under
 # synera-kit/data/ drafted fresh before the first turn, as the app does after an upload; `name_as` names it.
 scenarios:
@@ -225,3 +227,14 @@ scenarios:
   expect:
   - Turn 1 renames Production zone H-A1 to Milling hall and sets the entrances (not every door) to 4 m, and confirms both in a line.
   - Turn 2 answers from a route call with forklift width (3 m or more), using the new name, and says plainly if no route fits and why.
+
+- name: calendar-hackathon-guest
+  building: data/MUCL
+  persona: Guest arriving at the Munich Urban Colab who only knows the name of the event.
+  turns:
+  - Hi, I'm a guest. Where is the hackathon?
+  checks:
+  - {turn: 1, tool: calendar}
+  - {turn: 1, tool: route}
+  expect:
+  - Finds the hackathon in the room calendar in the „Arena“ Seminarraum on the ground floor, says it is on now, and gives walking directions there from the reception (Eingangsbereich / Empfang) without asking where the guest is.

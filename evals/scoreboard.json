@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T21:05:35+00:00",
+   "at": "2026-10-24T22:06:42+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,8 +45,8 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2843275,
-   "output_tokens": 34184
+   "input_tokens": 2911214,
+   "output_tokens": 34206
   },
   "warmup": {
    "at": "2026-10-24T18:36:52+00:00",
@@ -133,11 +133,11 @@
    "output_tokens": 11271
   },
   "scenarios": {
-   "at": "2026-10-24T21:06:38+00:00",
+   "at": "2026-10-24T22:10:03+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 16,
-   "total": 17,
+   "correct": 17,
+   "total": 18,
    "failing": [
     "hands-full-voice"
    ],
@@ -158,7 +158,8 @@
     "live-what-came-yesterday": true,
     "live-moved-machine": true,
     "draft-factory-from-photos": true,
-    "draft-correct-the-plan": true
+    "draft-correct-the-plan": true,
+    "calendar-hackathon-guest": true
    }
   },
   "unseen": {

@@ -11,6 +11,7 @@ import { getToolName, isToolUIPart } from 'ai'
 import clsx from 'clsx'
 import {
   Accessibility,
+  CalendarDays,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -132,6 +133,8 @@ function ScenarioIconGlyph({ icon, className }: { icon: Scenario['icon']; classN
       return <TriangleAlert className={className} aria-hidden />
     case 'door-open':
       return <DoorOpen className={className} aria-hidden />
+    case 'calendar':
+      return <CalendarDays className={className} aria-hidden />
   }
 }
 

@@ -20,6 +20,7 @@ from app.models import model
 from app.settings import get_settings
 
 from .drafting import DRAFT_TOOLS, draft_of
+from .room_calendar import calendar, calendar_context
 from .tools import TOOLS, Deps, _ago, _clock, _label, overview
 
 
@@ -60,6 +61,11 @@ def _live_context(ctx: RunContext[Deps]) -> str:
         f"{_ago(latest.at, state.now())}, by {latest.by or 'this conversation'}); tools already apply them, "
         "building_changes lists them."
     )
+
+
+def _calendar_context(ctx: RunContext[Deps]) -> str:
+    """Only in a building with a room calendar (Creativity add-in): events are a place to look things up."""
+    return calendar_context(ctx.deps)
 
 
 def _draft_context(ctx: RunContext[Deps]) -> str:
@@ -128,7 +134,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         name="building_guide",
         instructions=load_prompt(__file__),
         deps_type=Deps,
-        tools=[*TOOLS, *DRAFT_TOOLS],
+        tools=[*TOOLS, *DRAFT_TOOLS, calendar],
         retries=4,
         capabilities=[Thinking(thinking), Caching()],  # type: ignore[arg-type]
         defer_model_check=True,
@@ -137,6 +143,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
     built.instructions(_location_context)
     built.instructions(_live_context)
     built.instructions(_draft_context)
+    built.instructions(_calendar_context)
     built.output_validator(_answer_line_is_committed_and_grounded)
     return built
 

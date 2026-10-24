@@ -110,6 +110,13 @@ rows:
   stake: 10
   pytest: [test_live_]
   scenarios: [live-]
+- id: room-calendar
+  part: Creativity
+  what: "Room calendar add-in: rooms are calendar resources (as in Google or Outlook), so a guest asking for an event (\"where is the hackathon?\") is guided to the room it's booked in today (demo bookings in data/calendars/)"
+  owners: [C]
+  stake: 0
+  pytest: [test_calendar_]
+  scenarios: [calendar-]
 - id: demo-video
   part: Submission demo
   what: Demo video and short technical explanation

@@ -135,31 +135,35 @@ async def list_buildings(split: str | None = None, source: str | None = None) ->
         )
         for d in list_drafts()
     ]
-    return [d for d in drafts if split in (None, "draft") and source in (None, "floor_plans")] + [
-        BuildingInfo(
-            id=r["building_id"],
-            name=r["name"],
-            split=r["split"],
-            source=r["source"],
-            floors=int(r["floors"]),
-            has_lift=r["has_lift"] == "True",
-        )
-        for r in rows
-        if (split is None or r["split"] == split) and (source is None or r["source"] == source)
-    ] + [
-        BuildingInfo(
-            id=b.id,
-            name=b.name,
-            split=info.get("split", "local"),
-            source=b.source,
-            floors=len(b.floors),
-            has_lift=any(c.kind == "lift" for c in b.connectors.values()),
-        )
-        for folder, info in _local_buildings().values()
-        if (split is None or info.get("split", "local") == split)
-        and (source is None or info["source"] == source)
-        for b in [load_building(folder)]
-    ]
+    return (
+        [d for d in drafts if split in (None, "draft") and source in (None, "floor_plans")]
+        + [
+            BuildingInfo(
+                id=r["building_id"],
+                name=r["name"],
+                split=r["split"],
+                source=r["source"],
+                floors=int(r["floors"]),
+                has_lift=r["has_lift"] == "True",
+            )
+            for r in rows
+            if (split is None or r["split"] == split) and (source is None or r["source"] == source)
+        ]
+        + [
+            BuildingInfo(
+                id=b.id,
+                name=b.name,
+                split=info.get("split", "local"),
+                source=b.source,
+                floors=len(b.floors),
+                has_lift=any(c.kind == "lift" for c in b.connectors.values()),
+            )
+            for folder, info in _local_buildings().values()
+            if (split is None or info.get("split", "local") == split)
+            and (source is None or info["source"] == source)
+            for b in [load_building(folder)]
+        ]
+    )
 
 
 def _local_buildings() -> dict[str, tuple[Path, dict[str, Any]]]:

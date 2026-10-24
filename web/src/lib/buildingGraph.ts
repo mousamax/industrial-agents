@@ -108,7 +108,7 @@ export interface Scenario {
   buildingId: string
   buildingName: string
   persona: string
-  icon: 'coffee' | 'accessibility' | 'wrench' | 'forklift' | 'triangle-alert' | 'door-open'
+  icon: 'coffee' | 'accessibility' | 'wrench' | 'forklift' | 'triangle-alert' | 'door-open' | 'calendar'
   chip: string
   user: string
   voice?: boolean
@@ -369,8 +369,19 @@ export function buildStarterPrompts(): Scenario[] {
   const campusName = 'Office campus'
   const factoryId = 'proc-factory-dev-003'
   const factoryName = 'Factory & office'
+  const colabId = 'munich-urban-colab'
+  const colabName = 'Munich Urban Colab'
 
   return [
+    {
+      id: 'hackathon',
+      buildingId: colabId,
+      buildingName: colabName,
+      persona: 'Guest',
+      icon: 'calendar',
+      chip: 'Where is the hackathon?',
+      user: "Hi, I'm a guest. Where is the hackathon?",
+    },
     {
       id: 'coffee',
       buildingId: campusId,

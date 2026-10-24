@@ -166,6 +166,8 @@ export function toolLabel(toolName: string, rawInput: unknown, index: SceneIndex
       const closed = Array.isArray(input.close) && input.close.length ? `closed ${list(input.close, index)}` : ''
       return `What if: ${[door, closed].filter(Boolean).join(', ') || 'change'}${floor}${sf}`
     }
+    case 'calendar':
+      return input.query ? `Checked the room calendar: ${input.query}` : 'Checked today’s room calendar'
     case 'draft_building':
       return `Drafted a building from plans: ${input.name ?? '…'}`
     case 'review_draft':
