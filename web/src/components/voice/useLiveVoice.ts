@@ -9,7 +9,7 @@ import {
   useConversationMode,
   useConversationStatus,
 } from '@elevenlabs/react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MemoryChip } from '../../lib/buildingGraph'
 import type { SceneIndex } from '../../lib/sceneIndex'
 import { fetchVoiceSession } from './speech'
@@ -66,6 +66,20 @@ const BUSY: Partial<Record<keyof VoiceTools, string>> = {
   apply_change: 'Updating the building',
 }
 
+// Barge-in. ElevenLabs stops the agent when it hears the person over it (~0.5 s in). On laptop speakers their
+// voice competes with the agent's echo, so as soon as the server's VAD hears speech over the agent, the agent
+// is turned down here: it yields at once, and the mic hears the person more than the echo.
+/** Server VAD probability that counts as the person talking. */
+const SPEECH_VAD = 0.9
+/** ElevenLabs also "interrupts" its own filler when a tool result arrives; only one right after speech is theirs. */
+const HEARD_VAD = 0.5
+const BARGE_IN_MS = 2000
+/** The agent's volume while someone talks over it, held this long after their last speech. */
+const DUCK_VOLUME = 0.2
+const DUCK_HOLD_MS = 900
+/** After an interruption the agent stays silent until its next reply starts, or this long at most. */
+const CUT_HOLD_MS = 1500
+
 export function useLiveVoice(tools: VoiceTools) {
   const controls = useConversationControls()
   const { status } = useConversationStatus()
@@ -76,8 +90,27 @@ export function useLiveVoice(tools: VoiceTools) {
   const [userCaption, setUserCaption] = useState('')
   const [agentCaption, setAgentCaption] = useState('')
   const [lastSpeaker, setLastSpeaker] = useState<'user' | 'agent'>('agent')
+  const [interrupted, setInterrupted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const streamed = useRef('')
+  const agentTalking = useRef(false)
+  const heardAt = useRef(-Infinity)
+  const volumeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  useEffect(() => {
+    agentTalking.current = isSpeaking && !interrupted
+  }, [isSpeaking, interrupted])
+  useEffect(() => () => clearTimeout(volumeTimer.current), [])
+
+  /** The agent's volume on this side: `volume` now, and back to full after `holdMs` (if given). */
+  const setAgentVolume = useCallback(
+    (volume: number, holdMs = 0) => {
+      clearTimeout(volumeTimer.current)
+      controls.setVolume({ volume })
+      if (holdMs) volumeTimer.current = setTimeout(() => controls.setVolume({ volume: 1 }), holdMs)
+    },
+    [controls],
+  )
 
   // Each tool reports "busy" while it runs, so the dock can say what the agent is waiting for. Parameters
   // arrive as the agent's LLM wrote them: every declared parameter is a string.
@@ -106,6 +139,7 @@ export function useLiveVoice(tools: VoiceTools) {
       setPreparing(true)
       setUserCaption('')
       setAgentCaption('')
+      setInterrupted(false)
       try {
         // Ask for the microphone first, so a denied permission is a clear message, not a dead session.
         const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -131,7 +165,11 @@ export function useLiveVoice(tools: VoiceTools) {
             }
           },
           onAgentChatResponsePart: (part) => {
-            if (part.type === 'start') streamed.current = ''
+            if (part.type === 'start') {
+              streamed.current = ''
+              setInterrupted(false)
+              setAgentVolume(1)
+            }
             if (part.type === 'delta') streamed.current += part.text
             if (spoken(streamed.current)) {
               setAgentCaption(spoken(streamed.current))
@@ -145,8 +183,25 @@ export function useLiveVoice(tools: VoiceTools) {
               setLastSpeaker('user')
             }
           },
+          onVadScore: ({ vadScore }) => {
+            if (vadScore >= HEARD_VAD) heardAt.current = performance.now()
+            if (vadScore >= SPEECH_VAD && agentTalking.current) setAgentVolume(DUCK_VOLUME, DUCK_HOLD_MS)
+          },
+          // The person talked over the agent and ElevenLabs stopped it: the call bar turns to them at once, and
+          // the caption keeps only what was actually said.
+          onInterruption: () => {
+            if (performance.now() - heardAt.current > BARGE_IN_MS) return
+            setInterrupted(true)
+            setUserCaption('')
+            setLastSpeaker('user')
+            setAgentVolume(0, CUT_HOLD_MS)
+          },
+          onAgentResponseCorrection: ({ corrected_agent_response }) =>
+            setAgentCaption(spoken(corrected_agent_response).replace(/(\.\.\.|…)?$/, '…')),
           onError: (message) => setError(message),
           onDisconnect: (details) => {
+            clearTimeout(volumeTimer.current)
+            setInterrupted(false)
             setBusy(null)
             if (details.reason === 'error') setError(details.message)
           },
@@ -163,7 +218,7 @@ export function useLiveVoice(tools: VoiceTools) {
         setPreparing(false)
       }
     },
-    [controls],
+    [controls, setAgentVolume],
   )
 
   const live = status === 'connected'
@@ -171,11 +226,13 @@ export function useLiveVoice(tools: VoiceTools) {
     preparing || status === 'connecting'
       ? 'connecting'
       : live
-        ? isSpeaking
-          ? 'speaking'
-          : busy
-            ? 'thinking'
-            : 'listening'
+        ? interrupted
+          ? 'listening'
+          : isSpeaking
+            ? 'speaking'
+            : busy
+              ? 'thinking'
+              : 'listening'
         : error
           ? 'error'
           : 'off'
