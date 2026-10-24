@@ -23,10 +23,10 @@ def _ctx(reference: str, hour: int = 14) -> SimpleNamespace:
     return SimpleNamespace(deps=Deps(BuildingState(load_building(reference), clock=lambda: at)))
 
 
-def test_calendar_finds_the_hackathon_in_the_arena_on_now():
+def test_calendar_finds_the_hackathon_in_the_open_office_on_now():
     out = json.loads(calendar(_ctx(MUCL), "hackathon"))
-    assert [e["room_id"] for e in out["events"]] == ["F0-ARENA"]
-    assert out["events"][0]["status"] == "on now" and out["highlight"] == ["F0-ARENA"]
+    assert [e["room_id"] for e in out["events"]] == ["F3-OPEN-S"]
+    assert out["events"][0]["status"] == "on now" and out["highlight"] == ["F3-OPEN-S"]
 
 
 def test_calendar_is_on_now_at_any_hour_of_the_demo():

@@ -237,4 +237,4 @@ scenarios:
   - {turn: 1, tool: calendar}
   - {turn: 1, tool: route}
   expect:
-  - Finds the hackathon in the room calendar in the „Arena“ Seminarraum on the ground floor, says it is on now, and gives walking directions there from the reception (Eingangsbereich / Empfang) without asking where the guest is.
+  - Finds the hackathon in the room calendar in the „Offener Bürobereich Süd“ on the third floor (F3), says it is on now, and gives walking directions there from the reception (Eingangsbereich / Empfang) without asking where the guest is.
