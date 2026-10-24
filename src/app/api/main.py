@@ -48,7 +48,7 @@ from app.building.state import BuildingState
 from app.building.view import Scene, scene
 from app.core import AgentCard
 from app.registry import Entry, get, registry
-from app.settings import get_settings
+from app.settings import ROOT, get_settings
 
 observability.setup()
 app = FastAPI(title="Industrial Agents")
@@ -146,7 +146,30 @@ async def list_buildings(split: str | None = None, source: str | None = None) ->
         )
         for r in rows
         if (split is None or r["split"] == split) and (source is None or r["source"] == source)
+    ] + [
+        BuildingInfo(
+            id=b.id,
+            name=b.name,
+            split=info.get("split", "local"),
+            source=b.source,
+            floors=len(b.floors),
+            has_lift=any(c.kind == "lift" for c in b.connectors.values()),
+        )
+        for folder, info in _local_buildings().values()
+        if (split is None or info.get("split", "local") == split)
+        and (source is None or info["source"] == source)
+        for b in [load_building(folder)]
     ]
+
+
+def _local_buildings() -> dict[str, tuple[Path, dict[str, Any]]]:
+    """Our own buildings outside the kit (data/<name>/building.json, e.g. MUCL from its floor plans):
+    id -> (folder, its "building" header)."""
+    found = {}
+    for path in sorted((ROOT / "data").glob("*/building.json")):
+        info = json.loads(path.read_text(encoding="utf-8"))["building"]
+        found[info["id"]] = (path.parent, info)
+    return found
 
 
 _live: dict[str, BuildingState] = {}
@@ -159,7 +182,9 @@ def live_state(building_id: str) -> BuildingState:
         _live[building_id] = draft.state  # drafting tools correct this same state as the person answers
     if building_id not in _live:
         try:
-            _live[building_id] = BuildingState(load_building(building_id))
+            _live[building_id] = BuildingState(
+                load_building(_local_buildings().get(building_id, (building_id,))[0])
+            )
         except FileNotFoundError as e:
             raise HTTPException(404, str(e)) from None
     return _live[building_id]
