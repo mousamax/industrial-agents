@@ -12,9 +12,9 @@ import itertools
 
 import pytest
 
-from app.building import queries
+from app.building import queries, routing
 from app.building.model import OUTSIDE, load_building, parse_building
-from app.building.routing import WALKING, Constraints, RouteGraph
+from app.building.routing import FORKLIFT, WALKING, Constraints, RouteGraph, validate_route
 from app.building.state import AddDoor, BuildingState, Close, MoveAsset, Reopen
 
 from .test_golden import BENCHMARK, WARMUP, call, cases, route_length_ok
@@ -235,3 +235,55 @@ def test_a4_3_stairs_and_lift_cost_per_metre(building_id):
             checked += 1
     if not checked:
         pytest.skip("no direct stair or lift leg in this building")
+
+
+def _golden_legs(q):
+    a = q["answer"]
+    if q["kind"] == "tour":
+        return [(leg["space_path"], WALKING) for leg in a["legs"]]
+    c = Constraints(step_free=q["kind"] == "route_step_free")
+    return [(a.get("space_path"), c.with_closed(a["closed_element_id"]) if "closed_element_id" in a else c)]
+
+
+@pytest.mark.parametrize(
+    "q",
+    [p for kind in ("route", "route_step_free", "route_with_closure", "tour") for p in cases(WARMUP, kind)],
+)
+def test_a4_6_validator_accepts_golden_routes(q):
+    b = load_building(q["building_id"])
+    for path, c in _golden_legs(q):
+        if path:
+            assert call(validate_route, b, path, c) == [], path
+
+
+@pytest.mark.parametrize("q", _reachable_routes())
+def test_a4_6_validator_rejects_invalid_routes(q, monkeypatch):
+    b, a = load_building(q["building_id"]), q["answer"]
+    path, elements = a["space_path"], a["element_path"]
+    assert call(validate_route, b, path, WALKING) == []
+    assert validate_route(b, [], WALKING)
+    assert validate_route(b, [path[0], path[0]], WALKING), "a space isn't connected to itself"
+    assert validate_route(b, [*path, "no-such-space"], WALKING)
+    assert validate_route(b, path, WALKING.with_closed(elements[0])), "closed element used"
+    if any(b.openings[e].width_m < FORKLIFT.min_width_m for e in elements if e in b.openings):
+        assert validate_route(b, path, FORKLIFT), "narrow opening on a forklift route"
+    # Only the space sequence is scored: a step counts if *any* step-free door, stair or lift joins the pair.
+    stepped_only = [
+        (x, y)
+        for x, y in itertools.pairwise(path)
+        if not any(
+            {x, y} <= ({*o.space_ids} if hasattr(o, "space_ids") else {sid for _, sid in o.stops})
+            and o.step_free
+            for o in [*b.openings.values(), *b.connectors.values()]
+        )
+    ]
+    if stepped_only:
+        assert validate_route(b, path, Constraints(step_free=True)), f"steps only between {stepped_only[0]}"
+    if len(path) >= 3:
+        middle = b.spaces.get(path[1])
+        if middle is not None:
+            monkeypatch.setattr(routing, "PRODUCTION_BAYS", frozenset({middle.room_type}))
+            assert any("production bay" in p for p in validate_route(b, path, WALKING))
+            assert not any("production bay" in p for p in validate_route(b, path[:2], WALKING)), (
+                "may end in one"
+            )

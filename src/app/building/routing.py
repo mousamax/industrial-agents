@@ -28,7 +28,17 @@ from dataclasses import dataclass, field
 
 from app.building.model import OUTSIDE, Building
 
-__all__ = ["OUTSIDE", "WALKING", "Constraints", "Route", "RouteGraph", "Tour"]
+__all__ = [
+    "FORKLIFT",
+    "OUTSIDE",
+    "PRODUCTION_BAYS",
+    "WALKING",
+    "Constraints",
+    "Route",
+    "RouteGraph",
+    "Tour",
+    "validate_route",
+]
 
 DOOR_PREFIX = "door:"
 STAIRS_COST_PER_FLOOR_M = 12.0
@@ -53,6 +63,13 @@ class Constraints:
 
 WALKING = Constraints()
 """A person walking, nothing closed: the default everywhere."""
+
+FORKLIFT = Constraints(step_free=True, min_width_m=3.0)
+"""Synera: forklift aisles and openings 3 m or wider. Aisle-only isn't checked: the data has no aisle type."""
+
+PRODUCTION_BAYS = frozenset({"production_zone", "assembly_zone", "additive_zone"})
+"""Room types a route may end in but never pass through. Our reading of Synera's rule (open question 3 in
+ROUTE_SCORING.md); warehouse and logistics zones stay passable as forklift space."""
 
 
 @dataclass(frozen=True)
@@ -192,3 +209,46 @@ class RouteGraph:
     def reachable(self, start: str) -> set[str]:
         """Space ids reachable from `start` under the constraints (wide_delivery, step_free counts)."""
         return {n for n in self.distances_from([start]) if n != OUTSIDE}
+
+
+def validate_route(b: Building, space_path: list[str], constraints: Constraints = WALKING) -> list[str]:
+    """Why Synera would score this space sequence 0 (docs/synera/ROUTE_SCORING.md); empty if valid.
+
+    Each step must cross a real door, opening, stair or lift that the constraints allow (not closed, step-free
+    if asked, wide enough), no space on the way may be closed, and no production bay may be passed through
+    (ending in one is fine). A lift or stair may skip floors: any two of its stops count as one step.
+    """
+    c = constraints
+    problems = []
+    if not space_path:
+        return ["empty route"]
+    for sid in space_path:
+        if sid != OUTSIDE and sid not in b.spaces:
+            problems.append(f"unknown space {sid}")
+        elif sid in c.closed:
+            problems.append(f"closed space {b.label(sid)}")
+    for sid in space_path[1:-1]:
+        if sid in b.spaces and b.spaces[sid].room_type in PRODUCTION_BAYS:
+            problems.append(f"passes through production bay {b.label(sid)}")
+    for a, z in itertools.pairwise(space_path):
+        if not _step_allowed(b, a, z, c):
+            problems.append(f"no usable connection {_name(b, a)} -> {_name(b, z)}")
+    return problems
+
+
+def _step_allowed(b: Building, a: str, z: str, c: Constraints) -> bool:
+    if a == z:
+        return False
+    for o in b.openings.values():
+        if {a, z} == set(o.space_ids) and o.id not in c.closed:
+            if (not c.step_free or o.step_free) and (c.min_width_m is None or o.width_m >= c.min_width_m):
+                return True
+    for k in b.connectors.values():
+        spaces = {sid for _, sid in k.stops}
+        if a in spaces and z in spaces and k.id not in c.closed and (not c.step_free or k.step_free):
+            return True
+    return False
+
+
+def _name(b: Building, sid: str) -> str:
+    return sid if sid == OUTSIDE or sid not in b.spaces else b.label(sid)

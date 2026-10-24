@@ -37,6 +37,7 @@ each item's real status (read from this file: keep the `**id**` and the backtick
 - [ ] **4.3** Stairs 2 m per metre climbed, lift 15 m + 1 m per metre (marked xfail until adopted, so it never blocks a push) · tests: `test_a4_3_stairs_and_lift_cost_per_metre`
 - [ ] **4.4** Door-to-door distance about 15 cm off the walls. No automatic test: check a few routes by hand.
 - [ ] **4.5** After 4.3/4.4, re-run the golden tests and see how many still agree. They were computed with the kit's model, so a difference doesn't automatically mean a bug.
+- [ ] **4.6** `validate_route(b, space_path, constraints)`: why Synera would score a route 0 (no real connection, step, closed, narrow, through a bay); `scripts/synera/validate_routes.py dev` counts them · tests: `test_a4_6_validator_accepts_golden_routes`, `test_a4_6_validator_rejects_invalid_routes`
 
 ## 5. Later
 - [ ] **5.1** Multi-building walkways (Level 3), the forklift/logistics add-in if the team picks it.
