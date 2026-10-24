@@ -39,6 +39,21 @@ def _building_context(ctx: RunContext[Deps]) -> str:
     return "Building overview:\n" + json.dumps(overview(ctx.deps.state.base), ensure_ascii=False)
 
 
+MUCL_ID = "munich-urban-colab"
+MUCL_HOUSE_RULES = (
+    "House rules of the Munich Urban Colab: people arrive at the Eingangsbereich [F0-EING], so unless they say "
+    "where they are, routes and 'nearest' questions start there. Between floors, walking people always take "
+    "the Haupttreppe (main stairs): call `route` with its stops on the start and destination floor as `via` "
+    "(e.g. via=['F0-STAIR-C', 'F3-STAIR-C']), and tell them to take the Haupttreppe. Only step-free routes "
+    "use the lift."
+)
+"""Our demo building (data/MUCL) only; no other building, and so no benchmark question, gets these rules."""
+
+
+def _mucl_context(ctx: RunContext[Deps]) -> str:
+    return MUCL_HOUSE_RULES if ctx.deps.building.id == MUCL_ID else ""
+
+
 def _location_context(ctx: RunContext[Deps]) -> str:
     """After the overview, so the cached prefix stays the same for every person in the building."""
     if not ctx.deps.here:
@@ -140,6 +155,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         defer_model_check=True,
     )
     built.instructions(_building_context)
+    built.instructions(_mucl_context)
     built.instructions(_location_context)
     built.instructions(_live_context)
     built.instructions(_draft_context)

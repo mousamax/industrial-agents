@@ -710,42 +710,11 @@
       "synthetic": false
     },
     {
-      "id": "F0-NE-S",
-      "floor_id": "F0",
-      "type": "room",
-      "room_type": "generic_room",
-      "name": "Nutzungseinheit (ohne Bezeichnung)",
-      "ref": "NE-S",
-      "polygon": [
-        [
-          59.92,
-          22.8
-        ],
-        [
-          59.92,
-          29.8
-        ],
-        [
-          40.97,
-          29.8
-        ],
-        [
-          40.97,
-          22.8
-        ],
-        [
-          59.92,
-          22.8
-        ]
-      ],
-      "synthetic": false
-    },
-    {
       "id": "F0-EING",
       "floor_id": "F0",
       "type": "hall",
       "room_type": "lobby",
-      "name": "Eingangsbereich / Empfang",
+      "name": "Eingangsbereich",
       "ref": "EING",
       "polygon": [
         [
@@ -815,7 +784,7 @@
       "floor_id": "F0",
       "type": "hall",
       "room_type": "lobby",
-      "name": "Foyer / Eventbereich",
+      "name": "Foyer",
       "ref": "FOYER",
       "polygon": [
         [
@@ -7222,22 +7191,6 @@
       "synthetic": false
     },
     {
-      "id": "O029",
-      "floor_id": "F0",
-      "space_ids": [
-        "F0-NE-S",
-        "F0-CORR"
-      ],
-      "kind": "door",
-      "position": [
-        43.28,
-        22.8
-      ],
-      "width_m": 1.0,
-      "step_free": true,
-      "synthetic": true
-    },
-    {
       "id": "O030",
       "floor_id": "F0",
       "space_ids": [
@@ -10332,7 +10285,7 @@
     },
     {
       "id": "A009",
-      "name": "Feuerlöscher (Foyer / Eventbereich, F0)",
+      "name": "Feuerlöscher (Foyer, F0)",
       "category": "equipment",
       "type": "fire_extinguisher",
       "space_id": "F0-FOYER",
@@ -10494,7 +10447,7 @@
     },
     {
       "id": "A018",
-      "name": "Brandmelder (manuell) (Eingangsbereich / Empfang, F0)",
+      "name": "Brandmelder (manuell) (Eingangsbereich, F0)",
       "category": "equipment",
       "type": "fire_alarm_call_point",
       "space_id": "F0-EING",
@@ -10512,7 +10465,7 @@
     },
     {
       "id": "A019",
-      "name": "Brandmelder (manuell) (Foyer / Eventbereich, F0)",
+      "name": "Brandmelder (manuell) (Foyer, F0)",
       "category": "equipment",
       "type": "fire_alarm_call_point",
       "space_id": "F0-FOYER",
@@ -10584,7 +10537,7 @@
     },
     {
       "id": "A023",
-      "name": "Defibrillator (Eingangsbereich / Empfang, F0)",
+      "name": "Defibrillator (Eingangsbereich, F0)",
       "category": "equipment",
       "type": "defibrillator",
       "space_id": "F0-EING",
