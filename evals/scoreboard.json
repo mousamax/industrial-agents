@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T19:06:20+00:00",
+   "at": "2026-10-24T21:05:35+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,8 +45,8 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2159063,
-   "output_tokens": 34408
+   "input_tokens": 2843275,
+   "output_tokens": 34184
   },
   "warmup": {
    "at": "2026-10-24T18:36:52+00:00",
@@ -133,11 +133,11 @@
    "output_tokens": 11271
   },
   "scenarios": {
-   "at": "2026-10-24T20:11:50+00:00",
+   "at": "2026-10-24T21:06:38+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 14,
-   "total": 15,
+   "correct": 16,
+   "total": 17,
    "failing": [
     "hands-full-voice"
    ],
@@ -156,7 +156,9 @@
     "cross-building-wheelchair": true,
     "live-delivery-colleague": true,
     "live-what-came-yesterday": true,
-    "live-moved-machine": true
+    "live-moved-machine": true,
+    "draft-factory-from-photos": true,
+    "draft-correct-the-plan": true
    }
   },
   "unseen": {

@@ -7,6 +7,7 @@
 // - Voice input (Listening…) & spoken answers (Read aloud)
 // - Safe preview -> confirm -> undo for map changes (lift closure, new door)
 // - Works both with the 7 cross-building pitch scenarios and live POST /buildings/{id}/chat queries
+import { getToolName, isToolUIPart } from 'ai'
 import clsx from 'clsx'
 import {
   Accessibility,
@@ -64,6 +65,9 @@ import { MapView } from '../map/MapView'
 import { mapLabel, shapeAnswer } from './assistantCopy'
 import { AssistantView } from './AssistantView'
 import { extractLiveTurn } from './liveBridge'
+
+/** Tools that change the drafted plan itself (Level 4): the map must reload the corrected building. */
+const PLAN_EDITS = new Set(['fix_draft', 'draft_building'])
 
 /** `?ui=classic` keeps the first agent-first layout (sidebar + Google palette) reachable for comparison. */
 const CLASSIC = new URLSearchParams(window.location.search).get('ui') === 'classic'
@@ -354,6 +358,9 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     if (chatReady) {
       prevAssistantCountRef.current = assistants.length
       setLiveMode(false)
+      if (lastAssistant.parts.some((p) => isToolUIPart(p) && PLAN_EDITS.has(getToolName(p)))) {
+        void useApp.getState().reloadScene()
+      }
       if (extracted.ask) {
         setPhase('ask')
         setAsk(extracted.ask)

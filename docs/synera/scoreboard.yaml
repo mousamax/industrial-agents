@@ -66,6 +66,13 @@ rows:
   owners: [B]
   stake: 5
   pytest: [test_png_]
+- id: level4-conversation
+  part: Does it work
+  what: "Level 4 by conversation: upload floor plans, get a building in seconds, and settle what the plans don't say by talking (grouped questions, fixes, forklift doors, storey heights)"
+  owners: [C, B]
+  stake: 0
+  pytest: [test_drafting_]
+  scenarios: [draft-]
 - id: level3-multibuilding
   part: Does it work
   what: Several buildings joined by walkways, routed as one site (Level 3; site.json, demo site in evals/datasets/sites)

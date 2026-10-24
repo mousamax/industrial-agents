@@ -1,12 +1,12 @@
 # Team scoreboard
 
-Generated 2026-10-24T20:13:10+00:00 by mousamax with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-24T21:08:26+00:00 by mousamax with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
-**Team: 78.9 / 100 estimated points.** Stakes are our guess at Synera's split.
+**Team: 79.0 / 100 estimated points.** Stakes are our guess at Synera's split.
 
 | Person | Points |
 |---|---|
-| Mousa | 36.4 |
+| Mousa | 36.5 |
 | Magnus | 20.5 |
 | Vadim | 19.5 |
 | Maximilian | 2.5 |
@@ -21,8 +21,9 @@ Generated 2026-10-24T20:13:10+00:00 by mousamax with `uv run ia scoreboard`. Don
 | Does it work | **unseen-kinds**: 12 question kinds Synera hasn't shown, on test buildings, answers computed by code (held out, score only) | Mousa | ██████████ 98% (94/96 questions) | 3.9 / 4 | within_distance_count 6/8 |
 | Does it work | **level4-from-svg**: Buildings drafted from SVG floor plans match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
 | Does it work | **level4-from-images**: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4) | Vadim | ██████████ 100% (8/8 tests) | 5.0 / 5 | – |
+| Does it work | **level4-conversation**: Level 4 by conversation: upload floor plans, get a building in seconds, and settle what the plans don't say by talking (grouped questions, fixes, forklift doors, storey heights) | Mousa, Vadim | ██████████ 100% (9/9 tests + 2/2 scenarios) | health | – |
 | Does it work | **level3-multibuilding**: Several buildings joined by walkways, routed as one site (Level 3; site.json, demo site in evals/datasets/sites) | Magnus | ██████████ 100% (7/7 tests) | 3.0 / 3 | – |
-| Interaction | **tricky-users**: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable) | Mousa | █████████░ 93% (14/15 scenarios) | 14.0 / 15 | hands-full-voice |
+| Interaction | **tricky-users**: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable) | Mousa | █████████░ 94% (16/17 scenarios) | 14.1 / 15 | hands-full-voice |
 | Interaction | **voice**: Voice in and out in the app | Maximilian | ░░░░░░░░░░ 0% (0% (owner's call)) | 0.0 / 5 | not started |
 | Interaction | **ui-shows-it**: The app draws routes and highlights what the agent understood, on the floor plan | Maximilian | ░░░░░░░░░░ 0% (0% (owner's call)) | 0.0 / 5 | not started |
 | Creativity | **level5-addin**: Level 5 "live building": things move and deliveries arrive ("this is now here" in chat, or a barcode/RFID scan), every colleague and the map see it at once, and time questions work (delivered yesterday, where was it, arriving Monday) | Magnus, Vadim, Mousa, Maximilian | ██████████ 100% (11/11 tests + 3/3 scenarios) | 10.0 / 10 | – |
@@ -32,7 +33,7 @@ Generated 2026-10-24T20:13:10+00:00 by mousamax with `uv run ia scoreboard`. Don
 | Health | **unseen-kinds-dev**: The same 12 new kinds on dev buildings (the set we may read and tune on) | Mousa | ██████████ 100% (96/96 questions) | health | – |
 | Health | **agent-tools**: Agent tools vs every golden answer, no model | Mousa | ██████████ 100% (138/138 tests) | health | – |
 
-Agent suites last run: benchmark 2026-10-24T19:06:20+00:00 by mousamax (default); warmup 2026-10-24T18:36:52+00:00 by mousamax (default); reworded 2026-10-24T18:42:51+00:00 by mousamax (default); scenarios 2026-10-24T20:11:50+00:00 by mousamax (default); unseen 2026-10-24T18:39:40+00:00 by mousamax (default); holdout 2026-10-24T18:40:51+00:00 by mousamax (default)
+Agent suites last run: benchmark 2026-10-24T21:05:35+00:00 by mousamax (default); warmup 2026-10-24T18:36:52+00:00 by mousamax (default); reworded 2026-10-24T18:42:51+00:00 by mousamax (default); scenarios 2026-10-24T21:06:38+00:00 by mousamax (default); unseen 2026-10-24T18:39:40+00:00 by mousamax (default); holdout 2026-10-24T18:40:51+00:00 by mousamax (default)
 
 How a row moves: write or fix the failing eval first (red), then the code (green), then
 `uv run ia scoreboard` and commit SCOREBOARD.md with your change.

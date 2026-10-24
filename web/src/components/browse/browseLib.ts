@@ -64,6 +64,7 @@ const SOURCE_LABELS: Record<string, string> = {
   swiss_dwellings: 'Swiss dwellings',
   resplan: 'ResPlan',
   procedural: 'Procedural',
+  floor_plans: 'From your plans',
 }
 /** Dataset source -> label for the building picker; unknown sources are humanized. */
 export const sourceLabel = (s: string) => SOURCE_LABELS[s] ?? humanize(s)

@@ -12,6 +12,8 @@
                                         (?location=<space id or room> = where the user is)
     POST /buildings/{id}/scan           "this is now here" from a barcode/RFID reader or another app
     GET  /buildings/{id}/changes        what moved, arrived, closed or opened (?since=&until= ISO times)
+    POST /buildings/draft               Level 4: upload floor plans (multipart `plans`, `name`) -> a new
+                                        building, chat about it to settle what the plans don't say
 
 Every chat and the scene of one building share one live state (Level 5 "live building"): what one colleague
 or scanner reports, the others' answers and the map show at once.
@@ -23,11 +25,15 @@ from __future__ import annotations
 
 import csv
 import json
+import re
+import tempfile
+import time
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, TypeAdapter
 from pydantic_ai import ModelRetry
@@ -35,6 +41,7 @@ from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from starlette.responses import Response
 
 from app import observability
+from app.agents.building_guide.drafting import create_draft, get_draft, list_drafts
 from app.agents.building_guide.tools import Deps, _space_id, building_changes, report_item
 from app.building import load_building
 from app.building.state import BuildingState
@@ -117,7 +124,18 @@ async def list_buildings(split: str | None = None, source: str | None = None) ->
     manifest = get_settings().synera_kit_dir / "data" / "manifest.csv"
     with manifest.open(encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    return [
+    drafts = [
+        BuildingInfo(
+            id=d.id,
+            name=d.state.base.name,
+            split="draft",
+            source="floor_plans",
+            floors=len(d.state.base.floors),
+            has_lift=any(c.kind == "lift" for c in d.state.base.connectors.values()),
+        )
+        for d in list_drafts()
+    ]
+    return [d for d in drafts if split in (None, "draft") and source in (None, "floor_plans")] + [
         BuildingInfo(
             id=r["building_id"],
             name=r["name"],
@@ -137,6 +155,8 @@ from the plan again, which is fine for a demo."""
 
 
 def live_state(building_id: str) -> BuildingState:
+    if building_id not in _live and (draft := get_draft(building_id)):
+        _live[building_id] = draft.state  # drafting tools correct this same state as the person answers
     if building_id not in _live:
         try:
             _live[building_id] = BuildingState(load_building(building_id))
@@ -149,6 +169,57 @@ def live_state(building_id: str) -> BuildingState:
 async def building_scene(building_id: str) -> Scene:
     """The building as it is now: moved and delivered items where they were last reported."""
     return scene(live_state(building_id).building)
+
+
+class Drafted(BaseModel):
+    building_id: str
+    name: str
+    floors: int
+    rooms: int
+    doors: int
+    stairs_and_lifts: int
+    items: int
+    open_questions: int
+    seconds: float
+
+
+@app.post("/buildings/draft")
+async def draft_building(
+    plans: list[UploadFile] = File(...),  # noqa: B008
+    name: str = Form("New building"),
+    levels: str | None = Form(None),
+) -> Drafted:
+    """Level 4: floor plans in, a building out, in seconds. One file per floor: the kit's floor_<level>.svg
+    or .png (the level comes from the file name, else `levels` "0,1,2", else the upload order). Then chat
+    with POST /buildings/{building_id}/chat: the guide asks about what the plans didn't say."""
+    started = time.perf_counter()
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = []
+        for i, upload in enumerate(plans):
+            filename = Path(upload.filename or f"floor_{i}.svg").name
+            if Path(filename).suffix.lower() not in (".svg", ".png"):
+                raise HTTPException(400, f"{filename}: send floor plans as .svg or .png")
+            path = Path(tmp) / re.sub(r"[^\w.\-]+", "_", filename)
+            path.write_bytes(await upload.read())
+            paths.append(path)
+        try:
+            given = [int(x) for x in levels.split(",")] if levels else None
+            draft = create_draft(paths, name=name.strip() or "New building", levels=given)
+        except (ValueError, NotImplementedError) as e:
+            raise HTTPException(400, str(e)) from None
+    b = draft.state.base
+    _live[draft.id] = draft.state
+    return Drafted(
+        building_id=draft.id,
+        name=b.name,
+        floors=len(b.floors),
+        rooms=sum(s.type == "room" for s in b.spaces.values()),
+        doors=len(b.openings),
+        stairs_and_lifts=len(b.connectors),
+        items=len(b.assets),
+        open_questions=len(draft.open),
+        seconds=round(time.perf_counter() - started, 2),
+    )
 
 
 class Scan(BaseModel):

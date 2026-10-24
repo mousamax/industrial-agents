@@ -19,6 +19,7 @@ from app.core import AgentCard, load_prompt
 from app.models import model
 from app.settings import get_settings
 
+from .drafting import DRAFT_TOOLS, draft_of
 from .tools import TOOLS, Deps, _ago, _clock, _label, overview
 
 
@@ -58,6 +59,21 @@ def _live_context(ctx: RunContext[Deps]) -> str:
         f"{now} {len(state.edits)} change(s) to the building are recorded (latest: {latest.said} "
         f"{_ago(latest.at, state.now())}, by {latest.by or 'this conversation'}); tools already apply them, "
         "building_changes lists them."
+    )
+
+
+def _draft_context(ctx: RunContext[Deps]) -> str:
+    """Only for a building drafted from plans in the app: the questions its plans left open."""
+    draft = draft_of(ctx.deps.state)
+    if draft is None:
+        return ""
+    left = len(draft.open)
+    if not left:
+        return "This building was drafted from floor plans; every question about the draft is settled."
+    return (
+        f"This building was just drafted from floor plans and {left} question(s) about what the plans don't "
+        "say are open (review_draft lists them). Unless the person asks something else, walk them through "
+        "these, a couple at a time; their answers go to fix_draft or accept_guesses."
     )
 
 
@@ -112,7 +128,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         name="building_guide",
         instructions=load_prompt(__file__),
         deps_type=Deps,
-        tools=TOOLS,
+        tools=[*TOOLS, *DRAFT_TOOLS],
         retries=4,
         capabilities=[Thinking(thinking), Caching()],  # type: ignore[arg-type]
         defer_model_check=True,
@@ -120,6 +136,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
     built.instructions(_building_context)
     built.instructions(_location_context)
     built.instructions(_live_context)
+    built.instructions(_draft_context)
     built.output_validator(_answer_line_is_committed_and_grounded)
     return built
 

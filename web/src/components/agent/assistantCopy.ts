@@ -99,7 +99,13 @@ export function shapeAnswer(result: ScenarioResult): ShapedAnswer {
     [...s.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:m|metres|meters)\b/gi)].some(
       (m) => Math.abs(Number(m[1].replace(',', '.')) - len) < 1,
     )
-  const detail = sentences.slice(1).find((s) => !restatesDistance(s)) ?? ''
+  // When the guide ends on a question (what a drafted plan didn't say, which room you meant), the question is
+  // what the person must read: show it with the sentence that sets it up.
+  const ask = sentences.findIndex((s, i) => i > 0 && s.endsWith('?'))
+  const detail =
+    ask > 0
+      ? sentences.slice(ask > 1 && !sentences[ask - 1].endsWith('?') ? ask - 1 : ask, ask + 1).join(' ')
+      : (sentences.slice(1).find((s) => !restatesDistance(s)) ?? '')
   return { headline, detail, meta }
 }
 

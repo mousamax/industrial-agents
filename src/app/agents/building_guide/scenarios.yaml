@@ -13,6 +13,9 @@
 # Level 5 "live building" (live-* scenarios, scored as level5-addin): a turn {who: name, say: text} is a
 # colleague in their own chat on the same building; `setup` lists scanner events recorded before anyone
 # talks: {item, to, type (new item), day (0 today, -1 yesterday, 2 = in two days), time, by, source}.
+#
+# Level 4 "build by conversation" (draft-* scenarios, scored as level4-conversation): `plans` is a glob under
+# synera-kit/data/ drafted fresh before the first turn, as the app does after an upload; `name_as` names it.
 scenarios:
 - name: first-day-coffee
   building: proc-factory-dev-003
@@ -188,3 +191,37 @@ scenarios:
   expect:
   - Turn 1 records the move right away and says what it recorded.
   - Turn 2 routes the apprentice to Assembly zone H-A2 (the new place, not Production zone H-A1) and says it used to be in Production zone H-A1 and that maintenance moved it.
+
+- name: draft-factory-from-photos
+  plans: dev/proc-factory-dev-003/floor_*_plain.png
+  name_as: Hall 7
+  persona: Plant manager who just uploaded the plain floor plan images of their factory and wants it usable fast.
+  turns:
+  - I just uploaded the floor plans of Hall 7, our factory. What do you need from me?
+  - The rooms on the ground floor are production halls, not bedrooms. Inside doors are standard, but the entrances are 3 m roller doors for forklifts.
+  - Every floor is 4.5 m high. The rest is fine as it is.
+  checks:
+  - {turn: 1, tool: review_draft}
+  - {turn: 2, tool: fix_draft, args: {field: room_type}}
+  - {turn: 2, tool: fix_draft, args: {field: width_m}}
+  - {turn: 3, tool: fix_draft, args: {field: height_m}}
+  - {turn: 3, tool: accept_guesses}
+  expect:
+  - Turn 1 says in a line what was drafted (floors, rooms, doors), then asks about one or two open points in plain words (no question keys or ids), most uncertain first.
+  - Turn 2 records the ground floor rooms as production halls and only the entrances as 3 m wide, says what it changed, and moves on to a next open point or says none is left.
+  - Turn 3 records 4.5 m storeys, accepts the rest, and says the building is ready to ask about.
+
+- name: draft-correct-the-plan
+  plans: dev/proc-factory-dev-003/floor_[01].svg
+  name_as: Werk Süd
+  persona: Facility manager who knows the drafted plan has two mistakes and corrects them in one go.
+  turns:
+  - "Before you ask me anything, two fixes: Production zone H-A1 is called Milling hall now, and all the entrances are 4 m roller doors."
+  - Can a forklift get from outside into Milling hall now?
+  checks:
+  - {turn: 1, tool: fix_draft, args: {field: name}}
+  - {turn: 1, tool: fix_draft, args: {field: width_m}}
+  - {turn: 2, tool: route}
+  expect:
+  - Turn 1 renames Production zone H-A1 to Milling hall and sets the entrances (not every door) to 4 m, and confirms both in a line.
+  - Turn 2 answers from a route call with forklift width (3 m or more), using the new name, and says plainly if no route fits and why.

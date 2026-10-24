@@ -642,7 +642,8 @@ def route(
         destination: Where they go (room, item name, "outside").
         via: Stops to visit in order on the way, e.g. a room to pick something up from.
         step_free: No stairs or steps (wheelchair, pram, trolley, crutches, "no stairs"). Lifts are fine.
-        min_width_m: Every door passed must be at least this wide (moving a wide load).
+        min_width_m: Every door passed must be at least this wide (moving a wide load; a forklift needs
+            3 m and goes step-free, unless the person gives its width).
     """
     b = ctx.deps.building
     stops = [_space_id(b, p) for p in [start, *(via or []), destination]]
