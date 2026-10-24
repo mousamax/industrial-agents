@@ -53,6 +53,12 @@ export interface Map3DSettings {
   objectDetail: 0 | 1 | 2
 }
 
+/** Two rooms joined by a straight dashed line, drawn through the floors ("as the crow flies", "directly above"). */
+export interface Link3D {
+  from: string
+  to: string
+}
+
 export interface Map3DEngine {
   /** Build (lazily, per floor) the meshes for a building. Call again when the building or scene changes. */
   setScene(index: SceneIndex): void
@@ -68,6 +74,8 @@ export interface Map3DEngine {
   setSelection(sel: { kind: 'space' | 'asset'; id: string } | null): void
   /** Route as a raised tube following the segments, with vertical links between floors. */
   setRoute(route: ShowRoute | null): void
+  /** Light up both rooms on their own floors and join them, seen through the floors in between. */
+  setLink(link: Link3D | null): void
   /** What is under a container point (CSS px). Assets win over spaces. */
   pick(x: number, y: number): Pick3D
   /** Scene point + elevation (metres, real elevation is scaled internally by floorGapScale) -> container px. */

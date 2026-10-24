@@ -27,6 +27,11 @@ export interface WalkMarkerState {
   pos: XY
 }
 
+/** The answer reads best in 3D: tilt the map, and optionally join two rooms through the floors with a label. */
+export interface View3DIntent {
+  link: { from: string; to: string; label: string | null; labelAt: 'mid' | 'to' } | null
+}
+
 export interface MapInsets {
   top: number
   right: number
@@ -59,6 +64,8 @@ interface AppState {
   walkMarker: WalkMarkerState | null
   /** Custom camera fit insets for the active screen layout (Phone Result sheet, Walk mode banners, Desktop). */
   mapInsets: MapInsets | null
+  /** Set while the current answer is shown tilted in 3D (chosen from the tools the agent used). */
+  view3d: View3DIntent | null
   /** Remembered user context chips ("At Main lobby 0.18", "Step-free routes", "Forklift · 3 m openings"). */
   memory: MemoryChip[]
   /** Bumped whenever the map should fit these ids into view (selection, highlight, route). */
@@ -85,6 +92,7 @@ interface AppState {
     walkMarker?: WalkMarkerState | null
   }) => void
   setMapInsets: (insets: MapInsets | null) => void
+  setView3d: (v: View3DIntent | null) => void
   remember: (chips: MemoryChip[]) => void
   forgetOne: (idx: number) => void
   forgetAll: () => void
@@ -129,6 +137,7 @@ export const useApp = create<AppState>((set, get) => ({
   ghostDoor: null,
   walkMarker: null,
   mapInsets: null,
+  view3d: null,
   memory: [],
   focus: { ids: [], nonce: 0 },
   pendingPrompt: null,
@@ -158,6 +167,7 @@ export const useApp = create<AppState>((set, get) => ({
         affectedIds: [],
         ghostDoor: null,
         walkMarker: null,
+        view3d: null,
         loading: false,
       })
       const url = new URL(window.location.href)
@@ -215,6 +225,7 @@ export const useApp = create<AppState>((set, get) => ({
     })),
 
   setMapInsets: (mapInsets) => set({ mapInsets }),
+  setView3d: (view3d) => set({ view3d }),
 
   remember: (chips) =>
     set((s) => {
@@ -256,6 +267,7 @@ export const useApp = create<AppState>((set, get) => ({
       affectedIds: [],
       ghostDoor: null,
       walkMarker: null,
+      view3d: null,
     }),
 
   applyView: (cmd) => {

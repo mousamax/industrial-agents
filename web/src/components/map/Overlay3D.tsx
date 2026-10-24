@@ -5,8 +5,9 @@
 import { memo, useMemo, type ReactNode, type RefObject } from 'react'
 import type { ShowRoute } from '../../api/types'
 import type { SceneIndex } from '../../lib/sceneIndex'
+import type { View3DIntent } from '../../store'
 import { labelFor, routeOnFloor, showsPoi } from './derive'
-import type { FloorGeo, Pt, SpaceGeo } from './geometry'
+import { toSvg, type FloorGeo, type Pt, type SpaceGeo } from './geometry'
 import { Pin, PoiBadge, StartDot } from './markers'
 
 /** Labels in 3D: perspective shrinks the far half of the view, so be stricter than 2D and cap the count. */
@@ -20,12 +21,16 @@ export interface OverlaySelection {
   lines: string[]
 }
 
-/** Zero-size anchor at a world point; children are laid out around (0, 0). `cull`: hide near the horizon/edges. */
-function Anchor({ p, cull, z, children }: { p: Pt; cull?: boolean; z?: number; children: ReactNode }) {
+/**
+ * Zero-size anchor at a world point; children are laid out around (0, 0). `cull`: hide near the horizon/edges.
+ * `elev`: real elevation in metres when the point is not on the selected floor.
+ */
+function Anchor({ p, cull, z, elev, children }: { p: Pt; cull?: boolean; z?: number; elev?: number; children: ReactNode }) {
   return (
     <div
       data-x={p[0]}
       data-y={p[1]}
+      data-elev={elev}
       data-cull={cull ? '' : undefined}
       className="absolute left-0 top-0 h-0 w-0"
       style={{ visibility: 'hidden', zIndex: z }}
@@ -94,9 +99,21 @@ export interface Overlay3DProps {
   sel: OverlaySelection | null
   route: ShowRoute | null
   dots: { id: string; p: Pt }[]
+  link: View3DIntent['link']
 }
 
-export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, route, dots }: Overlay3DProps) {
+/** Where the link's label sits: halfway along the line, or on the room it points to. */
+function linkLabelAt(index: SceneIndex, link: NonNullable<View3DIntent['link']>): { p: Pt; elev: number } | null {
+  const a = index.spaceById.get(link.from)
+  const b = index.spaceById.get(link.to)
+  if (!a || !b) return null
+  const ea = index.floorById.get(a.floor_id)?.elevation_m ?? 0
+  const eb = index.floorById.get(b.floor_id)?.elevation_m ?? 0
+  if (link.labelAt === 'to') return { p: toSvg(b.anchor), elev: eb }
+  return { p: toSvg([(a.anchor[0] + b.anchor[0]) / 2, (a.anchor[1] + b.anchor[1]) / 2]), elev: (ea + eb) / 2 + 0.6 }
+}
+
+export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, route, dots, link }: Overlay3DProps) {
   const skipId = sel?.space?.id ?? null
   const labels = useMemo(() => {
     const kk = k * LABEL_K_FACTOR
@@ -110,6 +127,7 @@ export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, 
     return out.sort((a, b) => b.s.area - a.s.area).slice(0, MAX_LABELS)
   }, [geo, k, skipId])
   const r = useMemo(() => (route ? routeOnFloor(route, geo.floorId, index) : null), [route, geo.floorId, index])
+  const linkAt = useMemo(() => (link?.label ? linkLabelAt(index, link) : null), [index, link])
 
   return (
     <div ref={rootRef} className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -150,6 +168,13 @@ export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, 
           <HtmlFloorChip text={c.text} floorId={c.floorId} />
         </Anchor>
       ))}
+      {link?.label && linkAt && (
+        <Anchor p={linkAt.p} elev={linkAt.elev} z={6}>
+          <div className="font-display absolute left-0 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-sun px-3.5 py-1.5 text-[13px] font-semibold text-ink shadow-[0_6px_18px_rgb(255_107_90/0.35)]">
+            {link.label}
+          </div>
+        </Anchor>
+      )}
       {sel && (
         <Anchor p={sel.p} z={5}>
           <SvgMark box={[-12, -34, 24, 38]}>

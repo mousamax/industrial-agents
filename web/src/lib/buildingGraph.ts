@@ -3,6 +3,7 @@
 // 2. Finding the shared wall midpoint & orientation between two spaces returned by `add_door` / `what_if`
 // 3. Static starter prompt definitions (no client-side routing, precomputation, or agent simulation)
 import type { SceneOpening, SceneSpace, ShowRoute, XY } from '../api/types'
+import type { View3DIntent } from '../store'
 import { spaceLabel, type SceneIndex } from './sceneIndex'
 
 export type StepIcon =
@@ -98,6 +99,8 @@ export interface ScenarioResult {
   remember?: MemoryChip[]
   /** The assistant could not be reached; the UI says so in plain words instead of showing the error. */
   offline?: boolean
+  /** The answer is about floors on top of each other: show it tilted in 3D (see View3DIntent in the store). */
+  view3d?: View3DIntent
 }
 
 export interface Scenario {
