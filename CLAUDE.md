@@ -17,6 +17,9 @@ hard-code anything to a building or question.
 - **Read `docs/synera/ROUTE_SCORING.md` before touching routing, queries, state or any route tool or
   answer.** It is Synera's announced rule for scoring routes (distance model, forklift/step-free/closure/
   production-bay rules, score = best length ÷ ours, invalid route = 0) and overrides the kit where they differ.
+- **Green golden tests are not the goal; they already pass.** `docs/synera/HOW_TO_SCORE.md` says what is
+  still unscored (Sunday routes under Synera's rule, validity, Level 4 from real plans), each owner's
+  number, and how to run every evaluation. Ask for the metric to move, not for tests to pass.
 - `synera-kit/`: Synera's kit as a git submodule (data, `starter_agent/building_map.py` with the route
   model behind the golden answers, `benchmark/score.py` the judges' scorer). Don't edit it; import from it.
 - `src/app/agents/building_guide/`: baseline agent on that kit. `BENCHMARK.md`: the official run command.

@@ -44,3 +44,40 @@ for every route answer; build and test routing against it.
   against the golden tests that it still agrees with them.
 - **Route output** is the space sequence (`Route.space_path`); the length we report is for the user, not the
   score.
+
+## How much the kit's model loses (measured)
+
+`scripts/synera/route_metric_check.py` prototypes Synera's rule: a visibility graph inside each space's
+outline inset by 15 cm, door to door, plus the new stair and lift costs. It then scores the space
+sequences the kit's model picks for every dev warm-up route (route, step-free, closure, tour):
+
+| | dev warm-up routes |
+|---|---|
+| Same space sequence as the best under Synera's rule | 182 / 212 |
+| Full marks (within 1%) | 187 / 212 (88%) |
+| Mean score (best ÷ ours) | 0.966 |
+| Worst | 0.35 |
+
+The worst case (`proc-campus-dev-001-Q05`, Toilet 0.16 → Kitchen 1.03): the kit's model takes Staircase 2
+(74.6 m under the new rule) instead of Staircase 1 next to the toilet (26.3 m), because it measures every corridor crossing through the corridor's
+centre point. Under that model, a staircase next to your door costs the same as one at the far end. Long
+corridors and campuses lose the most. So: **the port is a start; ranking by Synera's rule is worth up to
+about 12% of the route points**, and the golden route lengths (`questions_basic.jsonl`) are the kit's
+model, so `test_route*` checks the port, not the score.
+
+Assumptions in the prototype (ask Synera, see below): a route starts and ends at the room's representative
+point; walking outside between entrances costs 0 m; a stair or lift is entered at the stairwell's
+representative point.
+
+## Open questions for Synera
+
+1. Where does a route start and end inside the first and last room: a fixed point (which?), the nearest
+   door, or the item's position for "to the machine" questions?
+2. Is walking outside between entrances measured, and how?
+3. Which spaces are **forklift aisles** (the data has 112 corridors named "aisle", no aisle type) and which
+   are **production bays** (`production_zone`, `assembly_zone`, `additive_zone`, `warehouse_zone`,
+   `logistics_zone`?)? Can a pedestrian route pass through a bay, or only a forklift one?
+4. "Without stairs: lifts, ramps and doors only." Is there ramp data, or are ramps just openings marked
+   `step_free`?
+5. The exact format for the ordered list of spaces in the answer: ids, refs or names? Does it include
+   `outside`, and repeated lift or stair spaces per floor?

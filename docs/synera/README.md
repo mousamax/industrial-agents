@@ -97,3 +97,4 @@ Suggested order for the solution session (time-box it, ~60–90 min):
 4. **Then build**, protecting the 55 points first.
 
 How we split the work (four people, interfaces, file ownership, timeline): [TEAM_PLAN.md](TEAM_PLAN.md).
+Where the score stands and what each owner should push next: [HOW_TO_SCORE.md](HOW_TO_SCORE.md).

@@ -16,7 +16,8 @@ weekend on **agent design, prompts and flows**.
 
 **Track: Synera, "Talk to Your Building".** Start at [docs/synera/README.md](docs/synera/README.md)
 (brief, scoring, questions for Synera), [docs/synera/ROUTE_SCORING.md](docs/synera/ROUTE_SCORING.md)
-(how route answers are scored) and [BENCHMARK.md](BENCHMARK.md). Clone with
+(how route answers are scored), [docs/synera/HOW_TO_SCORE.md](docs/synera/HOW_TO_SCORE.md) (what's
+still unscored, each owner's number, how to run every evaluation) and [BENCHMARK.md](BENCHMARK.md). Clone with
 `git clone --recurse-submodules`, or run `git submodule update --init` after cloning: Synera's kit and data
 are the `synera-kit/` submodule.
 
