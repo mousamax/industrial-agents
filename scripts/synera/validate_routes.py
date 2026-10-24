@@ -78,6 +78,8 @@ def main() -> None:
             graph = RouteGraph(b, c)
             for target in sorted(graph.reachable(OUTSIDE)):
                 route = graph.shortest(OUTSIDE, target)
+                if route is None:  # reachable() and shortest() disagree: a RouteGraph bug, not a route
+                    raise RuntimeError(f"{b.id}: {b.label(target)} reachable but no route")
                 check(name, b, route.space_path, c, f"{b.id} outside -> {b.label(target)}")
 
     print(f"\n{args.split}: invalid routes under Synera's rule (validate_route)")

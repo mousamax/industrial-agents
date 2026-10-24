@@ -265,6 +265,10 @@ def test_a4_6_validator_rejects_invalid_routes(q, monkeypatch):
     assert validate_route(b, [path[0], path[0]], WALKING), "a space isn't connected to itself"
     assert validate_route(b, [*path, "no-such-space"], WALKING)
     assert validate_route(b, path, WALKING.with_closed(elements[0])), "closed element used"
+    closed_space = next((sid for sid in path if sid in b.spaces), None)
+    if closed_space is not None:
+        problems = validate_route(b, path, WALKING.with_closed(closed_space))
+        assert f"closed space {b.label(closed_space)}" in problems
     if any(b.openings[e].width_m < FORKLIFT.min_width_m for e in elements if e in b.openings):
         assert validate_route(b, path, FORKLIFT), "narrow opening on a forklift route"
     # Only the space sequence is scored: a step counts if *any* step-free door, stair or lift joins the pair.

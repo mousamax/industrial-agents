@@ -26,7 +26,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from app.building.model import OUTSIDE, Building
+from app.building.model import OUTSIDE, Building, Connector, Opening
 
 __all__ = [
     "FORKLIFT",
@@ -114,9 +114,7 @@ class RouteGraph:
         anchors = {sid: s.anchor for sid, s in b.spaces.items() if sid not in c.closed}
         self._nodes = set(anchors)
         for opening in b.openings.values():
-            if opening.id in c.closed or (c.step_free and not opening.step_free):
-                continue
-            if c.min_width_m is not None and opening.width_m < c.min_width_m:
+            if not _usable(opening, c):
                 continue
             door = DOOR_PREFIX + opening.id
             for sid in opening.space_ids:
@@ -126,7 +124,7 @@ class RouteGraph:
                     self._add_edge(sid, door, math.dist(anchors[sid], opening.position), opening.id)
         levels = {fid: f.level for fid, f in b.floors.items()}
         for connector in b.connectors.values():
-            if connector.id in c.closed or (c.step_free and not connector.step_free):
+            if not _usable(connector, c):
                 continue
             for (low_floor, low), (high_floor, high) in itertools.pairwise(connector.stops):
                 if low not in anchors or high not in anchors:
@@ -239,15 +237,34 @@ def validate_route(b: Building, space_path: list[str], constraints: Constraints 
 def _step_allowed(b: Building, a: str, z: str, c: Constraints) -> bool:
     if a == z:
         return False
+    return any(_usable(element, c) for element in _connections(b).get(frozenset((a, z)), ()))
+
+
+def _usable(element: Opening | Connector, c: Constraints) -> bool:
+    """The one rule for which doors, stairs and lifts the constraints allow: RouteGraph and validate_route."""
+    if element.id in c.closed or (c.step_free and not element.step_free):
+        return False
+    return isinstance(element, Connector) or c.min_width_m is None or element.width_m >= c.min_width_m
+
+
+_CONNECTIONS: dict[int, tuple[Building, dict[frozenset[str], list[Opening | Connector]]]] = {}
+
+
+def _connections(b: Building) -> dict[frozenset[str], list[Opening | Connector]]:
+    """Openings and connectors by the pair of spaces they join, built once per building (edits make a new one)."""
+    hit = _CONNECTIONS.get(id(b))
+    if hit is not None and hit[0] is b:
+        return hit[1]
+    pairs: dict[frozenset[str], list[Opening | Connector]] = defaultdict(list)
     for o in b.openings.values():
-        if {a, z} == set(o.space_ids) and o.id not in c.closed:
-            if (not c.step_free or o.step_free) and (c.min_width_m is None or o.width_m >= c.min_width_m):
-                return True
+        pairs[frozenset(o.space_ids)].append(o)
     for k in b.connectors.values():
-        spaces = {sid for _, sid in k.stops}
-        if a in spaces and z in spaces and k.id not in c.closed and (not c.step_free or k.step_free):
-            return True
-    return False
+        for (_, x), (_, y) in itertools.combinations(k.stops, 2):
+            pairs[frozenset((x, y))].append(k)
+    if len(_CONNECTIONS) >= 32:
+        _CONNECTIONS.pop(next(iter(_CONNECTIONS)))
+    _CONNECTIONS[id(b)] = (b, pairs)
+    return pairs
 
 
 def _name(b: Building, sid: str) -> str:
