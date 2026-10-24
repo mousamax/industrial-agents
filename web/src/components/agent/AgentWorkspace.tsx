@@ -130,6 +130,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
   const setFloor = useApp((s) => s.setFloor)
   const setRoute = useApp((s) => s.setRoute)
   const setHighlight = useApp((s) => s.setHighlight)
+  const setView3d = useApp((s) => s.setView3d)
   const setMapOverlays = useApp((s) => s.setMapOverlays)
   const setMapInsets = useApp((s) => s.setMapInsets)
   const setMode = useApp((s) => s.setMode)
@@ -573,6 +574,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
   useEffect(() => {
     const isMap = (phase === 'result' || phase === 'walk') && !!result
     if (!isMap || !result) {
+      setView3d(null)
       setRoute(null)
       setHighlight([])
       setMapOverlays({ closedIds: [], affectedIds: [], ghostDoor: null, walkMarker: null })
@@ -593,6 +595,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     if (activeFloor && activeFloor !== useApp.getState().floorId) {
       setFloor(activeFloor)
     }
+    // Walking is step by step on one floor at a time, flat; an overview the answer asked for in 3D is tilted.
+    setView3d(phase === 'walk' ? null : (result.view3d ?? null))
 
     if (phase === 'walk') {
       const curSpace = curStep && index ? index.spaceById.get(curStep.spaceId) : undefined
@@ -634,6 +638,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         walkMarker: null,
       })
     }
+    // setRoute moves the map to the route's first floor; the floor picked above (a step, the switcher) wins.
+    if (activeFloor && activeFloor !== useApp.getState().floorId) setFloor(activeFloor)
   }, [
     phase,
     result,
@@ -647,6 +653,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     setHighlight,
     setMapOverlays,
     setMapInsets,
+    setView3d,
   ])
 
   const activeIndex = index

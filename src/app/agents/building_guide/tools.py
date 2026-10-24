@@ -502,6 +502,8 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
             },
             "directly_above": above and _label(b, above),
             "directly_below": below and _label(b, below),
+            "directly_above_id": above,
+            "directly_below_id": below,
             "highlight": [s.id],
         }
     )

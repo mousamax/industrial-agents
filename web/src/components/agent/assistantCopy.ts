@@ -66,7 +66,9 @@ function clean(text: string): string {
 
 /** Cut an inline numbered list ("… 1. Leave the lobby 2. Turn left …"); steps are shown on their own. */
 function withoutInlineSteps(text: string): string {
-  const m = text.search(/(^|\s)1[.)]\s/)
+  // A list has a second step in the same style, and its "1." doesn't follow a word: "(Floor 1) to …" and
+  // "… on Floor 1. Answer: …" are not lists.
+  const m = text.search(/(^|\s)(?<![A-Za-z]\s)1([.)])\s(?=.*\s2\2\s)/)
   return m > 0 ? text.slice(0, m).trim() : text
 }
 
@@ -93,7 +95,10 @@ export function shapeAnswer(result: ScenarioResult): ShapedAnswer {
   const meta = result.kind === 'route' && len ? `${fmtM(len)} · about ${fmtWalk(len)}` : ''
   // A supporting sentence that only repeats the distance already shown in `meta` adds nothing.
   const restatesDistance = (s: string) =>
-    !!len && new RegExp(`\\b${Math.round(len)}(\\.\\d+)?\\s*(m|metres|meters)\\b`, 'i').test(s)
+    !!len &&
+    [...s.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:m|metres|meters)\b/gi)].some(
+      (m) => Math.abs(Number(m[1].replace(',', '.')) - len) < 1,
+    )
   const detail = sentences.slice(1).find((s) => !restatesDistance(s)) ?? ''
   return { headline, detail, meta }
 }

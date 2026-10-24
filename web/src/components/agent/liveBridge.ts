@@ -409,6 +409,14 @@ export function extractLiveTurn(
     }
     // The destination is not where you are yet: the UI remembers it as your place only once you arrive.
 
+    // A route across floors is easier to follow seen from the side: show it tilted, from its highest floor so
+    // the floors below (and the route on them) stay in view.
+    const routeFloors = enriched.floors.length ? enriched.floors : goalSpace ? [goalSpace.floor_id] : []
+    const topFloor = [...routeFloors].sort(
+      (x, y) => (index.floorById.get(y)?.elevation_m ?? 0) - (index.floorById.get(x)?.elevation_m ?? 0),
+    )[0]
+    const acrossFloors = routeFloors.length > 1
+
     return {
       trace,
       result: {
@@ -419,7 +427,8 @@ export function extractLiveTurn(
         sub: `${endFloor ? `${endFloor} · ` : ''}${fmtM(showRoute.length_m)} · ${fmtWalk(showRoute.length_m)}`,
         understood: cleanBody || `${startSpace ? spaceLabel(startSpace) : 'Start'} → ${endTitle}`,
         floors: enriched.floors.length ? enriched.floors : goalSpace ? [goalSpace.floor_id] : [],
-        focusFloor: enriched.floors[0] ?? goalSpace?.floor_id ?? index.floors[0]?.id ?? '',
+        focusFloor: (acrossFloors ? topFloor : enriched.floors[0]) ?? goalSpace?.floor_id ?? index.floors[0]?.id ?? '',
+        view3d: acrossFloors ? { link: null } : undefined,
         route: {
           start: startId ?? '',
           goal: goalId ?? '',
@@ -432,6 +441,38 @@ export function extractLiveTurn(
         say: cleanBody || `${endTitle}, ${fmtWalk(showRoute.length_m)}.`,
         assetIds,
         remember,
+      },
+    }
+  }
+
+  // 4b. Rooms measured through the floors (`distance_3d`) or stacked on top of each other (`room_details` asked
+  // about above/below): the answer is shown tilted in 3D, both rooms lit and joined by a line.
+  const vertical = verticalPair(toolRecords, index, userQuery)
+  if (vertical) {
+    const [a, b] = [vertical.from, vertical.to].map((id) => index.spaceById.get(id)!)
+    const elev = (fid: string) => index.floorById.get(fid)?.elevation_m ?? 0
+    const top = elev(a.floor_id) >= elev(b.floor_id) ? a.floor_id : b.floor_id
+    const title = vertical.distance !== null ? `${spaceLabel(a)} to ${spaceLabel(b)}` : spaceLabel(b)
+    return {
+      trace,
+      result: {
+        kind: 'impact',
+        buildingId,
+        buildingName,
+        title,
+        sub: [...new Set([a.floor_id, b.floor_id])].map((f) => floorNameOf(index, f)).join(' · '),
+        understood: cleanBody || answer || title,
+        floors: [...new Set([top, a.floor_id, b.floor_id])],
+        focusFloor: top,
+        focusIds: [a.id, b.id],
+        say: cleanBody || undefined,
+        remember: [],
+        view3d: {
+          link:
+            vertical.distance !== null
+              ? { from: a.id, to: b.id, label: `${Math.round(vertical.distance * 10) / 10} m`, labelAt: 'mid' }
+              : { from: a.id, to: b.id, label: spaceLabel(b), labelAt: 'to' },
+        },
       },
     }
   }
@@ -544,4 +585,28 @@ export function extractLiveTurn(
       remember: [],
     },
   }
+}
+
+const ABOVE = /\b(above|upstairs|on top of|over(?=\s+(it|the|this|that|room|\w+\s\d)))\b/i
+const BELOW = /\b(below|beneath|under(neath)?|downstairs)\b/i
+
+/** The two rooms of a vertical answer, from the tools the agent used (never from the wording of its reply). */
+function verticalPair(
+  records: { name: string; input: Rec; data: Rec }[],
+  index: SceneIndex,
+  userQuery: string,
+): { from: string; to: string; distance: number | null } | null {
+  const isSpace = (v: unknown): v is string => typeof v === 'string' && index.spaceById.has(v)
+  const last = [...records].reverse()
+  const dist = last.find((t) => t.name === 'distance_3d' && typeof t.data.distance_m === 'number')
+  if (dist) {
+    const ids = Array.isArray(dist.data.highlight) ? dist.data.highlight.filter(isSpace) : []
+    if (ids.length === 2 && ids[0] !== ids[1]) return { from: ids[0], to: ids[1], distance: dist.data.distance_m as number }
+  }
+  const above = ABOVE.test(userQuery)
+  const below = BELOW.test(userQuery)
+  if (above === below) return null
+  const room = last.find((t) => t.name === 'room_details' && isSpace(t.data.id))
+  const other = room?.data[above ? 'directly_above_id' : 'directly_below_id']
+  return room && isSpace(other) ? { from: room.data.id as string, to: other, distance: null } : null
 }

@@ -90,6 +90,55 @@ function link(a: [number, number, number], b: [number, number, number], r: numbe
   return finish(g, ROUTE)
 }
 
+// ---------- link between two rooms ----------
+
+/**
+ * Two rooms, each filled on its own floor, joined by a dashed line from centre to centre. Drawn without depth test
+ * so the line and a room hidden under the selected floor's slab still show, like an x-ray.
+ */
+export function buildLink(
+  index: SceneIndex,
+  ids: [string, string],
+  floorY: (floorId: string) => number,
+  k: number,
+): { fill: THREE.BufferGeometry | null; line: THREE.BufferGeometry | null } {
+  const fills: THREE.BufferGeometry[] = []
+  const ends: [number, number, number][] = []
+  const lift = 0.6
+  for (const id of ids) {
+    const s = index.spaceById.get(id)
+    if (!s) continue
+    const y = floorY(s.floor_id)
+    const poly = cleanPoly(s.polygon)
+    if (poly.length >= 3) fills.push(fillGeometry(poly, y + 0.05))
+    ends.push([s.anchor[0], y + lift, -s.anchor[1]])
+  }
+  const r = Math.min(0.5, Math.max(0.07, 2.6 / k))
+  const parts: (THREE.BufferGeometry | null)[] = []
+  if (ends.length === 2) {
+    const [a, b] = ends.map((e) => new THREE.Vector3(...e))
+    const len = a.distanceTo(b)
+    const dash = Math.max(r * 5, 0.4)
+    const n = Math.max(1, Math.floor(len / (dash * 1.8)))
+    for (let i = 0; i < n; i++) {
+      const t0 = i / n
+      const t1 = t0 + (1 / n) * 0.55
+      const p0 = a.clone().lerp(b, t0)
+      const p1 = a.clone().lerp(b, t1)
+      parts.push(link([p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], r))
+    }
+  }
+  for (const e of ends) {
+    const g = new THREE.SphereGeometry(r * 3, 16, 12)
+    g.translate(...e)
+    parts.push(finish(g, ROUTE))
+  }
+  const fill = fills.length ? mergeGeometries(fills, false) : null
+  for (const f of fills) f.dispose()
+  fill?.computeBoundingSphere()
+  return { fill, line: merge(parts) }
+}
+
 // ---------- highlight & selection ----------
 
 function fillGeometry(poly: P2[], y: number): THREE.BufferGeometry {

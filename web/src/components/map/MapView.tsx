@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { ShowRoute } from '../../api/types'
 import type { SceneIndex } from '../../lib/sceneIndex'
-import { useApp, type GhostDoorState } from '../../store'
+import { useApp, type GhostDoorState, type MapInsets } from '../../store'
 import { useIsPhone } from '../layout/useViewport'
 import { DevPanel, type DevStats } from '../map3d/DevPanel'
 import { devMode, useMap3DSettings } from '../map3d/devSettings'
@@ -68,7 +68,7 @@ const PAN_CAP = 8 // 3D pan: max metres per screen-metre moved (guards against n
 const DEV = devMode()
 
 type EngineStatus = 'idle' | 'loading' | 'ready' | 'failed'
-type OverlayItem = { el: HTMLElement; x: number; y: number; cull: boolean; shown: boolean }
+type OverlayItem = { el: HTMLElement; x: number; y: number; elev: number | null; cull: boolean; shown: boolean }
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const fade = (on: boolean): CSSProperties => ({
@@ -77,23 +77,32 @@ const fade = (on: boolean): CSSProperties => ({
   transition: `opacity ${FADE_MS}ms ease, visibility ${FADE_MS}ms`,
 })
 
+const elevOf = (index: SceneIndex, floorId: string) => index.floorById.get(floorId)?.elevation_m ?? 0
+
 function focusBBox(
   ids: string[],
   geo: FloorGeo,
   index: SceneIndex,
   route: ShowRoute | null,
   ghostDoor: GhostDoorState | null,
+  /** Shown tilted in 3D: rooms and route parts on the other floors are on screen too. */
+  allFloors = false,
 ): BBox | null {
   let b: BBox | null = null
   const pt = (p: Pt, pad: number) => padBBox(bboxOf([p])!, pad)
   const isRouteFocus = Boolean(route && ids === route.space_ids)
   for (const id of ids) {
-    const s = geo.byId.get(id)
+    const other = allFloors ? index.spaceById.get(id)?.floor_id : undefined
+    const s = geo.byId.get(id) ?? (other ? floorGeo(index, other).byId.get(id) : undefined)
     if (s) {
       const isEndpoint = id === ids[0] || id === ids[ids.length - 1]
       const roomType = index.spaceById.get(id)?.room_type
       if (!isRouteFocus || isEndpoint || roomType !== 'corridor') {
-        b = unionBBox(b, s.bbox)
+        // Tilted, a lower floor shows further down the screen: shift its room down by about that much (in the flat
+        // frame the fit works in, before the tilt squeezes it by cos).
+        const drop = other && other !== geo.floorId ? elevOf(index, geo.floorId) - elevOf(index, other) : 0
+        const dy = Math.max(0, drop) * Math.tan((TILT_BUTTON_DEG * Math.PI) / 180)
+        b = unionBBox(b, { ...s.bbox, minY: s.bbox.minY + dy, maxY: s.bbox.maxY + dy })
       }
     }
     const a = geo.assetById.get(id)
@@ -108,7 +117,7 @@ function focusBBox(
   }
   if (isRouteFocus && route) {
     for (const seg of route.segments) {
-      if (seg.floor_id === geo.floorId) {
+      if (seg.floor_id === geo.floorId || allFloors) {
         const segBox = bboxOf(seg.points.map(toSvg))
         if (segBox) b = unionBBox(b, padBBox(segBox, 3))
       }
@@ -129,6 +138,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   const ghostDoor = useApp((s) => s.ghostDoor)
   const walkMarker = useApp((s) => s.walkMarker)
   const mapInsets = useApp((s) => s.mapInsets)
+  const view3d = useApp((s) => s.view3d)
   const focus = useApp((s) => s.focus)
   const select = useApp((s) => s.select)
   const setFloor = useApp((s) => s.setFloor)
@@ -162,6 +172,8 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   multiRef.current = multiFloor
   const mapInsetsRef = useRef(mapInsets)
   mapInsetsRef.current = mapInsets
+  const view3dRef = useRef(view3d)
+  view3dRef.current = view3d
   const buildingBBox = useRef(building)
   buildingBBox.current = building
   const settingsRef = useRef(settings)
@@ -196,6 +208,21 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   const animatePitchRef = useRef<(deg: number, auto: boolean, ms?: number) => void>(() => {})
 
   // ---------- camera core ----------
+
+  /**
+   * Fits are worked out flat, but an answer shown in 3D is then tilted, which squeezes the view vertically towards
+   * the middle of the screen (by about cos(pitch)). Stretch the free band away from the middle by the same factor so
+   * the content lands between the insets once tilted.
+   */
+  const forTilt = (p: MapInsets): MapInsets => {
+    if (!view3dRef.current) return p
+    const { h } = size.current
+    const c = h / 2
+    const cos = Math.cos((TILT_BUTTON_DEG * Math.PI) / 180)
+    // Perspective also enlarges the near (bottom) side: keep a little more room there.
+    const bottom = p.bottom + h * 0.05
+    return { ...p, top: c + (p.top - c) / cos, bottom: c + (bottom - c) / cos }
+  }
 
   const insets = useCallback((): Insets => {
     if (mapInsetsRef.current) return mapInsetsRef.current
@@ -270,7 +297,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     const { w, h } = size.current
     const z = floorElev.current
     for (const it of overlayItems.current) {
-      const p = e.project([it.x, -it.y], z)
+      const p = e.project([it.x, -it.y], it.elev ?? z)
       const ok = p.visible && (!it.cull || (p.y > 40 && p.y < h && p.x > 0 && p.x < w))
       if (ok) it.el.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`
       if (ok !== it.shown) {
@@ -287,6 +314,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
           el,
           x: Number(el.dataset.x),
           y: Number(el.dataset.y),
+          elev: el.dataset.elev !== undefined ? Number(el.dataset.elev) : null,
           cull: el.dataset.cull !== undefined,
           shown: el.style.visibility !== 'hidden',
         }))
@@ -360,10 +388,11 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
 
   const set = useCallback(
     (c: Camera, settle = false) => {
+      stop() // a camera animation still running (an earlier fit) would overwrite this on its next frame
       cam.current = clamp(c)
       apply(settle)
     },
-    [apply, clamp],
+    [apply, clamp, stop],
   )
 
   /** Camera after moving the content so the point under screen (fx, fy) ends up under (x, y). */
@@ -613,11 +642,11 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
         if (pt) ensureVisible(pt)
         return
       }
-      const b = focusBBox(focus.ids, geo, index, route, ghostDoor)
+      const b = focusBBox(focus.ids, geo, index, route, ghostDoor, !!view3dRef.current)
       if (b) {
         const ins = insets()
         const pad = 20
-        const padded = { top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad }
+        const padded = forTilt({ top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad })
         const { w, h } = size.current
         const maxK = Math.min(
           MAX_K,
@@ -637,11 +666,11 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     } else if (floorChanged) {
       // If there's an active route on this floor, fit to the route segment on this floor
       if (route) {
-        const b = focusBBox(route.space_ids, geo, index, route, ghostDoor)
+        const b = focusBBox(route.space_ids, geo, index, route, ghostDoor, !!view3dRef.current)
         if (b) {
           const ins = insets()
           const pad = 20
-          const padded = { top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad }
+          const padded = forTilt({ top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad })
           const { w, h } = size.current
           const maxK = Math.min(
             MAX_K,
@@ -761,6 +790,33 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     engine.current?.setRoute(route)
     engine.current?.requestRender()
   }, [ready, route])
+
+  useEffect(() => {
+    if (!ready) return
+    const l = view3d?.link
+    engine.current?.setLink(l ? { from: l.from, to: l.to } : null)
+    engine.current?.requestRender()
+  }, [ready, view3d])
+
+  // The answer reads best in 3D (rooms on top of each other, a route across floors): tilt in, and flatten again
+  // when the next answer doesn't need it. A tilt the person chose themselves is left alone.
+  const answerTilt = useRef(false)
+  useEffect(() => {
+    if (statusRef.current === 'failed') return
+    if (view3d) {
+      answerTilt.current = true
+      const deg = Math.min(TILT_BUTTON_DEG, settingsRef.current.maxPitchDeg)
+      if (statusRef.current === 'ready') animatePitch(deg, false)
+      else {
+        pendingTilt.current = { deg, auto: false }
+        ensureEngine()
+      }
+    } else if (answerTilt.current) {
+      answerTilt.current = false
+      pendingTilt.current = null
+      animatePitch(0, false)
+    }
+  }, [view3d, animatePitch, ensureEngine])
 
   // Engine just became ready: run the tilt that was asked for while it loaded (button, gesture or zoom).
   useEffect(() => {
@@ -1109,7 +1165,8 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
         {/* Created the first time 3D is needed, then kept so re-entering 3D is instant. */}
         {hasCanvas && <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" style={fade(is3D)} />}
         {is3D && geo && index && (
-          <Overlay3D rootRef={overlayRef} geo={geo} index={index} k={zoomK} sel={sel} route={route} dots={hl.dots} />
+          <Overlay3D rootRef={overlayRef} geo={geo} index={index} k={zoomK} sel={sel} route={route} dots={hl.dots}
+            link={view3d?.link ?? null} />
         )}
       </div>
       {geo && !hideControls && (

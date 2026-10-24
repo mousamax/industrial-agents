@@ -13,9 +13,9 @@ import type { SceneIndex } from '../../lib/sceneIndex'
 import { floorGeo, spaceAt, toSvg } from '../map/geometry'
 import { buildAssetLayer, type AssetLayer, type AssetSlot } from './assets'
 import { buildFloorGeometry, type FloorGeometry } from './floorMesh'
-import { buildMarks, buildRoute, type FloorY, type SpaceMark } from './overlays'
-import { ACCENT, BG, LOWER_FADE_STEP, LOWER_SLAB, LOWER_WALL, flatMaterial } from './palette'
-import type { Map3DEngine, Map3DSettings, ScreenPoint, View3D, XY } from './types'
+import { buildLink, buildMarks, buildRoute, type FloorY, type SpaceMark } from './overlays'
+import { ACCENT, BG, ROUTE, LOWER_FADE_STEP, LOWER_SLAB, LOWER_WALL, flatMaterial } from './palette'
+import type { Link3D, Map3DEngine, Map3DSettings, ScreenPoint, View3D, XY } from './types'
 import { DEFAULT_3D } from './devSettings'
 
 interface FloorEntry {
@@ -74,6 +74,11 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   })
   const markLineMat = new THREE.MeshBasicMaterial({ vertexColors: true })
   const routeMat = new THREE.MeshBasicMaterial({ vertexColors: true })
+  // The link is seen through the floors in between (see buildLink).
+  const linkFillMat = new THREE.MeshBasicMaterial({
+    color: ROUTE, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+  })
+  const linkLineMat = new THREE.MeshBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false, transparent: true })
 
   // ---------- state ----------
   let index: SceneIndex | null = null
@@ -85,6 +90,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   let highlight: string[] = []
   let selection: { kind: 'space' | 'asset'; id: string } | null = null
   let route: ShowRoute | null = null
+  let link: Link3D | null = null
   let diag = 100 // building extent (m), for the far plane
 
   const floors = new Map<string, FloorEntry>()
@@ -92,6 +98,8 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   const assetLayers = new Map<string, AssetLayer>() // per floor, at settings.objectDetail
   let marks: { group: THREE.Group; fill: THREE.Mesh | null; lines: THREE.Mesh | null; k: number } | null = null
   let routeMesh: { mesh: THREE.Mesh | null; k: number } | null = null
+  let linkMesh: { group: THREE.Group; k: number } | null = null
+  let linkDirty = true
   let marksDirty = true
   let routeDirty = true
   let touched: AssetSlot[] = [] // asset instances currently tinted / lifted
@@ -313,6 +321,26 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     routeMesh = { mesh, k: view.k }
   }
 
+  function disposeLink() {
+    if (!linkMesh) return
+    for (const m of linkMesh.group.children as THREE.Mesh[]) m.geometry.dispose()
+    linkMesh.group.removeFromParent()
+    linkMesh = null
+  }
+
+  function rebuildLink() {
+    disposeLink()
+    linkDirty = false
+    if (!index || !link) return
+    const parts = buildLink(index, [link.from, link.to], floorElev, view.k)
+    const group = new THREE.Group()
+    group.name = 'link'
+    if (parts.fill) group.add(Object.assign(new THREE.Mesh(parts.fill, linkFillMat), { renderOrder: 8 }))
+    if (parts.line) group.add(Object.assign(new THREE.Mesh(parts.line, linkLineMat), { renderOrder: 9 }))
+    root.add(group)
+    linkMesh = { group, k: view.k }
+  }
+
   const drift = (k0: number) => Math.abs(Math.log(view.k / k0)) > 0.18
 
   // ---------- render ----------
@@ -325,6 +353,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       layoutAssets()
       if (marksDirty || (marks && drift(marks.k))) rebuildMarks()
       if (routeDirty || (routeMesh && drift(routeMesh.k))) rebuildRoute()
+      if (linkDirty || (linkMesh && drift(linkMesh.k))) rebuildLink()
     }
     const halfT = Math.max(0.05, 0.6 / Math.max(view.k, 1e-6))
     for (const m of [wallMat, ...lowerMats.map((l) => l.wall)]) m.userData.uniforms.uHalfT.value = halfT
@@ -343,6 +372,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     dropAssetLayers()
     disposeMarks()
     disposeRoute()
+    disposeLink()
     for (const e of floors.values()) {
       e.geo.slab.dispose()
       e.geo.walls.dispose()
@@ -384,7 +414,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       const zSpan = fl.length ? fl[fl.length - 1].elevation_m - fl[0].elevation_m + 10 : 10
       diag = minX <= maxX ? Math.hypot(maxX - minX, maxY - minY, zSpan) : 100
       if (!floorId || !next.floorById.has(floorId)) floorId = (fl.find((f) => f.level === 0) ?? fl[0])?.id ?? null
-      marksDirty = routeDirty = true
+      marksDirty = routeDirty = linkDirty = true
       updateCamera() // target follows the floor elevation now, so project/unproject are right before the next frame
       requestRender()
     },
@@ -416,7 +446,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
         marksDirty = true
       }
       if (s.floorGapScale !== prev.floorGapScale || s.showLowerFloors !== prev.showLowerFloors || s.wallHeightM !== prev.wallHeightM)
-        routeDirty = true
+        routeDirty = linkDirty = true
       updateCamera()
       requestRender()
     },
@@ -433,6 +463,11 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     setRoute(r) {
       route = r
       routeDirty = true
+      requestRender()
+    },
+    setLink(l) {
+      link = l ? { ...l } : null
+      linkDirty = true
       requestRender()
     },
     pick(x, y) {
@@ -489,7 +524,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       if (raf) cancelAnimationFrame(raf)
       raf = 0
       clearScene()
-      for (const m of [slabMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat]) m.dispose()
+      for (const m of [slabMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat, linkFillMat, linkLineMat]) m.dispose()
       for (const l of lowerMats) {
         l.slab.dispose()
         l.wall.dispose()

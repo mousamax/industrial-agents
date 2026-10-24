@@ -227,12 +227,16 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
           <button
             type="button"
             onClick={onOpenBuildingPicker}
+            aria-label={`${buildingName}, change building`}
             className={clsx('flex h-12 items-center gap-2.5 rounded-full pr-4 pl-2', GLASS)}
           >
             <Orb size={32} />
-            <span className="font-display max-w-[46vw] truncate text-[18px] font-bold whitespace-nowrap">
-              {buildingName}
-            </span>
+            {/* A phone showing the floor switcher keeps only the orb here, so both fit on one row. */}
+            {!(phone && (result?.floors.length ?? 0) > 1) && (
+              <span className="font-display max-w-[46vw] truncate text-[18px] font-bold whitespace-nowrap">
+                {buildingName}
+              </span>
+            )}
             {activeIndex && activeFloor && !phone && (
               <span className="text-[14px] whitespace-nowrap text-ink-soft">{floorNameOf(activeIndex, activeFloor)}</span>
             )}
@@ -248,7 +252,7 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
                     aria-pressed={fid === activeFloor}
                     onClick={() => setFloorState(fid)}
                     className={clsx(
-                      'h-10 rounded-full px-3.5 text-[14px] font-bold',
+                      'h-10 whitespace-nowrap rounded-full px-3.5 text-[14px] font-bold',
                       fid === activeFloor ? 'bg-ink text-white' : 'text-ink',
                     )}
                   >
