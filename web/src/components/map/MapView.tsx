@@ -579,11 +579,18 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   // ---------- fit on load / floor change, animate on focus ----------
 
   const tapFocus = useRef<string | null>(null)
-  const prev = useRef<{ sceneId: string | null; floorId: string | null; nonce: number; sized: boolean }>({
+  const prev = useRef<{
+    sceneId: string | null
+    floorId: string | null
+    nonce: number
+    sized: boolean
+    insets: typeof mapInsets
+  }>({
     sceneId: null,
     floorId: null,
     nonce: focus.nonce,
     sized: false,
+    insets: mapInsets,
   })
 
   useLayoutEffect(() => {
@@ -592,7 +599,8 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     const newScene = p.sceneId !== scene.id || !p.sized
     const floorChanged = p.floorId !== geo.floorId
     const nonceChanged = p.nonce !== focus.nonce
-    prev.current = { sceneId: scene.id, floorId: geo.floorId, nonce: focus.nonce, sized }
+    const insetsChanged = p.insets !== mapInsets
+    prev.current = { sceneId: scene.id, floorId: geo.floorId, nonce: focus.nonce, sized, insets: mapInsets }
     updateLimits()
 
     if ((nonceChanged || newScene) && (focus.ids.length || ghostDoor)) {
@@ -623,7 +631,10 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
       }
     }
     if (newScene) fitFloor(false)
-    else if (floorChanged) {
+    else if (insetsChanged && !route && !highlight.ids.length) {
+      // The layout around the map changed (an answer closed, the home screen came back): show the whole floor.
+      fitFloor(true)
+    } else if (floorChanged) {
       // If there's an active route on this floor, fit to the route segment on this floor
       if (route) {
         const b = focusBBox(route.space_ids, geo, index, route, ghostDoor)
@@ -1011,7 +1022,12 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   }, [geo, index, highlight.ids])
 
   const sel = useMemo(() => {
-    if (!geo || !index || !selection) return null
+    if (!geo || !index) return null
+    if (!selection) {
+      // An answer label ("Biggest room · 60 m²") sits on the first highlighted room of this floor.
+      const first = highlight.label ? hl.spaces.map((id) => geo.byId.get(id)).find(Boolean) : undefined
+      return first && highlight.label ? { space: first, p: first.anchor, lines: [highlight.label] } : null
+    }
     if (selection.kind === 'space') {
       const s = geo.byId.get(selection.id)
       return s ? { space: s, p: s.anchor, lines: s.lines.length ? s.lines : [] } : null
@@ -1019,7 +1035,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     const a = geo.assetById.get(selection.id)
     const name = index.assetById.get(selection.id)?.name
     return a ? { space: null, p: a.p, lines: name ? [name] : [] } : null
-  }, [geo, index, selection])
+  }, [geo, index, selection, highlight.label, hl.spaces])
 
   const assetLevel: 0 | 1 | 2 = zoomK >= ASSET_K[1] ? 2 : zoomK >= ASSET_K[0] ? 1 : 0
 

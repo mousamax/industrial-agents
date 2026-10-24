@@ -96,6 +96,8 @@ export interface ScenarioResult {
   applied?: string
   undo?: string
   remember?: MemoryChip[]
+  /** The assistant could not be reached; the UI says so in plain words instead of showing the error. */
+  offline?: boolean
 }
 
 export interface Scenario {
@@ -381,7 +383,7 @@ export function buildStarterPrompts(activeId: string | null, activeName: string)
       buildingName: campusName,
       persona: 'Wheelchair user',
       icon: 'accessibility',
-      chip: 'Step-free from Main lobby 0.18 to Meeting room 1.12',
+      chip: 'Meeting room 1.12 without stairs',
       user: 'I use a wheelchair. How do I get from Main lobby 0.18 (Ground floor) to Meeting room 1.12 (Floor 1)?',
     },
     {
@@ -391,7 +393,7 @@ export function buildStarterPrompts(activeId: string | null, activeName: string)
       persona: 'Service technician',
       icon: 'wrench',
       voice: true,
-      chip: 'CNC mill H-A1-B, from Main aisle H-B5',
+      chip: 'Take me to CNC mill H-A1-B',
       user: 'Got a call about CNC mill H-A1-B. How do I get there from Main aisle H-B5? Keep it short.',
     },
     {
@@ -400,7 +402,7 @@ export function buildStarterPrompts(activeId: string | null, activeName: string)
       buildingName: factoryName,
       persona: 'Forklift driver',
       icon: 'forklift',
-      chip: 'Forklift run to the warehouse',
+      chip: 'Forklift route to the warehouse',
       user: 'Forklift run (3 m wide, no steps) from the logistics zone to the warehouse. Which way?',
     },
     {
@@ -409,7 +411,7 @@ export function buildStarterPrompts(activeId: string | null, activeName: string)
       buildingName: campusName,
       persona: 'Facility manager',
       icon: 'triangle-alert',
-      chip: 'What if Lift 1 is out of service today?',
+      chip: 'What if Lift 1 is out today?',
       user: 'What if Lift 1 is out of service today? Which rooms on Floor 1 lose step-free access or get a longer walk?',
     },
     {
@@ -418,7 +420,7 @@ export function buildStarterPrompts(activeId: string | null, activeName: string)
       buildingName: campusName,
       persona: 'Facility manager',
       icon: 'door-open',
-      chip: 'Add a door: Seminar room 2.06 ↔ Kitchen 2.07',
+      chip: 'Add a door from 2.06 to 2.07',
       user: 'Add a door between Seminar room 2.06 and Kitchen 2.07.',
     },
   ]

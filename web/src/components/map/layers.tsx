@@ -131,8 +131,8 @@ export function HighlightFill({ geo, ids }: { geo: FloorGeo; ids: string[] }) {
   const d = useMemo(() => ids.map((id) => geo.byId.get(id)?.d ?? '').join(''), [geo, ids])
   if (!d) return null
   return (
-    <path d={d} pointerEvents="none" fillOpacity={0.16} strokeWidth={2} vectorEffect={NS} strokeLinejoin="round"
-      style={{ fill: 'var(--color-accent)', stroke: 'var(--color-accent)' }} />
+    <path d={d} pointerEvents="none" fillOpacity={0.2} strokeWidth={2} vectorEffect={NS} strokeLinejoin="round"
+      style={{ fill: 'var(--color-sun)', stroke: 'var(--color-sun)' }} />
   )
 }
 
@@ -154,8 +154,8 @@ export function ClosedFill({ geo, index, closedIds }: { geo: FloorGeo; index: Sc
   if (!d) return null
   return (
     <g pointerEvents="none">
-      <path d={d} fill="#fce8e6" />
-      <path d={d} fill="none" stroke="#d93025" strokeWidth={2} strokeDasharray="5 3" vectorEffect={NS} strokeLinejoin="round" />
+      <path d={d} style={{ fill: 'var(--color-rose-soft)' }} />
+      <path d={d} fill="none" style={{ stroke: 'var(--color-rose)' }} strokeWidth={2} strokeDasharray="5 3" vectorEffect={NS} strokeLinejoin="round" />
     </g>
   )
 }
@@ -164,7 +164,7 @@ export function AffectedFill({ geo, ids }: { geo: FloorGeo; ids: string[] }) {
   const d = useMemo(() => ids.map((id) => geo.byId.get(id)?.d ?? '').join(''), [geo, ids])
   if (!d) return null
   return (
-    <path d={d} pointerEvents="none" fill="#f29900" fillOpacity={0.22} stroke="#e37400" strokeWidth={1.5}
+    <path d={d} pointerEvents="none" fillOpacity={0.22} style={{ fill: 'var(--color-sun)', stroke: 'var(--color-sun)' }} strokeWidth={1.5}
       vectorEffect={NS} strokeLinejoin="round" />
   )
 }
@@ -181,9 +181,8 @@ export function GhostDoorLayer({ door, floorId }: { door: GhostDoorState | null;
       <At p={center}>
         <circle
           r={16}
-          fill="#1a73e8"
+          style={{ fill: 'var(--color-sky)', animation: 'ttyb-pulse 1.6s ease-out infinite' }}
           fillOpacity={0.18}
-          style={{ animation: 'ttyb-pulse 1.6s ease-out infinite' }}
         />
       </At>
       <line x1={a[0]} y1={a[1]} x2={c[0]} y2={c[1]} stroke="#fff" strokeWidth={7} vectorEffect={NS} />
@@ -192,7 +191,7 @@ export function GhostDoorLayer({ door, floorId }: { door: GhostDoorState | null;
         y1={a[1]}
         x2={c[0]}
         y2={c[1]}
-        stroke="#1a73e8"
+        style={{ stroke: 'var(--color-sky)' }}
         strokeWidth={3.5}
         strokeDasharray={door.applied ? undefined : '4 3'}
         vectorEffect={NS}
@@ -208,8 +207,8 @@ export function HighlightDots({ points }: { points: { id: string; p: Pt; tappabl
         <g key={id} transform={`translate(${p[0]} ${p[1]})`} data-asset={tappable ? id : undefined}>
           <g data-cs="">
             <circle r={12} fill="transparent" />
-            <circle r={9} fillOpacity={0.2} style={{ fill: 'var(--color-accent)' }} />
-            <circle r={5} stroke="#fff" strokeWidth={2} style={{ fill: 'var(--color-accent)' }} />
+            <circle r={10} fillOpacity={0.22} style={{ fill: 'var(--color-sun)' }} />
+            <circle r={5.5} stroke="#fff" strokeWidth={2} style={{ fill: 'var(--color-sun)' }} />
           </g>
         </g>
       ))}
@@ -283,6 +282,11 @@ export function RouteLines({ route, floorId, index }: { route: ShowRoute; floorI
   const pts = (l: Pt[]) => l.map((p) => `${p[0]},${p[1]}`).join(' ')
   return (
     <g pointerEvents="none" fill="none" strokeLinejoin="round" strokeLinecap="round">
+      {/* the guide's warm glow under the path */}
+      {lines.map((l, i) => (
+        <polyline key={`g${i}`} points={pts(l)} strokeWidth={22} vectorEffect={NS} strokeOpacity={0.22}
+          style={{ stroke: 'var(--color-sun)' }} />
+      ))}
       {lines.map((l, i) => (
         <polyline key={`c${i}`} points={pts(l)} strokeWidth={9} vectorEffect={NS}
           style={{ stroke: 'var(--color-route-casing)' }} />

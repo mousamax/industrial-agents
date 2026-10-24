@@ -3,27 +3,27 @@
 import * as THREE from 'three'
 import type { Tone } from '../map/geometry'
 
-export const BG = '#eef0f3' // --color-map-bg
-export const ACCENT = '#1a73e8' // --color-accent
-export const ROUTE = '#4285f4' // --color-route
-export const ROUTE_CASING = '#1967d2' // --color-route-casing
+export const BG = '#f3f2f8' // --color-map-bg
+export const ACCENT = '#ff8a3d' // --color-accent
+export const ROUTE = '#ff8a3d' // --color-route
+export const ROUTE_CASING = '#ff6b5a' // --color-route-casing
 
 /** Slab fill per tone (index.css --color-map-*; outdoor matches TONE_FILL in map/geometry.ts). */
 export const TONE_HEX: Record<Tone, string> = {
   room: '#ffffff',
-  corridor: '#f6f7f9',
-  hall: '#f3efe6',
-  service: '#eceff3',
+  corridor: '#f8f7fc',
+  hall: '#fff1e6',
+  service: '#efedf6',
   outdoor: '#e8f3ea',
 }
 
-export const WALL_TOP = '#b4bac3' // a touch darker than --color-map-wall so 1-2 px tops read as the 2D outline
-export const WALL_SIDE = '#e4e7eb'
-export const SLAB_SIDE = '#c9ced6'
+export const WALL_TOP = '#c9c4da' // a touch darker than --color-map-wall so 1-2 px tops read as the 2D outline
+export const WALL_SIDE = '#ebe9f2'
+export const SLAB_SIDE = '#d6d2e3'
 
 /** Lower floors are greyed out like the 2D map: flat neutral slabs and outlines, no tone colours. */
-export const LOWER_SLAB = '#dfe2e6'
-export const LOWER_WALL = '#cfd3d8'
+export const LOWER_SLAB = '#e6e4ee'
+export const LOWER_WALL = '#d8d5e3'
 /** Each further floor down fades this much more toward the background (nearer floors read darker). */
 export const LOWER_FADE_STEP = 0.22
 

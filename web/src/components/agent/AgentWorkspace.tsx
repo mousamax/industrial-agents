@@ -61,7 +61,12 @@ import { useBrowseUi } from '../browse/browseStore'
 import { getBuildingChat, resetChat, useBuildingChat, type ChatMessage } from '../chat/chats'
 import { withPreferences } from '../chat/text'
 import { MapView } from '../map/MapView'
+import { mapLabel, shapeAnswer } from './assistantCopy'
+import { AssistantView } from './AssistantView'
 import { extractLiveTurn } from './liveBridge'
+
+/** `?ui=classic` keeps the first agent-first layout (sidebar + Google palette) reachable for comparison. */
+const CLASSIC = new URLSearchParams(window.location.search).get('ui') === 'classic'
 
 export type FlowPhase = 'home' | 'listening' | 'working' | 'ask' | 'result' | 'walk'
 
@@ -327,6 +332,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         understood: liveError.message || 'Could not reach the building_guide agent.',
         floors: [],
         focusFloor: '',
+        offline: true,
       })
       return
     }
@@ -543,8 +549,25 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     setHighlight([])
     setMapOverlays({ closedIds: [], affectedIds: [], ghostDoor: null, walkMarker: null })
     setMapInsets({ top: 0, right: 0, bottom: 0, left: 0 })
+    // Where you were belongs to the last question; preferences (step-free, short answers) carry over.
+    useApp.setState((s) => ({ memory: s.memory.filter((m) => !m.spaceId) }))
     if (buildingId) resetChat(buildingId)
   }, [stopSpeech, setRoute, setHighlight, setMapOverlays, setMapInsets, buildingId])
+
+  // A place remembered in one building means nothing in another.
+  useEffect(() => {
+    useApp.setState((s) => ({
+      memory: s.memory.filter((m) => !m.spaceId || !buildingId || index?.spaceById.has(m.spaceId)),
+    }))
+  }, [buildingId, index])
+
+  // Arriving is the only time we know where you are without asking.
+  const arrive = useCallback(() => {
+    const goal = result?.route?.goal
+    if (goal && index?.spaceById.has(goal)) {
+      remember([{ icon: 'map-pin', text: `At ${result?.title ?? 'destination'}`, spaceId: goal }])
+    }
+  }, [result, index, remember])
 
   // Synchronize MapView with Agent-First state
   useEffect(() => {
@@ -553,7 +576,14 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       setRoute(null)
       setHighlight([])
       setMapOverlays({ closedIds: [], affectedIds: [], ghostDoor: null, walkMarker: null })
-      setMapInsets({ top: 0, right: 0, bottom: 0, left: 0 })
+      // Home: the whole floor sits between the building pill and the greeting above the bar.
+      setMapInsets(
+        CLASSIC
+          ? { top: 0, right: 0, bottom: 0, left: 0 }
+          : phone
+            ? { top: 76, right: 16, bottom: 300, left: 16 }
+            : { top: 84, right: 80, bottom: 250, left: 80 },
+      )
       return
     }
 
@@ -584,12 +614,19 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       })
     } else {
       setMapInsets(
-        phone
-          ? { top: 64, right: 20, bottom: 360, left: 20 }
-          : { top: 84, right: 32, bottom: 52, left: 32 },
+        CLASSIC
+          ? phone
+            ? { top: 64, right: 20, bottom: 360, left: 20 }
+            : { top: 84, right: 32, bottom: 52, left: 32 }
+          : phone
+            ? { top: 72, right: 16, bottom: 420, left: 16 }
+            : { top: 88, right: 40, bottom: 120, left: 440 },
       )
       setRoute(result.route?.showRoute ?? null)
-      setHighlight(result.focusIds ?? result.assetIds ?? [])
+      setHighlight(
+        result.focusIds ?? result.assetIds ?? [],
+        CLASSIC || result.offline ? null : mapLabel(result, shapeAnswer(result).headline),
+      )
       setMapOverlays({
         closedIds: result.closed ?? [],
         affectedIds: result.affected ?? [],
@@ -613,6 +650,58 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
   ])
 
   const activeIndex = index
+
+  if (!CLASSIC) {
+    return (
+      <>
+        <BuildingPicker />
+        <AssistantView
+          phone={phone}
+          buildingId={buildingId}
+          phase={phase}
+          buildingName={result?.buildingName ?? activeBuildingName}
+          memory={memory}
+          starterList={starterList}
+          userText={userText}
+          replyText={replyText}
+          trace={trace}
+          traceOpen={traceOpen}
+          setTraceOpen={setTraceOpen}
+          ask={ask}
+          result={result}
+          activeIndex={activeIndex}
+          floor={floor}
+          setFloorState={setFloorState}
+          stepIdx={stepIdx}
+          speaking={speaking}
+          applied={applied}
+          input={input}
+          setInput={setInput}
+          listenText={listenText}
+          onOpenBuildingPicker={() => setPickerOpen(true)}
+          onOpenBrowseMap={() => setMode('browse')}
+          onReset={reset}
+          onSubmit={submit}
+          onRunScenario={runScenario}
+          onPickOption={pickOption}
+          onScanDoor={scanDoor}
+          onStartVoice={startVoice}
+          onFinishVoiceEarly={finishVoiceEarly}
+          onStartWalk={startWalk}
+          onMoveStep={moveStep}
+          onSelectStep={selectStep}
+          onExitWalk={exitWalk}
+          onSpeakText={speakText}
+          onStopSpeech={stopSpeech}
+          onConfirmChange={confirmChange}
+          onUndoChange={undoChange}
+          onForgetOne={forgetOne}
+          onForgetAll={forgetAll}
+          onArrive={arrive}
+        />
+      </>
+    )
+  }
 
   // ---- Render Phone vs Desktop -----------------------------------------------------------------------------
 
@@ -715,7 +804,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
 
 // ---- Shared Props Interface ------------------------------------------------------------------------------
 
-interface ViewProps {
+export interface ViewProps {
+  buildingId?: string | null
   phase: FlowPhase
   buildingName: string
   memory: MemoryChip[]
@@ -755,6 +845,7 @@ interface ViewProps {
   onUndoChange: () => void
   onForgetOne: (idx: number) => void
   onForgetAll: () => void
+  onArrive?: () => void
 }
 
 // ---- Shared Subcomponents --------------------------------------------------------------------------------

@@ -12,28 +12,23 @@ export function At({ p, children }: { p: Pt; children: ReactNode }) {
   )
 }
 
-/** Google-style red place pin with its tip on the point. */
+/** Destination / answer marker: the warm guide light resting on the point, with a soft halo. */
 export function Pin({ color = 'var(--color-pin)' }: { color?: string }) {
   return (
     <g pointerEvents="none">
-      <ellipse cx={0} cy={0} rx={5} ry={2} fill="rgba(0,0,0,0.25)" />
-      <path
-        d="M0 0 C-1.5 -6 -11 -11 -11 -21 A11 11 0 1 1 11 -21 C11 -11 1.5 -6 0 0 Z"
-        style={{ fill: color }}
-        stroke="#a50e0e"
-        strokeWidth={1}
-      />
-      <circle cx={0} cy={-21} r={4} fill="#a50e0e" />
+      <circle r={20} style={{ fill: color }} fillOpacity={0.18} />
+      <circle r={11} style={{ fill: color }} stroke="#fff" strokeWidth={3.5} />
+      <circle r={3.5} fill="#fff" />
     </g>
   )
 }
 
-/** Route start / You-are-here marker: blue pulsing halo + white-bordered blue dot. */
+/** Route start / You-are-here marker: sky halo + white-bordered sky dot. */
 export function StartDot({ r = 8 }: { r?: number }) {
   return (
     <g pointerEvents="none">
-      <circle r={r * 2} fill="#1a73e8" fillOpacity={0.18} />
-      <circle r={r} fill="#1a73e8" stroke="#fff" strokeWidth={3} />
+      <circle r={r * 2} style={{ fill: 'var(--color-sky)' }} fillOpacity={0.18} />
+      <circle r={r} style={{ fill: 'var(--color-sky)' }} stroke="#fff" strokeWidth={3} />
     </g>
   )
 }

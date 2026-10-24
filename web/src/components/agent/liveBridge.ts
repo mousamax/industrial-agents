@@ -407,9 +407,7 @@ export function extractLiveTurn(
     if (voiceWanted) {
       remember.push({ icon: 'volume-2', text: 'Short spoken answers', voice: true })
     }
-    if (goalSpace) {
-      remember.push({ icon: 'map-pin', text: `At ${spaceLabel(goalSpace)}`, spaceId: goalSpace.id })
-    }
+    // The destination is not where you are yet: the UI remembers it as your place only once you arrive.
 
     return {
       trace,
