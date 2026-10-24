@@ -164,6 +164,9 @@ def test_route_with_closure(q):
 def test_route_tour(q):
     b, a = load_building(q["building_id"]), q["answer"]
     tour = call(call(RouteGraph, b, WALKING).tour, a["stops"])
+    if a.get("reachable") is False:  # kit 1.1.0: a tour with an unreachable stop has no route
+        assert tour is None, f"expected unreachable, got {tour.length_m} m"
+        return
     assert tour is not None
     assert route_length_ok(tour.length_m, a["optimal_length_m"]), (
         f"{tour.length_m} vs {a['optimal_length_m']}"

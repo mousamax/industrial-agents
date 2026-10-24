@@ -14,6 +14,8 @@ Measured on every dev + train answer (80 wide_delivery, 2 step_free_reachable, 4
   itself if it holds one), the target is geometry.rooms_by_area(...)[0], the length is both legs summed.
 - what_if_door: a 0.9 m step-free door at geometry.shared_wall_midpoint; rooms that were unreachable
   before and reachable after count as gaining more than min_gain_m.
+Still true under kit 1.1.0's route model (door-to-door walking, per-metre stairs and lifts, no outdoor
+shortcut): every train and dev answer reproduces with RouteGraph.
 """
 
 from __future__ import annotations

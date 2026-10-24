@@ -1,5 +1,10 @@
 # How Synera scores route answers
 
+> **Update (kit 1.1.0, Sat 24 Oct evening):** Synera recomputed every expected answer with this rule
+> (door to door 15 cm off the walls, stairs 2 m per metre climbed, lift 15 m per ride + 1 m per metre, no
+> route round the outside). `RouteGraph` now implements it and reproduces every train and dev answer. The
+> notes below about the old kit model are history.
+
 Announced by Synera in the hackathon channel on Sat 2026-10-24. This is the rule the automatic check uses
 for every route answer; build and test routing against it.
 

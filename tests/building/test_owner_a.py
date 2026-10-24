@@ -212,9 +212,6 @@ def test_a4_2_forklift_uses_wide_openings_only(building_id):
         assert not narrow, f"forklift route to {b.label(target)} uses narrow openings {narrow}"
 
 
-@pytest.mark.xfail(
-    reason="Synera's per-metre stair/lift cost isn't adopted yet (kit: per floor)", strict=False
-)
 @pytest.mark.parametrize("building_id", ROUTE_BUILDINGS)
 def test_a4_3_stairs_and_lift_cost_per_metre(building_id):
     b = load_building(building_id)
@@ -239,8 +236,8 @@ def test_a4_3_stairs_and_lift_cost_per_metre(building_id):
 
 def _golden_legs(q):
     a = q["answer"]
-    if q["kind"] == "tour":
-        return [(leg["space_path"], WALKING) for leg in a["legs"]]
+    if q["kind"] == "tour":  # kit 1.1.0: an unreachable tour has no legs
+        return [(leg["space_path"], WALKING) for leg in a.get("legs", [])]
     c = Constraints(step_free=q["kind"] == "route_step_free")
     return [(a.get("space_path"), c.with_closed(a["closed_element_id"]) if "closed_element_id" in a else c)]
 

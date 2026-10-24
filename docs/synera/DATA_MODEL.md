@@ -92,6 +92,11 @@ lot, see §3.
   dataset 8,248.
 - Assets **do not block** anything in the route model. A forklift is just an item with a position.
 
+> **Kit 1.1.0 changed the route model** (see `synera-kit/CHANGELOG.md` and `src/app/building/routing.py`):
+> walking is door to door 15 cm off the walls, stairs cost 2 m per metre climbed, a lift 15 m per ride +
+> 1 m per metre, and there is no route round the outside. The `outside` and cost notes below describe
+> kit 1.0.0.
+
 ### `"outside"`: one pseudo-node
 Every entrance connects to a single `outside` node at zero cost. A route may leave by one entrance and
 come back in by another for free (the benchmark avoids cases where this matters).

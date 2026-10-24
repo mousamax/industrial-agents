@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T17:14:05+00:00",
+   "at": "2026-10-24T18:35:49+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,11 +45,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2177846,
-   "output_tokens": 35531
+   "input_tokens": 2124510,
+   "output_tokens": 34535
   },
   "warmup": {
-   "at": "2026-10-24T17:15:06+00:00",
+   "at": "2026-10-24T18:36:52+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 368,
@@ -81,11 +81,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 5280719,
-   "output_tokens": 81720
+   "input_tokens": 5226062,
+   "output_tokens": 79887
   },
   "reworded": {
-   "at": "2026-10-24T17:17:39+00:00",
+   "at": "2026-10-24T18:42:51+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 45,
@@ -129,11 +129,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 725827,
-   "output_tokens": 11531
+   "input_tokens": 718470,
+   "output_tokens": 11271
   },
   "scenarios": {
-   "at": "2026-10-24T17:20:33+00:00",
+   "at": "2026-10-24T18:41:59+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 10,
@@ -143,7 +143,7 @@
    ]
   },
   "unseen": {
-   "at": "2026-10-24T17:17:59+00:00",
+   "at": "2026-10-24T18:39:40+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 96,
@@ -199,14 +199,14 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2302397,
-   "output_tokens": 42904
+   "input_tokens": 2091564,
+   "output_tokens": 40235
   },
   "holdout": {
-   "at": "2026-10-24T17:19:27+00:00",
+   "at": "2026-10-24T18:40:51+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 95,
+   "correct": 94,
    "total": 96,
    "by_kind": {
     "area_difference": [
@@ -254,13 +254,13 @@
      8
     ],
     "within_distance_count": [
-     7,
+     6,
      8
     ]
    },
    "errors": 0,
-   "input_tokens": 2231686,
-   "output_tokens": 42145
+   "input_tokens": 2263526,
+   "output_tokens": 42615
   }
  }
 }
