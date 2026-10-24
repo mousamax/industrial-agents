@@ -5,7 +5,7 @@
 
 Each scenario plays its user turns in one conversation (fresh session state), runs the code checks on each
 turn's tool calls, then an LLM judge reads the transcript (replies, tool calls and results) and rules on
-the three rubric points and every `expect` line. Saves evals/reports/scenarios-<label>.jsonl.
+the three rubric points and every `expect` line, three times; the majority decides. Saves evals/reports/scenarios-<label>.jsonl.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from app.models import model as resolve_model
 from app.settings import ROOT
 
 from .agent import make_agent
-from .tools import Deps
+from .tools import Deps, overview
 
 SCENARIOS = Path(__file__).with_name("scenarios.yaml")
 REPORTS = ROOT / "evals" / "reports"
@@ -85,6 +85,15 @@ def _calls(messages: list) -> list[dict[str, Any]]:
     return calls
 
 
+JUDGES = 3
+"""Each transcript is judged this many times; the majority decides, so one noisy ruling can't flip it."""
+
+
+def _passes(v: Verdict) -> bool:
+    rubric = v.asks_only_what_it_needs and v.shows_what_it_understood and v.followable
+    return rubric and all(e.met for e in v.expectations)
+
+
 def check(rule: dict, turn: dict) -> str | None:
     """None if the rule holds for this turn, else what went wrong."""
     calls = turn["tool_calls"]
@@ -101,8 +110,13 @@ def check(rule: dict, turn: dict) -> str | None:
     return None
 
 
-def transcript(scenario: dict, turns: list[dict]) -> str:
-    out = [f"Persona: {scenario['persona']}"]
+def transcript(scenario: dict, turns: list[dict], deps: Deps) -> str:
+    """What the agent knew (the building overview it gets as context) plus every turn, tool call and result."""
+    out = [
+        f"Persona: {scenario['persona']}",
+        "Building overview the assistant is given as context (also ground truth):",
+        json.dumps(overview(deps.building), ensure_ascii=False),
+    ]
     for i, t in enumerate(turns, 1):
         out.append(f"\n--- Turn {i}\nUSER: {t['user']}")
         for c in t["tool_calls"]:
@@ -127,13 +141,18 @@ async def play(agent, scenario: dict) -> dict:
             except Exception as e:
                 turns.append({"user": text, "reply": f"[crash: {type(e).__name__}: {e}]", "tool_calls": []})
     failed_checks = [f for rule in scenario.get("checks", []) if (f := check(rule, turns[rule["turn"] - 1]))]
-    verdict = (await judge.run(transcript(scenario, turns))).output
-    rubric_ok = verdict.asks_only_what_it_needs and verdict.shows_what_it_understood and verdict.followable
-    ok = not failed_checks and rubric_ok and all(e.met for e in verdict.expectations)
+    text = transcript(scenario, turns, deps)
+    verdicts = [v.output for v in await asyncio.gather(*(judge.run(text) for _ in range(JUDGES)))]
+    passes = [_passes(v) for v in verdicts]
+    verdict = next(
+        (v for v, p in zip(verdicts, passes, strict=True) if not p), verdicts[0]
+    )  # show a failing one
+    ok = not failed_checks and sum(passes) > len(passes) / 2
     return {
         "name": scenario["name"],
         "ok": ok,
         "failed_checks": failed_checks,
+        "judges_passed": f"{sum(passes)}/{len(passes)}",
         "verdict": verdict.model_dump(),
         "turns": turns,
     }

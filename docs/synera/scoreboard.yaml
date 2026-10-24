@@ -34,7 +34,7 @@ rows:
   part: Does it work
   what: Sunday-style find, count, route, step-free, closure and tour questions through the agent
   owners: [C, A]
-  stake: 10
+  stake: 8
   bench: warmup
 - id: synera-route-rule
   part: Does it work
@@ -46,8 +46,14 @@ rows:
   part: Does it work
   what: The scored kinds asked in other words (reworded dev questions)
   owners: [C]
-  stake: 4
+  stake: 2
   bench: reworded
+- id: unseen-kinds
+  part: Does it work
+  what: 12 question kinds Synera hasn't shown, on test buildings, answers computed by code (held out, score only)
+  owners: [C]
+  stake: 4
+  bench: holdout
 - id: level4-from-svg
   part: Does it work
   what: Buildings drafted from SVG floor plans match the truth (Level 4)
@@ -118,6 +124,12 @@ rows:
   owners: [A]
   stake: 0
   pytest: [test_route, test_graph_, test_a1_, test_a2_, test_a3_]
+- id: unseen-kinds-dev
+  part: Health
+  what: The same 12 new kinds on dev buildings (the set we may read and tune on)
+  owners: [C]
+  stake: 0
+  bench: unseen
 - id: agent-tools
   part: Health
   what: Agent tools vs every golden answer, no model

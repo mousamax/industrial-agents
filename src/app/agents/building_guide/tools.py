@@ -1,8 +1,10 @@
 """Deps and tools for building_guide, on the shared domain interfaces (src/app/building/).
 
 Tools are small building blocks the agent composes: look things up (find, room_details, list_rooms,
-count_items), move through the building (route, nearest, reachable_rooms, distance_3d), and reason about
-changes (what_if, set_closed). Every number comes from code; the model only picks tools and arguments.
+count_items), move through the building (route, nearest, reachable_rooms, distance_3d), derive numbers
+(calculate), and change the building (what_if simulates; set_closed, add_door, move_item, undo_last_change
+edit the session's BuildingState, real edits only after the person confirms). Every number comes from
+code; the model picks tools and arguments.
 
 Places are passed as text, the way people and questions name them ("Office 0.29 (Ground floor)", "0.29",
 an id, or an item name such as "CNC mill 1.04"). Resolving that text is its own step: an unknown name is a
@@ -12,19 +14,24 @@ carry space ids (`highlight`, `space_path`) that the UI maps onto GET /buildings
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import difflib
 import json
+import math
+import operator
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 from pydantic_ai import ModelRetry, RunContext
 
 from app.building import geometry
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
 from app.building.routing import Constraints, Route
+from app.building.state import AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen
 
 from .graph import route_graph
 
@@ -34,13 +41,24 @@ MIN_GAIN_M = 1.0
 
 @dataclass
 class Deps:
-    building: Building
-    closed: set[str] = field(default_factory=set)
-    """Elements the person said are closed (lifts, stairs, doors, rooms). Every route respects them."""
+    """One conversation's view of a building: the plan plus everything changed in this session."""
+
+    state: BuildingState
+    pending: dict[str, Any] | None = None
+    """An edit proposed to the person and waiting for their yes: {"edit": Edit, "run_id": str}."""
+
+    @property
+    def building(self) -> Building:
+        return self.state.building
+
+    @property
+    def closed(self) -> frozenset[str]:
+        """Closed lifts, stairs, doors or rooms. Every route respects them."""
+        return self.state.closed()
 
     @classmethod
     def load(cls, reference: str | Path) -> Deps:
-        return cls(building=load_building(reference))
+        return cls(state=BuildingState(load_building(reference)))
 
 
 # ---- resolving what people say ---------------------------------------------------------------------------
@@ -157,6 +175,19 @@ def is_room(s: Space) -> bool:
     return s.type == "room" and s.room_type not in geometry.NOT_ROOMS
 
 
+Scope = Literal["rooms", "rooms_and_halls", "all_spaces"]
+SCOPES = {
+    "rooms": is_room,
+    "rooms_and_halls": lambda s: s.type in ("room", "hall") and s.room_type not in geometry.NOT_ROOMS,
+    "all_spaces": lambda s: True,
+}
+
+
+def _kinds(b: Building, floor_id: str) -> dict[str, int]:
+    """How a floor's spaces split by kind, so the agent sees what a scope leaves out."""
+    return dict(Counter(s.type for s in b.spaces_on(floor_id)).most_common())
+
+
 # ---- context ---------------------------------------------------------------------------------------------
 
 
@@ -204,10 +235,19 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
     b = ctx.deps.building
     floor_id = floor_of(b, floor).id if floor else None
     words = [w for w in re.split(r"[\s_]+", query.casefold()) if w]
+    # A word matches at the start of a word ("press" finds "drill press", not "compressor"), plurals too.
+    patterns = [
+        re.compile(
+            r"(?<!\w)(?:"
+            + "|".join(re.escape(v) for v in {w, w.removesuffix("s"), w.removesuffix("es")} if v)
+            + ")"
+        )
+        for w in words
+    ]
 
     def hit(*texts: str) -> bool:
         blob = " ".join(texts).casefold().replace("_", " ")
-        return all(w in blob for w in words)
+        return all(p.search(blob) for p in patterns)
 
     rooms = [
         {"room": _label(b, s.id), "id": s.id, "type": s.room_type}
@@ -220,8 +260,13 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
         if (floor_id is None or a.floor_id == floor_id) and hit(a.name, a.type)
     ]
     if not rooms and not items:
-        raise ModelRetry(
-            f"Nothing matches {query!r}. Try one shorter word, or check item_types in the overview."
+        vocabulary = sorted({a.type for a in b.assets.values()} | {s.room_type for s in b.spaces.values()})
+        return _json(
+            {
+                "found": 0,
+                "note": f"Nothing in this building is named or typed {query!r}.",
+                "similar_types": difflib.get_close_matches(_key(query), vocabulary, n=5, cutoff=0.6),
+            }
         )
     return _json(
         {
@@ -229,6 +274,7 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
             "rooms_total": len(rooms),
             "items": items[:MAX_RESULTS],
             "items_total": len(items),
+            "items_by_type": dict(Counter(i["type"] for i in items).most_common()),
             "highlight": sorted(
                 {r["id"] for r in rooms[:MAX_RESULTS]} | {i["space_id"] for i in items[:MAX_RESULTS]}
             ),
@@ -277,12 +323,17 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
     )
 
 
-def list_rooms(ctx: RunContext[Deps], floor: str, room_type: str | None = None) -> str:
-    """Rooms on a floor, largest first, with areas and the total area. Use for "largest X", "total area".
+def list_rooms(
+    ctx: RunContext[Deps], floor: str, room_type: str | None = None, scope: Scope = "rooms"
+) -> str:
+    """Spaces on a floor, largest first, with areas, how many there are and their total area.
 
     Args:
         floor: Level ("1", "0", "-1") or name ("Floor 1", "Ground floor").
-        room_type: Only this type, e.g. "office", "kitchen", "generic_room" (see room_types in the overview).
+        room_type: Only this type, e.g. "office", "kitchen", "generic_room" (see room_types in the
+            overview). With a room_type every space of that type counts, whatever the scope.
+        scope: Without a room_type, which spaces count: "rooms" (rooms only), "rooms_and_halls" (also halls
+            such as factory zones), or "all_spaces" (also corridors, stairwells, lifts, balconies).
     """
     b = ctx.deps.building
     f = floor_of(b, floor)
@@ -290,11 +341,14 @@ def list_rooms(ctx: RunContext[Deps], floor: str, room_type: str | None = None) 
         rtype = _type_of(room_type, {s.room_type for s in b.spaces.values()}, "room type")
         ranked = geometry.rooms_by_area(b, f.id, rtype)
     else:
-        ranked = sorted(((s, s.area) for s in b.spaces_on(f.id) if is_room(s)), key=lambda t: -t[1])
+        keep = SCOPES[scope]
+        ranked = sorted(((s, s.area) for s in b.spaces_on(f.id) if keep(s)), key=lambda t: -t[1])
     return _json(
         {
             "floor": f.name,
             "room_type": room_type,
+            "scope": None if room_type else scope,
+            "floor_spaces_by_kind": _kinds(b, f.id),
             "count": len(ranked),
             "total_area_m2": round(sum(a for _, a in ranked), 2),
             "rooms": [
@@ -466,9 +520,9 @@ def reachable_rooms(
     step_free: bool = False,
     min_width_m: float | None = None,
     closed: list[str] | None = None,
+    scope: Scope = "rooms",
 ) -> str:
-    """Rooms on a floor that can be reached from a start (deliveries, wheelchair access). Counts rooms only:
-    halls (factory zones), corridors, stairwells, lifts and balconies are not rooms.
+    """Rooms on a floor that can be reached from a start (deliveries, wheelchair access), and how many.
 
     Args:
         start: Where the person or load comes in, e.g. the room an entrance leads into.
@@ -476,15 +530,19 @@ def reachable_rooms(
         step_free: No stairs or steps (wheelchair, trolley, pallet). Lifts are fine.
         min_width_m: Every door passed must be at least this wide.
         closed: Extra lifts, stairs, doors or rooms out of service for this question only.
+        scope: Which spaces count: "rooms" (rooms only, what a count of rooms means), "rooms_and_halls"
+            (also halls such as factory zones), or "all_spaces".
     """
     b = ctx.deps.building
     origin, f = _space_id(b, start), floor_of(b, floor)
     reached = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or [])).reachable(origin)
-    rooms = [s for s in b.spaces_on(f.id) if is_room(s)]
+    rooms = [s for s in b.spaces_on(f.id) if SCOPES[scope](s)]
     yes = [s.id for s in rooms if s.id in reached]
     return _json(
         {
             "floor": f.name,
+            "scope": scope,
+            "floor_spaces_by_kind": _kinds(b, f.id),
             "reachable_count": len(yes),
             "unreachable_count": len(rooms) - len(yes),
             "reachable": [_label(b, s) for s in yes[:MAX_RESULTS]],
@@ -517,12 +575,46 @@ def with_door(b: Building, first: str, second: str, width_m: float = 0.9) -> Bui
     return dataclasses.replace(b, openings={**b.openings, door.id: door})
 
 
+def _exit_changes(
+    before_b: Building,
+    after_b: Building,
+    before_c: Constraints,
+    after_c: Constraints,
+    floor_id: str,
+    scope: Scope = "rooms",
+) -> dict:
+    """How each space's walk out of the building (to its nearest entrance) changes between two states."""
+    before = route_graph(before_b, before_c).distances_from([OUTSIDE])
+    after = route_graph(after_b, after_c).distances_from([OUTSIDE])
+    rows = [
+        (s.id, before.get(s.id), after.get(s.id)) for s in before_b.spaces_on(floor_id) if SCOPES[scope](s)
+    ]
+    both = [(sid, d0, d1) for sid, d0, d1 in rows if d0 is not None and d1 is not None]
+    shorter = sorted(((sid, d0 - d1) for sid, d0, d1 in both if d0 - d1 > MIN_GAIN_M), key=lambda t: -t[1])
+    longer = sorted(((sid, d1 - d0) for sid, d0, d1 in both if d1 - d0 > MIN_GAIN_M), key=lambda t: -t[1])
+    cut_off = [sid for sid, d0, d1 in rows if d0 is not None and d1 is None]
+    b = before_b
+    return {
+        "floor": b.floors[floor_id].name,
+        "scope": scope,
+        "rooms_compared": len(rows),
+        f"shorter_by_more_than_{MIN_GAIN_M:g}_m": len(shorter),
+        f"longer_by_more_than_{MIN_GAIN_M:g}_m": len(longer),
+        "no_longer_reachable": len(cut_off),
+        "shorter": [{"room": _label(b, sid), "saves_m": round(g, 1)} for sid, g in shorter[:MAX_RESULTS]],
+        "longer": [{"room": _label(b, sid), "adds_m": round(g, 1)} for sid, g in longer[:MAX_RESULTS]],
+        "cut_off": [_label(b, sid) for sid in cut_off[:MAX_RESULTS]],
+        "highlight": [sid for sid, _ in shorter] + cut_off,
+    }
+
+
 def what_if(
     ctx: RunContext[Deps],
     floor: str,
     add_door_between: list[str] | None = None,
     close: list[str] | None = None,
     step_free: bool = False,
+    scope: Scope = "rooms",
 ) -> str:
     """Simulate a change without making it: how each room's walk out of the building (to its nearest
     entrance) changes on a floor if a door is added in the middle of a shared wall, or things close.
@@ -532,60 +624,176 @@ def what_if(
         add_door_between: Two spaces that share a wall, e.g. ["Corridor 0.01", "Lecture hall 0.21"].
         close: Lifts, stairs, doors or rooms to imagine closed.
         step_free: Compare step-free walks instead.
+        scope: Which spaces to compare: "rooms" (default), "rooms_and_halls" or "all_spaces".
     """
     b = ctx.deps.building
     f = floor_of(b, floor)
-    before_c = _constraints(ctx, step_free, None)
-    after_c = _constraints(ctx, step_free, None, close or [])
     after_b = b
     if add_door_between:
         if len(add_door_between) != 2:
             raise ModelRetry("add_door_between needs exactly two spaces.")
         after_b = with_door(b, *(_space_id(b, p) for p in add_door_between))
-    before = route_graph(b, before_c).distances_from([OUTSIDE])
-    after = route_graph(after_b, after_c).distances_from([OUTSIDE])
-    rows = []
-    for s in b.spaces_on(f.id):
-        if not is_room(s):
-            continue
-        d0, d1 = before.get(s.id), after.get(s.id)
-        rows.append((s.id, d0, d1))
-    shorter = [
-        (sid, d0 - d1) for sid, d0, d1 in rows if d0 is not None and d1 is not None and d0 - d1 > MIN_GAIN_M
-    ]
-    longer = [
-        (sid, d1 - d0) for sid, d0, d1 in rows if d0 is not None and d1 is not None and d1 - d0 > MIN_GAIN_M
-    ]
-    cut_off = [sid for sid, d0, d1 in rows if d0 is not None and d1 is None]
-    return _json(
-        {
-            "floor": f.name,
-            "rooms_compared": len(rows),
-            f"shorter_by_more_than_{MIN_GAIN_M:g}_m": len(shorter),
-            f"longer_by_more_than_{MIN_GAIN_M:g}_m": len(longer),
-            "no_longer_reachable": len(cut_off),
-            "shorter": [
-                {"room": _label(b, sid), "saves_m": round(g, 1)}
-                for sid, g in sorted(shorter, key=lambda t: -t[1])[:MAX_RESULTS]
-            ],
-            "longer": [{"room": _label(b, sid), "adds_m": round(g, 1)} for sid, g in longer[:MAX_RESULTS]],
-            "cut_off": [_label(b, sid) for sid in cut_off[:MAX_RESULTS]],
-            "highlight": [sid for sid, _ in shorter] + cut_off,
-        }
-    )
+    before_c = _constraints(ctx, step_free, None)
+    after_c = _constraints(ctx, step_free, None, close or [])
+    return _json(_exit_changes(b, after_b, before_c, after_c, f.id, scope))
+
+
+# ---- tools: arithmetic -----------------------------------------------------------------------------------
+
+_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+    ast.Mod: operator.mod,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+_FUNCS = {"abs": abs, "round": round, "min": min, "max": max, "sum": lambda *a: sum(a), "sqrt": math.sqrt}
+
+
+def _eval(node: ast.AST) -> float:
+    if isinstance(node, ast.Expression):
+        return _eval(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, int | float):
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
+        return _OPS[type(node.op)](_eval(node.left), _eval(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
+        return _OPS[type(node.op)](_eval(node.operand))
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FUNCS:
+        return _FUNCS[node.func.id](*(_eval(a) for a in node.args))
+    raise ValueError(f"not allowed: {ast.dump(node)[:60]}")
+
+
+def calculate(ctx: RunContext[Deps], expression: str) -> str:
+    """Arithmetic on numbers from earlier tool results: differences, sums, ratios, percentages, unit
+    changes. Use it for every number you derive yourself, so the answer stays exact and checkable.
+
+    Args:
+        expression: e.g. "41.37 - 37.57", "(12.5 + 30.1) / 2", "round(3145.0 / 12, 1)", "max(3, 7)".
+    """
+    try:
+        result = _eval(ast.parse(expression, mode="eval"))
+    except (ValueError, SyntaxError, TypeError, ZeroDivisionError) as e:
+        raise ModelRetry(
+            f"Can't calculate {expression!r}: {e}. Use numbers, + - * / ** % ( ) and "
+            "abs round min max sum sqrt."
+        ) from None
+    return _json({"expression": expression, "result": round(result, 4)})
+
+
+# ---- tools: changes to the building (session state) ----------------------------------------------------
+
+
+def _propose_or_apply(ctx: RunContext[Deps], edit: Edit, preview: dict, confirmed: bool) -> str:
+    """Real edits happen in two turns: propose (nothing changes) -> the person says yes -> apply."""
+    d = ctx.deps
+    if not confirmed:
+        d.pending = {"edit": edit, "run_id": ctx.run_id}
+        return _json(
+            preview
+            | {
+                "status": "proposed: nothing changed yet",
+                "next": "Say what you understood and what it changes, then ask the person to confirm. Only after "
+                "they say yes, call this tool again with the same arguments and confirmed=true.",
+            }
+        )
+    if not d.pending or d.pending["edit"] != edit:
+        raise ModelRetry("Propose this change first (confirmed=false) and get the person's yes.")
+    if d.pending["run_id"] == ctx.run_id:
+        raise ModelRetry("The person hasn't answered yet: ask them, and apply it after they say yes.")
+    try:
+        message = d.state.apply(edit)
+    except ValueError as e:
+        raise ModelRetry(str(e)) from None
+    d.pending = None
+    return _json(preview | {"status": "done", "change": message, "undo": "undo_last_change reverts it"})
 
 
 def set_closed(ctx: RunContext[Deps], element: str, closed: bool = True) -> str:
-    """Record that a lift, staircase, door or room is closed (or open again). All later routes respect it.
+    """Record that a lift, staircase, door or room is closed (or open again), as the person reports it.
+    All later routes respect it. (To ask "what if X closed?" without recording it, use what_if.)
 
     Args:
         element: Name or id, e.g. "Lift 1", "East stairs", a door id, or a room.
         closed: True when it is closed, False when it reopens.
     """
-    b = ctx.deps.building
-    eid = element_of(b, element)
-    (ctx.deps.closed.add if closed else ctx.deps.closed.discard)(eid)
-    return _json({"element": eid, "closed": closed, "all_closed": sorted(ctx.deps.closed)})
+    d = ctx.deps
+    eid = element_of(d.building, element)
+    try:
+        message = d.state.apply(Close(eid) if closed else Reopen(eid))
+    except ValueError as e:
+        message = str(e)  # already closed / not closed: nothing to do, tell the agent
+    return _json({"element": eid, "closed": closed, "change": message, "all_closed": sorted(d.closed)})
+
+
+def add_door(
+    ctx: RunContext[Deps], first: str, second: str, width_m: float = 0.9, confirmed: bool = False
+) -> str:
+    """Add a real door to the plan, in the middle of the wall two spaces share. First call proposes it and
+    shows what it would change (nothing is edited); after the person says yes, call again with confirmed=true.
+
+    Args:
+        first: A room, hall or corridor.
+        second: A space that shares a wall with `first`, on the same floor.
+        width_m: Door width in metres.
+        confirmed: True only after the person agreed to this exact change.
+    """
+    d = ctx.deps
+    b = d.building
+    a, c = _space_id(b, first), _space_id(b, second)
+    after = with_door(b, a, c, width_m)  # ModelRetry if they don't share a wall
+    effect = _exit_changes(
+        b, after, _constraints(ctx, False, None), _constraints(ctx, False, None), b.spaces[a].floor_id
+    )
+    preview = {
+        "door_between": [_label(b, a), _label(b, c)],
+        "width_m": width_m,
+        "effect_on_walks_out_on_that_floor": effect,
+        "highlight": [a, c],
+    }
+    return _propose_or_apply(ctx, AddDoor(a, c, width_m=width_m), preview, confirmed)
+
+
+def move_item(ctx: RunContext[Deps], item: str, to_room: str, confirmed: bool = False) -> str:
+    """Record that an item (machine, equipment, furniture) now stands in another room, so searches and
+    routes find it there. First call proposes it; after the person says yes, call again with confirmed=true.
+
+    Args:
+        item: The item's exact name or id, e.g. "CNC mill H-A1-B" (use find first).
+        to_room: Where it is now.
+        confirmed: True only after the person agreed to this exact change.
+    """
+    d = ctx.deps
+    b = d.building
+    asset = _asset_named(b, item)
+    if asset is None:
+        names = [a.name for a in b.assets.values()]
+        close = difflib.get_close_matches(item, names, n=5, cutoff=0.5)
+        raise ModelRetry(f"No item called {item!r}. Closest: {', '.join(close) or 'none'}. Use find.")
+    target = _space_id(b, to_room)
+    preview = {
+        "item": asset.name,
+        "from": _label(b, asset.space_id),
+        "to": _label(b, target),
+        "highlight": [asset.space_id, target],
+    }
+    return _propose_or_apply(ctx, MoveAsset(asset.id, target), preview, confirmed)
+
+
+def undo_last_change(ctx: RunContext[Deps]) -> str:
+    """Undo the most recent change in this conversation (a closure, reopening, new door or moved item)."""
+    d = ctx.deps
+    edit = d.state.undo()
+    return _json(
+        {
+            "undone": repr(edit) if edit else None,
+            "all_closed": sorted(d.closed),
+            "changes_left": len(d.state.edits),
+        }
+    )
 
 
 TOOLS = [
@@ -598,5 +806,9 @@ TOOLS = [
     nearest,
     reachable_rooms,
     what_if,
+    calculate,
     set_closed,
+    add_door,
+    move_item,
+    undo_last_change,
 ]

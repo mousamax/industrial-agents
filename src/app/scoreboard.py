@@ -1,7 +1,7 @@
 """Team scoreboard: Synera's 100 points as measured rows, each with an owner (docs/synera/scoreboard.yaml).
 
     uv run ia scoreboard                      # free rows re-measured (golden tests); agent rows from the last run
-    uv run ia scoreboard --run scenarios      # re-run one agent suite (benchmark, warmup, reworded, scenarios)
+    uv run ia scoreboard --run scenarios      # re-run one suite: benchmark warmup reworded unseen holdout scenarios
     uv run ia scoreboard --run all            # re-run every agent suite on dev (~10 min, a few dollars)
 
 Writes docs/synera/SCOREBOARD.md (commit it: it's how the team sees progress) and appends a line to
@@ -31,7 +31,7 @@ CONFIG = ROOT / "docs" / "synera" / "scoreboard.yaml"
 STATE = ROOT / "evals" / "scoreboard.json"
 HISTORY = ROOT / "evals" / "scoreboard_history.jsonl"
 BOARD = ROOT / "docs" / "synera" / "SCOREBOARD.md"
-AGENT_SUITES = ("benchmark", "warmup", "reworded", "scenarios")
+AGENT_SUITES = ("benchmark", "warmup", "reworded", "unseen", "holdout", "scenarios")
 
 
 @dataclass

@@ -120,7 +120,7 @@ The code is the contract: typed stubs with docstrings in `src/app/building/`. Su
 
 ### Agent tools (C, in `src/app/agents/building_guide/tools.py`; D renders their ids)
 
-One agent, small tools it composes. Every number comes from code; the model picks tools and writes the
+One agent, 14 small tools it composes. Every number comes from code; the model picks tools and writes the
 reply. `tests/building/test_agent_tools.py` checks each tool against every dev and train golden answer.
 
 | Tool | Arguments | Backed by | Covers |
@@ -135,7 +135,13 @@ reply. `tests/building/test_agent_tools.py` checks each tool against every dev a
 | `nearest` | `start`, `item_type` or `room_type`, `step_free` | `RouteGraph.distances_from` | nearest coffee, errand pickup |
 | `reachable_rooms` | `start`, `floor`, `step_free`, `min_width_m?`, `closed=[]` | `RouteGraph.reachable` | deliveries, wheelchair reach |
 | `what_if` | `floor`, `add_door_between?`, `close=[]` | `geometry.shared_wall_midpoint` + `distances_from` | what-if door, "what changes if X closes" |
-| `set_closed` | `element`, `closed` | session state | REACT |
+| `calculate` | `expression` | safe arithmetic | every derived number (differences, sums, ratios) |
+| `set_closed` | `element`, `closed` | `BuildingState` (Close/Reopen) | REACT |
+| `add_door` / `move_item` | spaces or item + room, `confirmed` | `BuildingState` (AddDoor/MoveAsset) | EDIT, "make things move": proposes first, applies only after the person's yes in a later turn |
+| `undo_last_change` | | `BuildingState.undo` | undo |
+
+`list_rooms`, `reachable_rooms` and `what_if` take `scope`: `rooms` (default, what Synera's counts mean),
+`rooms_and_halls` or `all_spaces`.
 
 Results carry space ids for the UI: `highlight` (spaces to light up) and, for routes, `space_path` and
 `element_path` per leg; draw them from `GET /buildings/{id}/scene`. Until Owner A's `RouteGraph` lands, the

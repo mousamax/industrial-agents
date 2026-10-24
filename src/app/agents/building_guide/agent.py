@@ -50,9 +50,11 @@ def _grounded(value: float, known: list[float]) -> bool:
 def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) -> str:
     """When asked for an 'Answer:' line: there is one, it holds one number, and that number came from a
     tool. The scorer reads only that line, so this is where a reply wins or loses. Parsing is the scorer's
-    own (benchmark.score), so what passes here is read the same way there."""
+    own (benchmark.score), so what passes here is read the same way there.
+
+    On the last retry the reply goes through as it is: a best effort can still score, a crash never does."""
     prompt = ctx.prompt if isinstance(ctx.prompt, str) else ""
-    if "Answer:" not in prompt:
+    if "Answer:" not in prompt or ctx.retry >= ctx.max_retries:
         return reply
     line = committed_answer(reply)
     if line is None:

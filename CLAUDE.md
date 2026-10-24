@@ -34,6 +34,9 @@ hard-code anything to a building or question.
 - Team scoreboard: `uv run ia scoreboard` turns Synera's 100 points into rows with owners
   (`docs/synera/scoreboard.yaml` → `docs/synera/SCOREBOARD.md`). Work test-first: add the failing eval or
   row, then the code. A row without an eval scores 0; never mark progress without a measurement.
+- Held-out set (`evals/datasets/unseen_holdout.jsonl`, suite `holdout`): score only. Never open it, print
+  its questions or failures, or tune prompts and tools on it; improve on the `unseen` dev set and let the
+  holdout score tell us whether it generalized.
 
 ## Map
 - `src/app/agents/<name>/`: one folder per agent: `agent.py` (Agent + tools + `card`), `prompt.md`,

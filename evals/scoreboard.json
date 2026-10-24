@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T15:06:13+00:00",
+   "at": "2026-10-24T16:02:49+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,11 +45,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 1833751,
-   "output_tokens": 36112
+   "input_tokens": 2199895,
+   "output_tokens": 37278
   },
   "warmup": {
-   "at": "2026-10-24T15:07:21+00:00",
+   "at": "2026-10-24T15:52:54+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 368,
@@ -81,11 +81,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 4229036,
-   "output_tokens": 83326
+   "input_tokens": 5134939,
+   "output_tokens": 84857
   },
   "reworded": {
-   "at": "2026-10-24T15:09:55+00:00",
+   "at": "2026-10-24T16:03:57+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 45,
@@ -129,20 +129,136 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 610397,
-   "output_tokens": 11808
+   "input_tokens": 714497,
+   "output_tokens": 11328
   },
   "scenarios": {
-   "at": "2026-10-24T15:10:17+00:00",
+   "at": "2026-10-24T16:04:20+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 8,
+   "correct": 11,
    "total": 11,
-   "failing": [
-    "first-day-coffee",
-    "vague-press",
-    "add-a-door"
-   ]
+   "failing": []
+  },
+  "unseen": {
+   "at": "2026-10-24T15:55:54+00:00",
+   "by": "mousamax",
+   "model": "default",
+   "correct": 95,
+   "total": 96,
+   "by_kind": {
+    "area_difference": [
+     8,
+     8
+    ],
+    "area_rooms_and_halls": [
+     8,
+     8
+    ],
+    "count_rooms_of_type": [
+     8,
+     8
+    ],
+    "door_count": [
+     8,
+     8
+    ],
+    "exit_distance": [
+     8,
+     8
+    ],
+    "floor_with_most": [
+     8,
+     8
+    ],
+    "items_in_room": [
+     8,
+     8
+    ],
+    "narrowest_door": [
+     8,
+     8
+    ],
+    "nearest_room_type": [
+     8,
+     8
+    ],
+    "round_trip": [
+     8,
+     8
+    ],
+    "route_difference": [
+     8,
+     8
+    ],
+    "within_distance_count": [
+     7,
+     8
+    ]
+   },
+   "errors": 0,
+   "input_tokens": 2249256,
+   "output_tokens": 41354
+  },
+  "holdout": {
+   "at": "2026-10-24T15:57:11+00:00",
+   "by": "mousamax",
+   "model": "default",
+   "correct": 95,
+   "total": 96,
+   "by_kind": {
+    "area_difference": [
+     8,
+     8
+    ],
+    "area_rooms_and_halls": [
+     8,
+     8
+    ],
+    "count_rooms_of_type": [
+     8,
+     8
+    ],
+    "door_count": [
+     8,
+     8
+    ],
+    "exit_distance": [
+     8,
+     8
+    ],
+    "floor_with_most": [
+     8,
+     8
+    ],
+    "items_in_room": [
+     8,
+     8
+    ],
+    "narrowest_door": [
+     8,
+     8
+    ],
+    "nearest_room_type": [
+     8,
+     8
+    ],
+    "round_trip": [
+     8,
+     8
+    ],
+    "route_difference": [
+     8,
+     8
+    ],
+    "within_distance_count": [
+     7,
+     8
+    ]
+   },
+   "errors": 0,
+   "input_tokens": 2141634,
+   "output_tokens": 41492
   }
  }
 }
