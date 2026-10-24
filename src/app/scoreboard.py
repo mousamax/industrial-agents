@@ -32,6 +32,9 @@ STATE = ROOT / "evals" / "scoreboard.json"
 HISTORY = ROOT / "evals" / "scoreboard_history.jsonl"
 BOARD = ROOT / "docs" / "synera" / "SCOREBOARD.md"
 AGENT_SUITES = ("benchmark", "warmup", "reworded", "unseen", "holdout", "scenarios")
+# A test skipped with this reason has nothing to check in that building (e.g. no stairs on one floor):
+# it is left out of the row's total instead of counting as a miss.
+NOT_APPLICABLE = "not applicable:"
 
 
 @dataclass
@@ -73,11 +76,13 @@ def run_golden_tests(split: str = "dev") -> dict[str, str]:
             if case.find("failure") is not None or case.find("error") is not None:
                 outcome = "failed"
             elif (skip := case.find("skipped")) is not None:
-                outcome = (
-                    "xfail"
-                    if "xfail" in (skip.get("type", "") + skip.get("message", "")).lower()
-                    else "skipped"
-                )
+                message = skip.get("type", "") + skip.get("message", "")
+                if NOT_APPLICABLE in message:
+                    outcome = "n/a"
+                elif "xfail" in message.lower():
+                    outcome = "xfail"
+                else:
+                    outcome = "skipped"
             else:
                 outcome = "passed"
             outcomes[name].append(outcome)
@@ -85,7 +90,9 @@ def run_golden_tests(split: str = "dev") -> dict[str, str]:
 
 
 def measure_pytest(prefixes: list[str], tests: dict[str, str]) -> Measured:
-    picked = {n: o for n, o in tests.items() if any(n.split("[")[0].startswith(p) for p in prefixes)}
+    picked = {
+        n: o for n, o in tests.items() if any(n.split("[")[0].startswith(p) for p in prefixes) and o != "n/a"
+    }
     if not picked:
         return Measured(0.0, "no tests yet", "write the tests named " + ", ".join(prefixes))
     passed = [n for n, o in picked.items() if o == "passed"]

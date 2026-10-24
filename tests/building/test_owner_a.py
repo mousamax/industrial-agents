@@ -234,7 +234,7 @@ def test_a4_3_stairs_and_lift_cost_per_metre(building_id):
             )
             checked += 1
     if not checked:
-        pytest.skip("no direct stair or lift leg in this building")
+        pytest.skip("not applicable: no direct stair or lift leg in this building")
 
 
 def _golden_legs(q):
