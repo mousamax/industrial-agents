@@ -4,9 +4,11 @@
 // - Remembers location & constraints ("I remember" chips) across turns
 // - Tappable option cards with constrained distances + QR door sign scan
 // - Full-screen step-by-step Walk Mode with left/right corridor turns & floor switching
-// - Voice input (Listening…) & spoken answers (Read aloud)
+// - Live voice conversation through ElevenLabs (components/voice), Read aloud in the same voice; the
+//   browser's Web Speech (Listening…) is the fallback without an ElevenLabs key
 // - Safe preview -> confirm -> undo for map changes (lift closure, new door)
 // - Works both with the 7 cross-building pitch scenarios and live POST /buildings/{id}/chat queries
+import { ConversationProvider } from '@elevenlabs/react'
 import clsx from 'clsx'
 import {
   Accessibility,
@@ -61,7 +63,14 @@ import { useBrowseUi } from '../browse/browseStore'
 import { getBuildingChat, resetChat, useBuildingChat, type ChatMessage } from '../chat/chats'
 import { withPreferences } from '../chat/text'
 import { MapView } from '../map/MapView'
+import { speak, stopSpeaking, voiceAvailable } from '../voice/speech'
+import { describeStep, summarizeTurn } from '../voice/turnSummary'
+import { sessionContext, useLiveVoice, type LiveVoice } from '../voice/useLiveVoice'
+import { VoiceDock } from '../voice/VoiceDock'
 import { extractLiveTurn } from './liveBridge'
+
+/** Appended to questions that come from the voice agent: the guide's prompt then answers short and spoken. */
+const SPOKEN = '(Asked on a voice call: keep it short.)'
 
 export type FlowPhase = 'home' | 'listening' | 'working' | 'ask' | 'result' | 'walk'
 
@@ -117,6 +126,14 @@ function MemoryIconGlyph({ icon, className }: { icon: MemoryChip['icon']; classN
 }
 
 export function AgentWorkspace({ phone }: { phone: boolean }) {
+  return (
+    <ConversationProvider>
+      <Workspace phone={phone} />
+    </ConversationProvider>
+  )
+}
+
+function Workspace({ phone }: { phone: boolean }) {
   const buildingId = useApp((s) => s.buildingId)
   const scene = useApp((s) => s.scene)
   const index = useApp((s) => s.index)
@@ -196,33 +213,20 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     setLiveError(undefined)
   }, [chat])
 
-  // Speech cleanup
+  // Live voice session (set below, once the tools it calls exist) and the voice turn waiting for the guide
+  const voiceRef = useRef<LiveVoice | null>(null)
+  const voiceTurnRef = useRef<((answer: string) => void) | null>(null)
+
+  // Read aloud in the ElevenLabs voice; silent while a live conversation speaks for itself
   const stopSpeech = useCallback(() => {
     setSpeaking(false)
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel()
-      } catch {
-        // ignore
-      }
-    }
+    stopSpeaking()
   }, [])
 
   const speakText = useCallback((text: string | undefined) => {
-    if (!text) return
+    if (!text || voiceRef.current?.live) return
     setSpeaking(true)
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel()
-        const u = new SpeechSynthesisUtterance(text)
-        u.rate = 1.02
-        u.onend = () => setSpeaking(false)
-        u.onerror = () => setSpeaking(false)
-        window.speechSynthesis.speak(u)
-      } catch {
-        // Fallback visual waveform remains active
-      }
-    }
+    speak(text, () => setSpeaking(false))
   }, [])
 
   useEffect(() => {
@@ -263,6 +267,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       targetBuildingId?: string,
       matchedScenario?: Scenario | null,
       isReply = false,
+      note?: string,
     ) => {
       stopSpeech()
       const bId = targetBuildingId ?? useApp.getState().buildingId ?? 'proc-campus-dev-000'
@@ -294,7 +299,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       const currentMem = useApp.getState().memory
       void targetChat.sendMessage({
         text: withPreferences(
-          text,
+          note ? `${text} ${note}` : text,
           currentMem.some((m) => m.stepFree),
           currentMem.map((m) => m.text),
         ),
@@ -303,12 +308,26 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     [stopSpeech, loadBuilding, clearLiveError],
   )
 
+  // During a live voice call, typed and tapped turns go to the voice agent too, so it answers out loud
+  const sayInCall = useCallback((text: string) => {
+    if (!voiceRef.current?.live) return false
+    voiceRef.current.say(text)
+    setInput('')
+    return true
+  }, [])
+
   // Run a starter prompt card by sending its prompt directly to the live backend agent
   const runScenario = useCallback(
     (sc: Scenario) => {
+      if (voiceRef.current?.live) {
+        void (sc.buildingId !== useApp.getState().buildingId ? loadBuilding(sc.buildingId) : Promise.resolve()).then(
+          () => sayInCall(sc.user),
+        )
+        return
+      }
       void sendToBackend(sc.user, sc.buildingId, sc, false)
     },
-    [sendToBackend],
+    [sendToBackend, sayInCall, loadBuilding],
   )
 
   // Watch live chat messages when in liveMode
@@ -316,6 +335,8 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     if (!liveMode) return
     const isReady = liveStatus === 'ready'
     if (liveError) {
+      voiceTurnRef.current?.(`The building guide could not be reached: ${liveError.message}`)
+      voiceTurnRef.current = null
       setLiveMode(false)
       setPhase('result')
       setResult({
@@ -353,6 +374,11 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       } else if (extracted.result) {
         showResult(extracted.result, Boolean(scenario?.voice), Boolean(extracted.alreadyApplied))
       }
+      // The voice agent hears the turn it asked for; any other turn it learns as context
+      const answer = summarizeTurn(extracted, index)
+      if (voiceTurnRef.current) voiceTurnRef.current(answer)
+      else if (voiceRef.current?.live) voiceRef.current.notify(`[screen] ${answer}`)
+      voiceTurnRef.current = null
     }
   }, [
     chat,
@@ -372,7 +398,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
   const submit = useCallback(
     (rawText?: string) => {
       const q = (rawText ?? input).trim()
-      if (!q) return
+      if (!q || sayInCall(q)) return
       const matched = starterList.find(
         (s) => s.id === q || s.user.toLowerCase() === q.toLowerCase() || s.chip.toLowerCase() === q.toLowerCase(),
       )
@@ -383,7 +409,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       const isFollowUp = phase === 'ask' || phase === 'result' || phase === 'walk'
       void sendToBackend(q, buildingId ?? undefined, scenario, isFollowUp)
     },
-    [input, starterList, sendToBackend, buildingId, phase, scenario],
+    [input, starterList, sendToBackend, buildingId, phase, scenario, sayInCall],
   )
 
   // Consume any prompt sent from BrowsePanel ("Directions")
@@ -400,9 +426,10 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
       if (opt.spaceId) {
         remember([{ icon: 'map-pin', text: `At ${opt.label}`, spaceId: opt.spaceId }])
       }
+      if (sayInCall(opt.replyText)) return
       void sendToBackend(opt.replyText, buildingId ?? undefined, scenario, true)
     },
-    [remember, sendToBackend, buildingId, scenario],
+    [remember, sendToBackend, buildingId, scenario, sayInCall],
   )
 
   const scanDoor = useCallback(() => {
@@ -511,18 +538,22 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     if (!result) return
     setApplied(true)
     const promptText = result.confirmPrompt ?? 'Yes, please apply that change.'
+    if (sayInCall(promptText)) return
     void sendToBackend(promptText, buildingId ?? undefined, scenario, true)
-  }, [result, sendToBackend, buildingId, scenario])
+  }, [result, sendToBackend, buildingId, scenario, sayInCall])
 
   const undoChange = useCallback(() => {
     if (!result) return
     setApplied(false)
+    if (sayInCall('Undo the last change.')) return
     void sendToBackend('Undo the last change.', buildingId ?? undefined, scenario, true)
-  }, [result, sendToBackend, buildingId, scenario])
+  }, [result, sendToBackend, buildingId, scenario, sayInCall])
 
   // Reset to home
   const reset = useCallback(() => {
     stopSpeech()
+    voiceTurnRef.current?.('The person started over; that question was dropped.')
+    voiceTurnRef.current = null
     recognitionRef.current?.stop()
     recognitionRef.current = null
     setLiveMode(false)
@@ -545,6 +576,85 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     setMapInsets({ top: 0, right: 0, bottom: 0, left: 0 })
     if (buildingId) resetChat(buildingId)
   }, [stopSpeech, setRoute, setHighlight, setMapOverlays, setMapInsets, buildingId])
+
+  // Live voice: the ElevenLabs agent's client tools act on this workspace, like taps would
+  const guideTurn = (request: string, isReply: boolean) =>
+    new Promise<string>((resolve) => {
+      voiceTurnRef.current?.('A newer request replaced this one.')
+      let timer = 0
+      const settle = (answer: string) => {
+        window.clearTimeout(timer)
+        if (voiceTurnRef.current === settle) voiceTurnRef.current = null
+        resolve(answer)
+      }
+      timer = window.setTimeout(() => settle('The guide is still working; the answer will appear on screen.'), 100_000)
+      voiceTurnRef.current = settle
+      void sendToBackend(request, buildingId ?? undefined, scenario, isReply, SPOKEN)
+    })
+
+  const voice = useLiveVoice({
+    ask_building_guide: ({ request }) =>
+      guideTurn(request, phase === 'ask' || phase === 'result' || phase === 'walk'),
+    start_walk: () => {
+      const steps = result?.steps ?? []
+      if (!steps.length) return 'There is no route on screen to walk. Ask the guide for a route first.'
+      startWalk()
+      return describeStep(steps, 0)
+    },
+    walk_step: ({ direction }) => {
+      const steps = result?.steps ?? []
+      if (!steps.length) return 'There is no route on screen to walk.'
+      const delta = direction === 'previous' ? -1 : direction === 'repeat' ? 0 : 1
+      const next = Math.max(0, Math.min(steps.length - 1, phase === 'walk' ? stepIdx + delta : 0))
+      setPhase('walk')
+      setStepIdx(next)
+      setFloorState(steps[next].floorId)
+      return describeStep(steps, next)
+    },
+    apply_change: ({ decision }) => {
+      if (!result?.confirm) return 'Nothing on screen is waiting for confirmation.'
+      const undo = decision === 'undo'
+      setApplied(!undo)
+      return guideTurn(undo ? 'Undo the last change.' : (result.confirmPrompt ?? 'Yes, please apply that change.'), true)
+    },
+    show_floor: ({ floor: wanted }) => {
+      if (!index) return 'The building is still loading.'
+      const w = wanted.trim().toLowerCase()
+      const level = /ground|^g$/.test(w) ? 0 : /basement|cellar/.test(w) ? -1 : Number(w.match(/-?\d+/)?.[0] ?? NaN)
+      const f =
+        index.floors.find((x) => x.name.toLowerCase() === w) ??
+        index.floors.find((x) => x.level === level) ??
+        index.floors.find((x) => x.name.toLowerCase().includes(w))
+      if (!f) return `There is no floor "${wanted}". Floors: ${index.floors.map((x) => x.name).join(', ')}.`
+      if (!result) return `Nothing is on the map yet; ask the guide about something on ${f.name}.`
+      setFloorState(f.id)
+      return `The map shows ${f.name} now.`
+    },
+    start_over: () => {
+      reset()
+      return 'The screen is cleared for a new question.'
+    },
+  })
+  voiceRef.current = voice
+
+  // The mic button: a live ElevenLabs conversation when the backend has a key, else browser dictation
+  const toggleVoice = useCallback(async () => {
+    const v = voiceRef.current
+    if (v?.live || v?.phase === 'connecting') return v.stop()
+    if (!(await voiceAvailable())) return startVoice()
+    stopSpeech()
+    const app = useApp.getState()
+    await v?.start(sessionContext(app.index, app.memory, activeBuildingName))
+  }, [startVoice, stopSpeech, activeBuildingName])
+  const dockPlacement = !phone
+    ? phase === 'walk'
+      ? 'desktop-walk'
+      : 'desktop'
+    : phase === 'walk'
+      ? 'phone-walk'
+      : phase === 'result'
+        ? 'phone-map'
+        : 'phone-bottom'
 
   // Synchronize MapView with Agent-First state
   useEffect(() => {
@@ -620,6 +730,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
     return (
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white select-none">
         <BuildingPicker />
+        <VoiceDock voice={voice} placement={dockPlacement} />
         <PhoneView
           phase={phase}
           buildingName={result?.buildingName ?? activeBuildingName}
@@ -648,7 +759,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
           onRunScenario={runScenario}
           onPickOption={pickOption}
           onScanDoor={scanDoor}
-          onStartVoice={startVoice}
+          onStartVoice={toggleVoice}
           onFinishVoiceEarly={finishVoiceEarly}
           onStartWalk={startWalk}
           onMoveStep={moveStep}
@@ -668,6 +779,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
   return (
     <div className="relative flex h-dvh w-full overflow-hidden bg-[#f4f5f7] select-none">
       <BuildingPicker />
+      <VoiceDock voice={voice} placement={dockPlacement} />
       <DesktopView
         phase={phase}
         buildingName={result?.buildingName ?? activeBuildingName}
@@ -696,7 +808,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
         onRunScenario={runScenario}
         onPickOption={pickOption}
         onScanDoor={scanDoor}
-        onStartVoice={startVoice}
+        onStartVoice={toggleVoice}
         onFinishVoiceEarly={finishVoiceEarly}
         onStartWalk={startWalk}
         onMoveStep={moveStep}
