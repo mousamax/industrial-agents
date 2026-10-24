@@ -1,9 +1,11 @@
-// Modal list of every building the API knows: search, filter by source / lift, tap to load.
+// Modal list of every building the API knows: search, filter by source / lift, tap to load. On top: add a new
+// building from floor plans (Level 4); the guide then walks you through what the plans don't say.
 // Phones: a full-height sheet sliding up; md+: a centered dialog. Rendered into document.body.
 import clsx from 'clsx'
-import { ArrowUpDown, Building2, Check, Search, X } from 'lucide-react'
+import { ArrowUpDown, Building2, Check, FileUp, Loader2, Search, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { uploadPlans } from '../../api/client'
 import { useApp } from '../../store'
 import { sourceLabel } from './browseLib'
 import { useBrowseUi } from './browseStore'
@@ -121,6 +123,7 @@ function PickerDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-line">
+          <NewFromPlans onDone={onClose} />
           {!buildings.length && <p className="p-6 text-center text-sm text-ink-soft">Loading buildings…</p>}
           {buildings.length > 0 && !list.length && <p className="p-6 text-center text-sm text-ink-soft">No building matches.</p>}
           <ul>
@@ -149,6 +152,102 @@ function PickerDialog({ onClose }: { onClose: () => void }) {
             })}
           </ul>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/** "Add a building from floor plans": pick one plan per floor, name it, and the guide opens on it, asking about
+ *  what the plans left open. Drafting takes seconds (POST /buildings/draft). */
+function NewFromPlans({ onDone }: { onDone: () => void }) {
+  const loadBuildings = useApp((s) => s.loadBuildings)
+  const loadBuilding = useApp((s) => s.loadBuilding)
+  const ask = useApp((s) => s.ask)
+  const [open, setOpen] = useState(false)
+  const [files, setFiles] = useState<File[]>([])
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const build = async () => {
+    if (!files.length || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const label = name.trim() || 'New building'
+      const drafted = await uploadPlans(files, label)
+      await loadBuildings()
+      await loadBuilding(drafted.building_id)
+      onDone()
+      ask(`I just uploaded the floor plans of ${drafted.name}. What do you need from me?`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-black/[0.03]"
+      >
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-white">
+          <FileUp className="size-5" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-medium text-ink">Add a building from floor plans</span>
+          <span className="block truncate text-xs text-ink-soft">One plan per floor · ready in seconds, then we talk it through</span>
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <div className="m-3 rounded-2xl bg-accent-soft/60 p-4">
+      <p className="text-[15px] font-medium text-ink">New building from floor plans</p>
+      <p className="mt-0.5 text-xs text-ink-soft">
+        SVG or PNG, one per floor, named like floor_0.svg, floor_1.svg. I&rsquo;ll draft it and ask about anything the plans don&rsquo;t say.
+      </p>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="What do you call it? e.g. Hall 7"
+        className="mt-3 h-11 w-full rounded-full bg-surface px-4 text-base text-ink outline-none placeholder:text-ink-soft focus:ring-1 focus:ring-accent"
+      />
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept=".svg,.png,image/svg+xml,image/png"
+        className="hidden"
+        onChange={(e) => setFiles([...(e.target.files ?? [])])}
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        className="mt-2 flex h-11 w-full items-center gap-2 rounded-full bg-surface px-4 text-left text-sm text-ink"
+      >
+        <FileUp className="size-4 shrink-0 text-accent" aria-hidden />
+        <span className="truncate">{files.length ? files.map((f) => f.name).join(', ') : 'Choose floor plans'}</span>
+      </button>
+      {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full px-4 text-sm text-ink-soft">
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void build()}
+          disabled={!files.length || busy}
+          className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {busy && <Loader2 className="size-4 animate-spin" aria-hidden />}
+          {busy ? 'Drafting…' : 'Build it'}
+        </button>
       </div>
     </div>
   )

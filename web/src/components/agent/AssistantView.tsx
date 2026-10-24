@@ -1,6 +1,7 @@
-// The "Welcome" assistant layout (Atrium v3): the map fills the screen, the guide bar floats at the bottom, and
-// one answer at a time springs up out of it. Same layout on phone and desktop, only the answer sheet moves:
-// left on wide screens, above the bar on phones. Fewer objects on screen beats more options.
+// The "Welcome" assistant layout (Atrium v3): the map fills the screen, the guide bar floats at the bottom.
+// Once you ask, the conversation opens as one thread: earlier exchanges stacked small, the current answer in
+// full. On wide screens the thread is a column on the left with the guide bar at its foot, so what you type
+// and what the guide says live together; on phones it rises right above the bar.
 import clsx from 'clsx'
 import {
   ArrowDown,
@@ -19,21 +20,15 @@ import {
   Volume2,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { floorNameOf, fmtM, type MemoryChip, type StepIcon } from '../../lib/buildingGraph'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { buildingSuggestions, floorNameOf, fmtM, type MemoryChip, type StepIcon } from '../../lib/buildingGraph'
+import { floorShort, type SceneIndex } from '../../lib/sceneIndex'
+import { useApp } from '../../store'
 import { MapView } from '../map/MapView'
-import { OFFLINE_DETAIL, OFFLINE_HEADLINE, shapeAnswer, workingLine } from './assistantCopy'
-import type { ViewProps } from './AgentWorkspace'
+import { OFFLINE_DETAIL, OFFLINE_HEADLINE, plainReply, replyBlocks, shapeAnswer, workingLine } from './assistantCopy'
+import type { PastTurn, ViewProps } from './AgentWorkspace'
 
-const GLASS =
-  'bg-white/92 backdrop-blur-xl shadow-[0_2px_6px_rgb(43_38_64/0.05),0_22px_52px_rgb(43_38_64/0.14)]'
-
-/** Questions any building can answer, used when the building has few prepared suggestions. */
-const ANYWHERE = [
-  { label: 'Which room is the biggest?', text: 'Which room in this building is the biggest?' },
-  { label: 'Where are the toilets?', text: 'Where is the nearest toilet?' },
-  { label: 'Is anything closed today?', text: 'Is anything closed or changed in the building today?' },
-]
+const GLASS = 'bg-white/92 backdrop-blur-xl shadow-[0_2px_6px_rgb(43_38_64/0.05),0_22px_52px_rgb(43_38_64/0.14)]'
 
 function greeting(): string {
   const h = new Date().getHours()
@@ -81,20 +76,25 @@ function Orb({ size = 44, mode = 'rest' }: { size?: number; mode?: 'rest' | 'wor
     <span
       aria-hidden
       className={clsx('guide-orb shrink-0 rounded-full', mode === 'listen' ? 'anim-listen' : 'anim-breathe')}
-      style={{ width: size, height: size, boxShadow: mode === 'rest' ? '0 0 0 6px rgb(255 138 61 / .14)' : undefined }}
+      style={{
+        width: size,
+        height: size,
+        boxShadow: mode === 'rest' ? '0 0 0 6px rgb(255 138 61 / .14)' : undefined,
+      }}
     />
   )
 }
 
 function Capsule({ chip, onForget }: { chip: MemoryChip; onForget: () => void }) {
-  const tone = chip.spaceId
-    ? 'bg-sky-soft text-ink'
-    : chip.stepFree
-      ? 'bg-mint-soft text-mint'
-      : 'bg-sun-soft text-ink'
+  const tone = chip.spaceId ? 'bg-sky-soft text-ink' : chip.stepFree ? 'bg-mint-soft text-mint' : 'bg-sun-soft text-ink'
   const dot = chip.spaceId ? 'bg-sky' : chip.stepFree ? 'bg-mint' : 'bg-sun'
   return (
-    <span className={clsx('inline-flex h-8 items-center gap-1.5 rounded-full pr-1.5 pl-2.5 text-[13px] font-semibold', tone)}>
+    <span
+      className={clsx(
+        'inline-flex h-8 items-center gap-1.5 rounded-full pr-1.5 pl-2.5 text-[13px] font-semibold',
+        tone,
+      )}
+    >
       <span className={clsx('size-2 rounded-full', dot)} />
       {chip.text}
       <button
@@ -133,9 +133,131 @@ function PrimaryButton({ onClick, children }: { onClick: () => void; children: R
   )
 }
 
-export function AssistantView(props: ViewProps & { phone: boolean }) {
+/** The floor you're on, as one small button on the right edge of the map; tap it to open the building's
+ *  levels (highest on top) and pick another. A dot marks floors the current answer is about. */
+function FloorRail({
+  index,
+  current,
+  marked,
+  onPick,
+}: {
+  index: SceneIndex
+  current: string
+  marked: string[]
+  onPick: (floorId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => setOpen(false), [index])
+  useEffect(() => {
+    if (!open) return
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  if (index.floors.length <= 1) return null
+
+  const here = index.floorById.get(current) ?? index.floors.find((f) => f.level === 0) ?? index.floors[0]
+  const elsewhere = marked.some((id) => id !== here.id)
+  const dot = <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-sun" aria-hidden />
+
+  return (
+    <nav
+      ref={ref}
+      aria-label="Floors"
+      className={clsx(
+        'absolute top-1/2 right-3 z-20 flex max-h-[min(440px,60dvh)] w-12 -translate-y-1/2 flex-col gap-1 overflow-y-auto rounded-full p-1 [scrollbar-width:none]',
+        GLASS,
+      )}
+    >
+      {open ? (
+        [...index.floors].reverse().map((f) => {
+          const active = f.id === here.id
+          return (
+            <button
+              key={f.id}
+              type="button"
+              title={f.name}
+              aria-label={f.name}
+              aria-pressed={active}
+              onClick={() => {
+                onPick(f.id)
+                setOpen(false)
+              }}
+              className={clsx(
+                'anim-rise relative grid size-10 shrink-0 place-items-center rounded-full text-[15px] font-bold transition-colors',
+                active ? 'bg-ink text-white' : 'text-ink hover:bg-ink/5',
+              )}
+            >
+              {floorShort(f)}
+              {marked.includes(f.id) && !active && dot}
+            </button>
+          )
+        })
+      ) : (
+        <button
+          type="button"
+          title={`${here.name}: change floor`}
+          aria-label={`${here.name}, change floor`}
+          aria-expanded={false}
+          onClick={() => setOpen(true)}
+          className="relative grid size-10 place-items-center rounded-full bg-ink text-[15px] font-bold text-white"
+        >
+          {floorShort(here)}
+          {elsewhere && dot}
+        </button>
+      )}
+    </nav>
+  )
+}
+
+/** The guide's first sentence: large when it's a short answer, calmer when it's a long one. */
+function headlineClass(text: string): string {
+  return text.length <= 56
+    ? 'font-display text-[24px] leading-[1.15] font-bold'
+    : 'font-display text-[19px] leading-snug font-semibold'
+}
+
+/** What the person said, on the right, in their own colour. */
+function UserLine({ text }: { text: string }) {
+  return (
+    <p className="max-w-[85%] self-end rounded-[20px] rounded-br-[6px] bg-sun-soft px-4 py-2.5 text-[15px] leading-snug">
+      {text}
+    </p>
+  )
+}
+
+/** An earlier exchange: the question and a few lines of the reply; tap the reply to read it all. */
+function PastExchange({ turn }: { turn: PastTurn }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex flex-col gap-2">
+      <UserLine text={turn.user} />
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={clsx(
+          'rounded-lg text-left text-[15px] leading-relaxed text-ink/75 hover:text-ink',
+          !open && 'line-clamp-3',
+        )}
+      >
+        {plainReply(turn.reply)}
+      </button>
+    </div>
+  )
+}
+
+export function AssistantView(props: ViewProps & { phone: boolean; history?: PastTurn[]; drafted?: boolean }) {
   const {
     phone,
+    history = [],
+    drafted = false,
     phase,
     buildingName,
     memory,
@@ -172,6 +294,7 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
     onUndoChange,
     onForgetOne,
     onArrive,
+    voiceBar,
   } = props
 
   const [showSteps, setShowSteps] = useState(false)
@@ -200,26 +323,131 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
   // Per-step distances only when they add up to the route: two numbers that disagree are worse than one.
   const stepDistancesAgree = total > 0 && Math.abs(stepSum - total) / total < 0.2
   const progress = total > 0 ? Math.min(1, done / Math.max(stepSum, 1)) : 0
-  const activeFloor = (isWalk && curStep?.floorId ? curStep.floorId : floor) ?? result?.focusFloor ?? ''
+  const mapFloor = useApp((s) => s.floorId)
+  const activeFloor = (isWalk && curStep?.floorId ? curStep.floorId : floor) ?? result?.focusFloor ?? mapFloor ?? ''
 
   const suggestions = useMemo(() => {
     const here = starterList.filter((s) => !props.buildingId || s.buildingId === props.buildingId)
-    const prepared = here.map((s) => ({ key: s.id, label: s.chip, run: () => onRunScenario(s) }))
-    const extra = ANYWHERE.map((a) => ({ key: a.label, label: a.label, run: () => onSubmit(a.text) }))
-    return [...prepared, ...extra].slice(0, 4)
-  }, [starterList, props.buildingId, onRunScenario, onSubmit])
+    const prepared = here.map((s) => ({
+      key: s.id,
+      label: s.chip,
+      run: () => onRunScenario(s),
+    }))
+    // Then what this building's own plan can answer, never a prepared prompt about another building's rooms.
+    const extra = buildingSuggestions(activeIndex, drafted)
+      .filter((x) => !prepared.some((p) => p.label === x.label))
+      .map((x) => ({ key: x.label, label: x.label, run: () => onSubmit(x.text) }))
+    return [...(drafted ? [] : prepared), ...extra].slice(0, 4)
+  }, [starterList, props.buildingId, activeIndex, drafted, onRunScenario, onSubmit])
+
+  const blocks = useMemo(
+    () => (result && shaped && result.kind !== 'route' ? replyBlocks(result.understood, shaped.headline) : []),
+    [result, shaped],
+  )
 
   const here = memory.find((m) => m.spaceId)
   const showPanel = isWorking || isAsk || isResult
   const panelPos = phone
     ? 'absolute inset-x-2 bottom-[calc(88px+env(safe-area-inset-bottom))] max-h-[58dvh]'
-    : 'absolute top-[76px] left-4 w-[400px] max-h-[calc(100dvh-180px)]'
+    : 'absolute top-[76px] bottom-[calc(12px+env(safe-area-inset-bottom))] left-4 w-[420px]'
+
+  // Each new question or answer scrolls the thread so it starts at the top: the start of an answer is where
+  // reading begins, the earlier exchanges stay a scroll away.
+  const threadRef = useRef<HTMLDivElement>(null)
+  const currentRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const thread = threadRef.current
+    const current = currentRef.current
+    if (!thread || !current) return
+    const top = current.offsetTop - 20
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    thread.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+  }, [phase, result, ask, history.length])
+
+  // During a live voice call the call itself sits where the guide bar was.
+  const composer = (inPanel: boolean) => voiceBar?.(inPanel) ?? (
+    <div
+      className={clsx(
+        'flex w-full items-center gap-3 rounded-full pr-2 pl-2.5',
+        inPanel ? 'h-14 bg-map-bg' : clsx('h-16', GLASS),
+      )}
+    >
+      {isListening ? (
+        <>
+          <Orb size={inPanel ? 36 : 40} mode="listen" />
+          <span className="font-display min-w-0 flex-1 truncate text-[19px] font-semibold">
+            {listenText || 'Listening…'}
+          </span>
+          <button
+            type="button"
+            onClick={onReset}
+            aria-label="Cancel"
+            className={clsx(
+              'grid size-11 shrink-0 place-items-center rounded-full',
+              inPanel ? 'bg-white' : 'bg-map-bg',
+            )}
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={onFinishVoiceEarly}
+            aria-label="Done speaking"
+            className="grid size-11 shrink-0 place-items-center rounded-full bg-sun"
+          >
+            <Check className="size-5" aria-hidden />
+          </button>
+        </>
+      ) : (
+        <>
+          <Orb size={inPanel ? 36 : 44} mode={isWorking ? 'work' : 'rest'} />
+          <label htmlFor="assistant-ask" className="sr-only">
+            Ask about this building
+          </label>
+          <input
+            id="assistant-ask"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && onSubmit()}
+            placeholder={
+              isHome ? (phone ? 'Ask me anything' : 'Ask me anything about this building') : 'Ask a follow-up'
+            }
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-ink-soft/80"
+          />
+          <button
+            type="button"
+            onClick={() => (input.trim() ? onSubmit() : onStartVoice())}
+            aria-label={input.trim() ? 'Send' : 'Talk'}
+            className={clsx(
+              'grid size-11 shrink-0 place-items-center rounded-full transition-colors',
+              input.trim() ? 'bg-ink text-white' : inPanel ? 'bg-white text-ink' : 'bg-map-bg text-ink',
+            )}
+          >
+            {input.trim() ? <ArrowUp className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
+          </button>
+        </>
+      )}
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-map-bg text-ink select-none">
       <div className="anim-arrive absolute inset-0">
         <MapView hideControls={phone || isWalk} />
       </div>
+
+      {activeIndex && !isWalk && (
+        <FloorRail
+          index={activeIndex}
+          current={activeFloor}
+          marked={result?.floors ?? []}
+          onPick={(fid) => {
+            setFloorState(fid)
+            useApp.getState().setFloor(fid)
+          }}
+        />
+      )}
 
       {/* Top: where you are. Nothing else lives up here except the way back. */}
       {!isWalk && (
@@ -231,36 +459,17 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
             className={clsx('flex h-12 items-center gap-2.5 rounded-full pr-4 pl-2', GLASS)}
           >
             <Orb size={32} />
-            {/* A phone showing the floor switcher keeps only the orb here, so both fit on one row. */}
-            {!(phone && (result?.floors.length ?? 0) > 1) && (
-              <span className="font-display max-w-[46vw] truncate text-[18px] font-bold whitespace-nowrap">
-                {buildingName}
-              </span>
-            )}
+            <span className="font-display max-w-[46vw] truncate text-[18px] font-bold whitespace-nowrap">
+              {buildingName}
+            </span>
             {activeIndex && activeFloor && !phone && (
-              <span className="text-[14px] whitespace-nowrap text-ink-soft">{floorNameOf(activeIndex, activeFloor)}</span>
+              <span className="text-[14px] whitespace-nowrap text-ink-soft">
+                {floorNameOf(activeIndex, activeFloor)}
+              </span>
             )}
             <ChevronDown className="size-4 text-ink-soft" aria-hidden />
           </button>
           <div className="flex items-center gap-2">
-            {result && result.floors.length > 1 && (
-              <div role="group" aria-label="Floor" className={clsx('flex gap-1 rounded-full p-1', GLASS)}>
-                {result.floors.map((fid) => (
-                  <button
-                    key={fid}
-                    type="button"
-                    aria-pressed={fid === activeFloor}
-                    onClick={() => setFloorState(fid)}
-                    className={clsx(
-                      'h-10 whitespace-nowrap rounded-full px-3.5 text-[14px] font-bold',
-                      fid === activeFloor ? 'bg-ink text-white' : 'text-ink',
-                    )}
-                  >
-                    {activeIndex ? floorNameOf(activeIndex, fid) : fid}
-                  </button>
-                ))}
-              </div>
-            )}
             {!isHome && (
               <button
                 type="button"
@@ -275,158 +484,192 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
         </div>
       )}
 
-      {/* The answer: one sheet, one sentence first, one main action. */}
+      {/* The conversation: earlier exchanges small, the current answer in full, one main action. */}
       {showPanel && (
         <section
-          key={`${phase}-${result?.title ?? ''}-${ask?.q ?? ''}`}
-          aria-live="polite"
-          className={clsx(panelPos, GLASS, 'anim-spring z-20 flex flex-col gap-3 overflow-y-auto rounded-[28px] p-5')}
+          aria-label="Conversation"
+          className={clsx(panelPos, GLASS, 'anim-spring z-20 flex flex-col overflow-hidden rounded-[28px]')}
         >
-          <p className="text-[14px] leading-snug text-ink-soft">{replyText ?? userText}</p>
+          <div ref={threadRef} className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 select-text">
+            {history.map((t, i) => (
+              <PastExchange key={i} turn={t} />
+            ))}
+            <div
+              ref={currentRef}
+              key={`${userText}-${replyText ?? ''}`}
+              aria-live="polite"
+              className="anim-rise flex flex-col gap-3"
+            >
+              <UserLine text={replyText ?? userText} />
 
-          {memory.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {memory.map((m, i) => (
-                <Capsule key={`${m.text}-${i}`} chip={m} onForget={() => onForgetOne(i)} />
-              ))}
-            </div>
-          )}
-
-          {isWorking && (
-            <div className="flex items-center gap-3 py-1">
-              <Orb size={28} mode="work" />
-              <span className="text-[16px] text-ink-soft">{workingLine(trace)}</span>
-            </div>
-          )}
-
-          {isAsk && ask && (
-            <>
-              <h2 className="font-display text-[24px] leading-[1.15] font-bold">{ask.q}</h2>
-              <div className="flex flex-col gap-2">
-                {ask.options.map((opt, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={opt.disabled}
-                    onClick={() => onPickOption(opt)}
-                    className="flex min-h-14 items-center justify-between rounded-2xl bg-map-bg px-4 text-left text-[16px] font-semibold disabled:opacity-40"
-                  >
-                    {opt.label}
-                    <span className="text-[13px] font-medium text-ink-soft">{opt.sub.split(' · ')[0]}</span>
-                  </button>
-                ))}
-              </div>
-              {ask.scan && (
-                <TextButton onClick={onScanDoor}>
-                  <QrCode className="size-4" aria-hidden /> Scan the sign by the nearest door
-                </TextButton>
-              )}
-            </>
-          )}
-
-          {isResult && offline && (
-            <>
-              <h2 className="font-display text-[26px] leading-[1.12] font-bold">{OFFLINE_HEADLINE}</h2>
-              <p className="text-[16px] leading-relaxed">{OFFLINE_DETAIL}</p>
-              <PrimaryButton onClick={() => onSubmit(userText)}>Try again</PrimaryButton>
-            </>
-          )}
-
-          {isResult && result && shaped && arrived && (
-            <div className="flex flex-col items-start gap-2 py-1">
-              <span className="relative grid size-14 place-items-center">
-                <span className="anim-ripple absolute inset-0 rounded-full bg-sun" />
-                <span className="guide-orb relative grid size-14 place-items-center rounded-full">
-                  <Check className="size-6 text-ink" aria-hidden />
-                </span>
-              </span>
-              <h2 className="font-display mt-2 text-[30px] leading-[1.05] font-bold">You made it.</h2>
-              <p className="text-[16px] leading-relaxed">{result.title} is right here.</p>
-              <div className="mt-2 w-full">
-                <PrimaryButton onClick={onReset}>Thanks, that’s all</PrimaryButton>
-              </div>
-            </div>
-          )}
-
-          {isResult && result && shaped && !arrived && (
-            <>
-              <h2 className="font-display text-[26px] leading-[1.12] font-bold">{shaped.headline}</h2>
-              {shaped.meta && <p className="-mt-1 text-[15px] font-semibold text-ink-soft">{shaped.meta}</p>}
-              {shaped.detail && <p className="text-[16px] leading-relaxed">{shaped.detail}</p>}
-
-              {result.stats && result.stats.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {result.stats.map((s, i) => (
-                    <span key={i} className="rounded-2xl bg-map-bg px-3 py-2 text-[14px]">
-                      <b className="font-display text-[18px]">{s.n}</b> {s.label}
-                    </span>
+              {memory.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {memory.map((m, i) => (
+                    <Capsule key={`${m.text}-${i}`} chip={m} onForget={() => onForgetOne(i)} />
                   ))}
                 </div>
               )}
 
-              {result.kind === 'route' && steps.length > 0 && (
+              {isWorking && (
+                <div className="flex items-center gap-3 py-1">
+                  <Orb size={28} mode="work" />
+                  <span className="text-[16px] text-ink-soft">{workingLine(trace)}</span>
+                </div>
+              )}
+
+              {isAsk && ask && (
                 <>
-                  <PrimaryButton onClick={onStartWalk}>Let’s go</PrimaryButton>
-                  {showSteps && (
-                    <ol className="flex flex-col">
-                      {steps.map((st, i) => (
-                        <li key={i}>
-                          <button
-                            type="button"
-                            onClick={() => onSelectStep(i)}
-                            className="grid w-full grid-cols-[24px_1fr_auto] items-start gap-3 py-2 text-left"
-                          >
-                            <span className="mt-1 flex justify-center">
-                              <span className={clsx('size-3 rounded-full', i === 0 ? 'guide-orb' : 'bg-sun/30')} />
-                            </span>
-                            <span className="text-[15px] leading-snug">{st.text}</span>
-                            {stepDistancesAgree && st.d > 0 && (
-                              <span className="text-[13px] text-ink-soft">{fmtM(st.d)}</span>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ol>
+                  <h2 className={headlineClass(ask.q)}>{ask.q}</h2>
+                  <div className="flex flex-col gap-2">
+                    {ask.options.map((opt, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={opt.disabled}
+                        onClick={() => onPickOption(opt)}
+                        className="flex min-h-14 items-center justify-between rounded-2xl bg-map-bg px-4 text-left text-[16px] font-semibold disabled:opacity-40"
+                      >
+                        {opt.label}
+                        <span className="text-[13px] font-medium text-ink-soft">{opt.sub.split(' · ')[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {ask.scan && (
+                    <TextButton onClick={onScanDoor}>
+                      <QrCode className="size-4" aria-hidden /> Scan the sign by the nearest door
+                    </TextButton>
                   )}
                 </>
               )}
 
-              {(result.kind === 'impact' || result.kind === 'edit') && result.confirm && !applied && (
-                <PrimaryButton onClick={onConfirmChange}>{result.confirm}</PrimaryButton>
+              {isResult && offline && (
+                <>
+                  <h2 className="font-display text-[26px] leading-[1.12] font-bold">{OFFLINE_HEADLINE}</h2>
+                  <p className="text-[16px] leading-relaxed">{OFFLINE_DETAIL}</p>
+                  <PrimaryButton onClick={() => onSubmit(userText)}>Try again</PrimaryButton>
+                </>
               )}
-              {applied && result.applied && (
-                <div className="flex items-center justify-between gap-2 rounded-2xl bg-mint-soft px-4 py-3 text-[15px] text-mint">
-                  <span className="flex items-center gap-2 font-semibold">
-                    <Check className="size-4" aria-hidden /> {result.applied}
+
+              {isResult && result && shaped && arrived && (
+                <div className="flex flex-col items-start gap-2 py-1">
+                  <span className="relative grid size-14 place-items-center">
+                    <span className="anim-ripple absolute inset-0 rounded-full bg-sun" />
+                    <span className="guide-orb relative grid size-14 place-items-center rounded-full">
+                      <Check className="size-6 text-ink" aria-hidden />
+                    </span>
                   </span>
-                  <button type="button" onClick={onUndoChange} className="min-h-11 rounded-full px-3 font-bold">
-                    {result.undo ?? 'Undo'}
-                  </button>
+                  <h2 className="font-display mt-2 text-[30px] leading-[1.05] font-bold">You made it.</h2>
+                  <p className="text-[16px] leading-relaxed">{result.title} is right here.</p>
+                  <div className="mt-2 w-full">
+                    <PrimaryButton onClick={onReset}>Thanks, that’s all</PrimaryButton>
+                  </div>
                 </div>
               )}
 
-              <div className="-mx-3 flex flex-wrap">
-                <TextButton onClick={() => (speaking ? onStopSpeech() : onSpeakText(result.say ?? shaped.headline))}>
-                  <Volume2 className="size-4" aria-hidden /> {speaking ? 'Stop reading' : 'Read aloud'}
-                </TextButton>
-                {result.kind === 'route' && steps.length > 0 && (
-                  <TextButton onClick={() => setShowSteps((v) => !v)}>
-                    {showSteps ? 'Hide the steps' : `See all ${steps.length} steps`}
-                  </TextButton>
-                )}
-                {result.confirm && !applied && <TextButton onClick={onReset}>Not now</TextButton>}
-                {result.followUp && (
-                  <TextButton onClick={() => onSubmit(result.followUp)}>{result.followLabel}</TextButton>
-                )}
-              </div>
-            </>
-          )}
+              {isResult && result && shaped && !arrived && (
+                <>
+                  <h2 className={headlineClass(shaped.headline)}>{shaped.headline}</h2>
+                  {shaped.meta && <p className="-mt-1 text-[15px] font-semibold text-ink-soft">{shaped.meta}</p>}
+                  {result.kind === 'route'
+                    ? shaped.detail && <p className="text-[16px] leading-relaxed">{shaped.detail}</p>
+                    : blocks.length > 0 && (
+                        <div className="flex flex-col gap-2 text-[16px] leading-relaxed">
+                          {blocks.map((b, i) =>
+                            b.kind === 'li' ? (
+                              <p key={i} className="flex gap-2.5">
+                                <span className="mt-[0.6em] size-1.5 shrink-0 rounded-full bg-sun" aria-hidden />
+                                <span>{b.text}</span>
+                              </p>
+                            ) : (
+                              <p key={i}>{b.text}</p>
+                            ),
+                          )}
+                        </div>
+                      )}
+
+                  {result.stats && result.stats.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {result.stats.map((s, i) => (
+                        <span key={i} className="rounded-2xl bg-map-bg px-3 py-2 text-[14px]">
+                          <b className="font-display text-[18px]">{s.n}</b> {s.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {result.kind === 'route' && steps.length > 0 && (
+                    <>
+                      <PrimaryButton onClick={onStartWalk}>Let’s go</PrimaryButton>
+                      {showSteps && (
+                        <ol className="flex flex-col">
+                          {steps.map((st, i) => (
+                            <li key={i}>
+                              <button
+                                type="button"
+                                onClick={() => onSelectStep(i)}
+                                className="grid w-full grid-cols-[24px_1fr_auto] items-start gap-3 py-2 text-left"
+                              >
+                                <span className="mt-1 flex justify-center">
+                                  <span className={clsx('size-3 rounded-full', i === 0 ? 'guide-orb' : 'bg-sun/30')} />
+                                </span>
+                                <span className="text-[15px] leading-snug">{st.text}</span>
+                                {stepDistancesAgree && st.d > 0 && (
+                                  <span className="text-[13px] text-ink-soft">{fmtM(st.d)}</span>
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </>
+                  )}
+
+                  {(result.kind === 'impact' || result.kind === 'edit') && result.confirm && !applied && (
+                    <PrimaryButton onClick={onConfirmChange}>{result.confirm}</PrimaryButton>
+                  )}
+                  {applied && result.applied && (
+                    <div className="flex items-center justify-between gap-2 rounded-2xl bg-mint-soft px-4 py-3 text-[15px] text-mint">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Check className="size-4" aria-hidden /> {result.applied}
+                      </span>
+                      <button type="button" onClick={onUndoChange} className="min-h-11 rounded-full px-3 font-bold">
+                        {result.undo ?? 'Undo'}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="-mx-3 flex flex-wrap">
+                    <TextButton
+                      onClick={() => (speaking ? onStopSpeech() : onSpeakText(result.say ?? shaped.headline))}
+                    >
+                      <Volume2 className="size-4" aria-hidden /> {speaking ? 'Stop reading' : 'Read aloud'}
+                    </TextButton>
+                    {result.kind === 'route' && steps.length > 0 && (
+                      <TextButton onClick={() => setShowSteps((v) => !v)}>
+                        {showSteps ? 'Hide the steps' : `See all ${steps.length} steps`}
+                      </TextButton>
+                    )}
+                    {result.confirm && !applied && <TextButton onClick={onReset}>Not now</TextButton>}
+                    {result.followUp && (
+                      <TextButton onClick={() => onSubmit(result.followUp)}>{result.followLabel}</TextButton>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          {!phone && <div className="p-2 pt-0">{composer(true)}</div>}
         </section>
       )}
 
       {/* Walk mode: one instruction at a time, the map follows. */}
       {isWalk && curStep && (
         <>
+          {voiceBar && (
+            <div className="absolute inset-x-3 bottom-[calc(186px+env(safe-area-inset-bottom))] z-30 mx-auto max-w-[560px]">
+              {voiceBar(false)}
+            </div>
+          )}
           <div
             className={clsx(
               'anim-spring absolute inset-x-3 top-[calc(12px+env(safe-area-inset-top))] z-30 mx-auto flex max-w-[560px] items-center gap-3 rounded-[26px] p-4',
@@ -469,7 +712,10 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
             <div className="h-2 overflow-hidden rounded-full bg-map-bg">
               <span
                 className="block h-full rounded-full transition-[width] duration-500"
-                style={{ width: `${Math.max(4, progress * 100)}%`, background: 'linear-gradient(90deg,#ffb547,#ff6b5a)' }}
+                style={{
+                  width: `${Math.max(4, progress * 100)}%`,
+                  background: 'linear-gradient(90deg,#ffb547,#ff6b5a)',
+                }}
               />
             </div>
             <div className="flex gap-2">
@@ -507,8 +753,8 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
         </>
       )}
 
-      {/* The guide bar: always in the same place, the only way in. */}
-      {!isWalk && (
+      {/* The guide bar: the only way in. On wide screens it moves into the conversation once there is one. */}
+      {!isWalk && (phone || !showPanel) && (
         <div className="absolute bottom-[calc(12px+env(safe-area-inset-bottom))] left-1/2 z-30 flex w-[min(680px,calc(100%-16px))] -translate-x-1/2 flex-col items-center gap-3">
           {isHome && (
             <>
@@ -521,7 +767,9 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
               <div
                 className={clsx(
                   'flex gap-2',
-                  phone ? '-mx-2 w-[calc(100%+16px)] overflow-x-auto px-2 pb-1 [scrollbar-width:none]' : 'flex-wrap justify-center',
+                  phone
+                    ? '-mx-2 w-[calc(100%+16px)] overflow-x-auto px-2 pb-1 [scrollbar-width:none]'
+                    : 'flex-wrap justify-center',
                 )}
               >
                 {suggestions.map((s, i) => (
@@ -539,59 +787,7 @@ export function AssistantView(props: ViewProps & { phone: boolean }) {
             </>
           )}
 
-          <div className={clsx('flex h-16 w-full items-center gap-3 rounded-full pr-2 pl-2.5', GLASS)}>
-            {isListening ? (
-              <>
-                <Orb size={40} mode="listen" />
-                <span className="font-display min-w-0 flex-1 truncate text-[19px] font-semibold">
-                  {listenText || 'Listening…'}
-                </span>
-                <button
-                  type="button"
-                  onClick={onReset}
-                  aria-label="Cancel"
-                  className="grid size-12 shrink-0 place-items-center rounded-full bg-map-bg"
-                >
-                  <X className="size-4" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={onFinishVoiceEarly}
-                  aria-label="Done speaking"
-                  className="grid size-12 shrink-0 place-items-center rounded-full bg-sun"
-                >
-                  <Check className="size-5" aria-hidden />
-                </button>
-              </>
-            ) : (
-              <>
-                <Orb size={44} mode={isWorking ? 'work' : 'rest'} />
-                <label htmlFor="assistant-ask" className="sr-only">
-                  Ask about this building
-                </label>
-                <input
-                  id="assistant-ask"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && onSubmit()}
-                  placeholder={isHome ? (phone ? 'Ask me anything' : 'Ask me anything about this building') : 'Ask a follow-up'}
-                  autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-ink-soft/80"
-                />
-                <button
-                  type="button"
-                  onClick={() => (input.trim() ? onSubmit() : onStartVoice())}
-                  aria-label={input.trim() ? 'Send' : 'Talk'}
-                  className={clsx(
-                    'grid size-12 shrink-0 place-items-center rounded-full transition-colors',
-                    input.trim() ? 'bg-ink text-white' : 'bg-map-bg text-ink',
-                  )}
-                >
-                  {input.trim() ? <ArrowUp className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
-                </button>
-              </>
-            )}
-          </div>
+          {composer(false)}
         </div>
       )}
     </div>

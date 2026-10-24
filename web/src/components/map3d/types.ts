@@ -53,6 +53,13 @@ export interface Map3DSettings {
   objectDetail: 0 | 1 | 2
 }
 
+/** One OpenStreetMap feature around the building, in scene metres (see map/surroundings.ts). */
+export interface SurroundingFeature {
+  kind: string
+  points: [number, number][]
+  levels?: number
+}
+
 /** Two rooms joined by a straight dashed line, drawn through the floors ("as the crow flies", "directly above"). */
 export interface Link3D {
   from: string
@@ -76,6 +83,8 @@ export interface Map3DEngine {
   setRoute(route: ShowRoute | null): void
   /** Light up both rooms on their own floors and join them, seen through the floors in between. */
   setLink(link: Link3D | null): void
+  /** Streets, green and neighbouring buildings on the ground around the building; null removes them. */
+  setSurroundings(features: SurroundingFeature[] | null): void
   /** What is under a container point (CSS px). Assets win over spaces. */
   pick(x: number, y: number): Pick3D
   /** Scene point + elevation (metres, real elevation is scaled internally by floorGapScale) -> container px. */

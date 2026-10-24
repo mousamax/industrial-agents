@@ -166,6 +166,16 @@ export function toolLabel(toolName: string, rawInput: unknown, index: SceneIndex
       const closed = Array.isArray(input.close) && input.close.length ? `closed ${list(input.close, index)}` : ''
       return `What if: ${[door, closed].filter(Boolean).join(', ') || 'change'}${floor}${sf}`
     }
+    case 'calendar':
+      return input.query ? `Checked the room calendar: ${input.query}` : 'Checked today’s room calendar'
+    case 'draft_building':
+      return `Drafted a building from plans: ${input.name ?? '…'}`
+    case 'review_draft':
+      return 'Checked what the plans left open'
+    case 'fix_draft':
+      return `Corrected the plan: ${input.target ?? '…'} · ${lower(input.field ?? '')} → ${input.value ?? '…'}`
+    case 'accept_guesses':
+      return Array.isArray(input.keys) && input.keys.length ? 'Kept those guesses' : 'Kept the remaining guesses'
     // ---- starter-kit tools (kept so old chats still render)
     case 'search_building': {
       const floor = typeof input.floor_level === 'number' ? ` · floor ${input.floor_level}` : ''

@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     langfuse_secret_key: str | None = None
     langfuse_base_url: str = "https://cloud.langfuse.com"
 
+    # Live voice (app/voice): only the key is required; the agent is created on first use.
+    elevenlabs_api_key: str | None = None
+    elevenlabs_agent_id: str | None = None
+    """Pin an existing agent; unset finds or creates the one named "Talk to Your Building"."""
+    elevenlabs_voice_id: str = "Xb7hH8MSUJpSbSDYk0k2"
+    """Alice: clear British voice that carries over machine noise. Any id from elevenlabs.io/app/voice-library."""
+    elevenlabs_llm: str = "claude-haiku-5-5"
+    """The voice agent's own model: only small talk and tool calls, so the fastest one wins."""
+
     app_env: str = "dev"
     dev_name: str | None = None
 

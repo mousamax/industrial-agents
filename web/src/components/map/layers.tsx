@@ -7,6 +7,7 @@ import type { GhostDoorState } from '../../store'
 import { LINE_H, labelFor, routeOnFloor, showsPoi } from './derive'
 import { At, FloorChip, Pin, PoiBadge, StartDot } from './markers'
 import { TONES, TONE_FILL, toSvg, type FloorGeo, type LowerFloor, type Pt, type SpaceGeo } from './geometry'
+import type { Surroundings } from './surroundings'
 
 const NS = 'non-scaling-stroke' as const
 
@@ -25,6 +26,34 @@ export const FloorBase = memo(function FloorBase({ geo }: { geo: FloorGeo }) {
           <path key={t} d={geo.doorD[t]} fill="none" style={{ stroke: TONE_FILL[t] }} strokeWidth={3.5}
             vectorEffect={NS} strokeLinecap="butt" />
         ) : null,
+      )}
+    </g>
+  )
+})
+
+/** OpenStreetMap under the building: green, parking, streets (widths in metres, so they scale with the map),
+ * tram tracks and neighbouring buildings. Muted so the floor plan stays the subject. */
+export const SurroundingsLayer = memo(function SurroundingsLayer({ s }: { s: Surroundings }) {
+  const { d } = s
+  const road = (path: string | undefined, width: number, color: string, casing: string) =>
+    path ? (
+      <>
+        <path d={path} fill="none" stroke={casing} strokeWidth={width + 1.2} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={path} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />
+      </>
+    ) : null
+  return (
+    <g pointerEvents="none">
+      {d.green && <path d={d.green} fill="#e2eedd" stroke="#d3e4cc" strokeWidth={0.5} vectorEffect={NS} />}
+      {d.parking && <path d={d.parking} fill="#eceaf1" />}
+      {d.water && <path d={d.water} fill="none" stroke="#bcd6ea" strokeWidth={3} />}
+      {d.path && <path d={d.path} fill="none" stroke="#ffffff" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />}
+      {road(d.service, 4, '#ffffff', '#e4e2ec')}
+      {road(d.minor, 7, '#ffffff', '#dddae6')}
+      {road(d.major, 12, '#fdf3dc', '#ead9b3')}
+      {d.tram && <path d={d.tram} fill="none" stroke="#b8b3c8" strokeWidth={0.6} strokeDasharray="2 1.5" />}
+      {d.building && (
+        <path d={d.building} fill="#e3e1ea" stroke="#d2cfdc" strokeWidth={0.75} vectorEffect={NS} strokeLinejoin="round" />
       )}
     </g>
   )

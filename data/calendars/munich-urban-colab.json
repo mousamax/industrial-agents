@@ -1,0 +1,52 @@
+{
+  "calendar": "Munich Urban Colab room calendar (demo data)",
+  "reception": "F0-EING",
+  "note": "Mock bookings for the demo. Times are clock times on the day the app runs, so they always fall on today.",
+  "events": [
+    {
+      "title": "Industrial Agents Hackathon: Talk to Your Building",
+      "room": "F3-OPEN-S",
+      "start": "00:00",
+      "end": "23:59",
+      "organizer": "UnternehmerTUM with Synera",
+      "description": "Teams build AI agents for industrial partners. Guests and visitors welcome, check in at the reception.",
+      "public": true
+    },
+    {
+      "title": "Lunch and dinner for participants",
+      "room": "F0-GAST",
+      "start": "12:00",
+      "end": "20:30",
+      "organizer": "Gastraum team",
+      "description": "Catering in the Gastraum.",
+      "public": true
+    },
+    {
+      "title": "Synera partner meeting",
+      "room": "F3-TT1",
+      "start": "14:00",
+      "end": "15:00",
+      "organizer": "Synera",
+      "description": "Internal meeting.",
+      "public": false
+    },
+    {
+      "title": "Startup office hours",
+      "room": "F1-SEM2",
+      "start": "10:00",
+      "end": "12:00",
+      "organizer": "Munich Urban Colab",
+      "description": "Founders meet mentors.",
+      "public": true
+    },
+    {
+      "title": "Laser cutter induction",
+      "room": "F0-MAKER",
+      "start": "16:00",
+      "end": "17:00",
+      "organizer": "MakerSpace",
+      "description": "Safety briefing before using the laser cutter.",
+      "public": true
+    }
+  ]
+}

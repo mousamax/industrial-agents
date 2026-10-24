@@ -62,11 +62,16 @@ export function floorShort(f: SceneFloor): string {
 
 /** Every known id mentioned anywhere in a text blob (tool outputs carry ids before `view` commands land). */
 export function idsIn(index: SceneIndex, text: string): string[] {
+  const known = (id: string) =>
+    index.spaceById.has(id) || index.assetById.has(id) || index.openingById.has(id) || index.connectorById.has(id)
   const found = new Set<string>()
   for (const m of text.matchAll(/[A-Za-z0-9_.:-]+-(?:F-?\d+-S\d+|A\d+|F-?\d+-O\d+|V\d+)/g)) {
-    const id = m[0]
-    if (index.spaceById.has(id) || index.assetById.has(id) || index.openingById.has(id) || index.connectorById.has(id))
-      found.add(id)
+    if (known(m[0])) found.add(m[0])
+  }
+  // Buildings outside the kit name things their own way (MUCL: "F3-B05", "F3-OPEN-S"): any hyphenated word
+  // that is an id in this scene counts too.
+  for (const m of text.matchAll(/[A-Za-z0-9_.:]+(?:-[A-Za-z0-9_.:]+)+/g)) {
+    if (known(m[0])) found.add(m[0])
   }
   return [...found]
 }

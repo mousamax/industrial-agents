@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tempfile
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated, Any
@@ -25,9 +26,10 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, Tool
 
 from app import observability
 from app.models import model as resolve_model
-from app.settings import ROOT
+from app.settings import ROOT, get_settings
 
 from .agent import make_agent
+from .drafting import create_draft
 from .tools import Deps, overview, report_item
 
 SCENARIOS = Path(__file__).with_name("scenarios.yaml")
@@ -157,8 +159,21 @@ def record(deps: Deps, events: list[dict]) -> list[dict]:
     return out
 
 
+def drafted(scenario: dict, root: Path) -> Deps:
+    """A Level 4 scenario's building: drafted fresh from `plans` (a glob under synera-kit/data/), the way
+    the app does after an upload, so every run starts with all the draft's questions open."""
+    plans = sorted((get_settings().synera_kit_dir / "data").glob(scenario["plans"]))
+    return Deps(create_draft(plans, name=scenario.get("name_as", "New building"), root=root).state)
+
+
 async def play(agent, scenario: dict) -> dict:
-    deps, turns = Deps.load(scenario["building"]), []
+    with tempfile.TemporaryDirectory() as tmp:
+        return await _play(agent, scenario, Path(tmp))
+
+
+async def _play(agent, scenario: dict, tmp: Path) -> dict:
+    deps = drafted(scenario, tmp) if "plans" in scenario else Deps.load(scenario["building"])
+    turns: list[dict] = []
     recorded = record(deps, scenario.get("setup", []))
     chats: dict[str, tuple[Deps, list]] = {"": (deps, [])}  # one chat per colleague, one shared building
     with observability.entrypoint("building_guide", kind="eval", tags=["synera-scenario", scenario["name"]]):

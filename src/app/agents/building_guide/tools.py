@@ -643,7 +643,8 @@ def route(
         destination: Where they go (room, item name, "outside").
         via: Stops to visit in order on the way, e.g. a room to pick something up from.
         step_free: No stairs or steps (wheelchair, pram, trolley, crutches, "no stairs"). Lifts are fine.
-        min_width_m: Every door passed must be at least this wide (moving a wide load).
+        min_width_m: Every door passed must be at least this wide (moving a wide load; a forklift needs
+            3 m and goes step-free, unless the person gives its width).
     """
     b = ctx.deps.building
     stops = [_space_id(b, p) for p in [start, *(via or []), destination]]
@@ -1105,102 +1106,6 @@ def undo_last_change(ctx: RunContext[Deps]) -> str:
     )
 
 
-def load_floor_plans(ctx: RunContext[Deps], plans: list[str], name: str, confirmed: bool = False) -> str:
-    """Set up a new building from its floor plans (Level 4: "here are the plans, learn the building").
-    First call drafts it and shows what was understood (floors, rooms per floor, doors, stairs and lifts,
-    and every guess to check) without switching; after the person says yes, call again with
-    confirmed=true and every later question is about the new building.
-
-    Args:
-        plans: Paths to the floor plans, one per floor: floor_<level>.svg or .png.
-        name: What people call the building.
-        confirmed: True only after the person agreed to switch to this draft.
-    """
-    from app.building.build import draft_from_plans, validate
-    from app.building.model import parse_building
-
-    d = ctx.deps
-    key = ("load_floor_plans", tuple(str(Path(p).expanduser().resolve()) for p in plans), name)
-    if confirmed:
-        pending = d.pending or {}
-        if pending.get("edit") != key:
-            raise ModelRetry("Draft these plans first (confirmed=false), show the person, and get their yes.")
-        if pending["run_id"] == ctx.run_id:
-            raise ModelRetry("The person hasn't answered yet: ask them, and switch after they say yes.")
-        b = pending["building"]
-        d.state, d.pending, d.here = BuildingState(b), None, None
-        return _json(pending["summary"] | {"status": "done: every question is now about " + b.name})
-
-    if not plans:
-        raise ModelRetry("Pass the floor plan files, one per floor: floor_<level>.svg or .png.")
-    paths = [Path(p).expanduser() for p in plans]
-    missing = [str(p) for p in paths if not p.is_file()]
-    if missing:
-        raise ModelRetry(
-            f"No such file: {', '.join(missing)}. Ask the person for the paths of the floor plans."
-        )
-    try:
-        raw = draft_from_plans(paths, name=name)
-        b = parse_building(raw)
-    except Exception as e:  # unreadable or unsupported plan: let the agent ask for better input
-        raise ModelRetry(
-            f"Couldn't read these plans ({type(e).__name__}: {e}). Plans must be one file per floor, "
-            "named floor_<level>.svg or floor_<level>.png, drawn like the kit's plans."
-        ) from None
-    issues = validate(raw)
-    guesses = Counter((g["field"], g["source"]) for g in raw.get("guesses", []))
-    unsure = sorted(
-        (g for g in raw.get("guesses", []) if g.get("confidence") is not None and g["confidence"] < 0.6),
-        key=lambda g: g["confidence"],
-    )
-    summary = {
-        "building": b.name,
-        "id": b.id,
-        "floors": [
-            {
-                "level": f.level,
-                "name": f.name,
-                "spaces": _kinds(b, f.id),
-                "doors": sum(1 for o in b.openings.values() if o.floor_id == f.id),
-            }
-            for f in b.floors_by_level()
-        ],
-        "entrances": len(b.openings_of(OUTSIDE)),
-        "stairs_and_lifts": [
-            {"kind": k.kind, "floors": [b.floors[f].level for f, _ in k.stops], "guessed": k.synthetic}
-            for k in b.connectors.values()
-        ],
-        "items": len(b.assets),
-    }
-    preview = (
-        summary
-        | {
-            "guesses": [{"field": f, "source": s, "count": n} for (f, s), n in guesses.most_common()],
-            "least_sure": [
-                {
-                    "what": _label(b, g["element_id"]) if g["element_id"] in b.spaces else g["element_id"],
-                    "field": g["field"],
-                    "guess": g["value"],
-                    "confidence": round(g["confidence"], 2),
-                }
-                for g in unsure[:5]
-            ],  # fmt: skip
-            "issues": [f"{i.severity}: {i.message}" for i in issues[:8]]
-            + ([f"... {len(issues) - 8} more"] if len(issues) > 8 else []),
-        }
-    )
-    d.pending = {"edit": key, "run_id": ctx.run_id, "building": b, "summary": summary}
-    return _json(
-        preview
-        | {
-            "status": "proposed: still on " + d.building.name + ", nothing switched yet",
-            "next": "Say briefly what you understood (floors, rooms, stairs/lifts) and which guesses to check, "
-            "then ask the person to confirm. Only after they say yes, call again with the same arguments and "
-            "confirmed=true.",
-        }
-    )
-
-
 TOOLS = [
     find,
     room_details,
@@ -1219,5 +1124,4 @@ TOOLS = [
     item_history,
     building_changes,
     undo_last_change,
-    load_floor_plans,
 ]

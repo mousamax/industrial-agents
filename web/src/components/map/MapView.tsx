@@ -42,7 +42,9 @@ import {
   RouteMarkers,
   SelectedOutline,
   SelectedPin,
+  SurroundingsLayer,
 } from './layers'
+import { useSurroundings } from './surroundings'
 import { MapControls } from './MapControls'
 import { At, StartDot } from './markers'
 import { Overlay3D } from './Overlay3D'
@@ -54,6 +56,8 @@ const MAX_K = 160 // px per metre
 const ASSET_K = [12, 28] // zoom (px/m) at which machines/equipment, then furniture/fixtures appear
 const TAP_SLOP = 7
 const ANIM_MS = 450
+const MIN_K_OF_FIT = 0.5 // zoom out to half the whole-building fit...
+const MIN_K_OF_FIT_SURROUNDED = 0.15 // ...or further when there is a neighbourhood to see
 
 // ---- 3D ----
 const TILT_DEG_PER_PX = 0.3 // two-finger vertical swipe / right-drag: 100 px = 30 degrees
@@ -138,6 +142,9 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   const ghostDoor = useApp((s) => s.ghostDoor)
   const walkMarker = useApp((s) => s.walkMarker)
   const mapInsets = useApp((s) => s.mapInsets)
+  const surroundings = useSurroundings(scene?.id)
+  const surroundingsRef = useRef(surroundings)
+  surroundingsRef.current = surroundings
   const view3d = useApp((s) => s.view3d)
   const focus = useApp((s) => s.focus)
   const select = useApp((s) => s.select)
@@ -247,8 +254,11 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     const b = buildingBBox.current
     if (!b || !size.current.w) return
     const fit = fitCamera(b, size.current.w, size.current.h, insets(), MAX_K)
-    limits.current = { minK: fit.k * 0.5, maxK: Math.max(MAX_K, fit.k * 2, settingsRef.current.objectsZoomK * 1.5) }
+    const minOfFit = surroundingsRef.current ? MIN_K_OF_FIT_SURROUNDED : MIN_K_OF_FIT
+    limits.current = { minK: fit.k * minOfFit, maxK: Math.max(MAX_K, fit.k * 2, settingsRef.current.objectsZoomK * 1.5) }
   }, [insets])
+
+  useEffect(() => updateLimits(), [surroundings, updateLimits]) // surroundings arrive after the scene
 
   /** Pan only (k unchanged): keep at least a sliver of the current floor on screen. */
   const clampPan = useCallback((c: Camera): Camera => {
@@ -761,6 +771,10 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   }, [ready, index])
 
   useEffect(() => {
+    if (ready) engine.current?.setSurroundings(surroundings?.features ?? null)
+  }, [ready, surroundings])
+
+  useEffect(() => {
     if (!ready || !floorId) return
     engine.current?.setFloor(floorId)
     apply() // re-targets the view and the overlay at the new floor's elevation
@@ -1133,6 +1147,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
         <svg ref={svgRef} className="absolute inset-0 h-full w-full" style={fade(!is3D)}>
           {geo && index && (
             <g ref={worldRef}>
+              {surroundings && <SurroundingsLayer s={surroundings} />}
               <LowerFloors floors={lower} />
               <FloorBase geo={geo} />
               <Footprints geo={geo} visible={assetLevel > 0} />
@@ -1169,6 +1184,11 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
             link={view3d?.link ?? null} />
         )}
       </div>
+      {surroundings && (
+        <div className="pointer-events-none absolute bottom-1 left-2 text-[10px] text-ink-soft/80">
+          {surroundings.attribution}
+        </div>
+      )}
       {geo && !hideControls && (
         <MapControls
           onFit={() => fitFloor(true)}

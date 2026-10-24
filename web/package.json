@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.156",
+    "@elevenlabs/react": "^1.19.1",
     "@tailwindcss/vite": "^4.3.3",
     "ai": "^7.0.152",
     "clsx": "^2.1.1",

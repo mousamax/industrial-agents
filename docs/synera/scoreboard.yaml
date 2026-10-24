@@ -64,20 +64,21 @@ rows:
   part: Does it work
   what: Buildings drafted from SVG floor plans match the truth (Level 4)
   owners: [B]
-  stake: 4
+  stake: 5
   pytest: [test_drafted_, test_draft_]
 - id: level4-from-images
   part: Does it work
   what: Buildings drafted from plan images (PNG, e.g. floor_<level>_plain.png) match the truth (Level 4)
   owners: [B]
-  stake: 4
+  stake: 5
   pytest: [test_png_]
-- id: level4-by-chat
+- id: level4-conversation
   part: Does it work
-  what: 'Level 4 "by conversation": the agent''s load_floor_plans tool drafts a building from SVG/PNG plans, shows what it understood, switches after a yes, and every tool works on it'
-  owners: [B, C]
-  stake: 2
-  pytest: [test_chat_build_]
+  what: "Level 4 by conversation: upload floor plans, get a building in seconds, and settle what the plans don't say by talking (grouped questions, fixes, forklift doors, storey heights)"
+  owners: [C, B]
+  stake: 0
+  pytest: [test_drafting_]
+  scenarios: [draft-]
 - id: level3-multibuilding
   part: Does it work
   what: Several buildings joined by walkways, routed as one site (Level 3; site.json, demo site in evals/datasets/sites)
@@ -103,24 +104,31 @@ rows:
   what: Voice in and out in the app
   owners: [D]
   stake: 5
-  manual: 0.0
-  note: not started
+  manual: 0.8
+  note: "in: mic button, Web Speech API (Chrome, Edge, Safari); out: Read aloud + spoken answers on request. Gap: hands-full-voice scenario"
 - id: ui-shows-it
   part: Interaction
   what: The app draws routes and highlights what the agent understood, on the floor plan
   owners: [D]
   stake: 5
-  manual: 0.0
-  note: not started
+  manual: 1.0
+  note: "checked in the browser 2026-10-25: routes, highlights, the right floor and 3D on factory, campus, MUCL"
 
 # ---- Creativity (10) and Submission demo (10) -----------------------------------------------------------
 - id: level5-addin
   part: Creativity
   what: 'Level 5 "live building": things move and deliveries arrive ("this is now here" in chat, or a barcode/RFID scan), every colleague and the map see it at once, and time questions work (delivered yesterday, where was it, arriving Monday)'
   owners: [A, B, C, D]
-  stake: 10
+  stake: 0
   pytest: [test_live_]
   scenarios: [live-]
+- id: room-calendar
+  part: Creativity
+  what: "Room calendar add-in: rooms are calendar resources (as in Google or Outlook), so a guest asking for an event (\"where is the hackathon?\") is guided to the room it's booked in today (demo bookings in data/calendars/)"
+  owners: [C]
+  stake: 10
+  pytest: [test_calendar_]
+  scenarios: [calendar-]
 - id: demo-video
   part: Submission demo
   what: Demo video and short technical explanation
