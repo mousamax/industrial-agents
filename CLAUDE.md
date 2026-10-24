@@ -19,8 +19,10 @@ hard-code anything to a building or question.
 - `src/app/agents/building_guide/`: baseline agent on that kit. `BENCHMARK.md`: the official run command.
 - `src/app/building/`: the domain core (model, geometry, routing, state, queries, build, view) as typed
   interfaces. Four people build behind them in parallel: **roles, file ownership and rules are in
-  `docs/synera/TEAM_PLAN.md`.** Ask which role the user has; only edit files that role owns; never change a
-  signature in `src/app/building/` without the user agreeing to announce it to the team.
+  `docs/synera/TEAM_PLAN.md`.** Owners: A graph & state = Magnus, B geometry & build = Vadim, C agent
+  harness = Mousa, D product & story = Maximilian. Ask which role the user has; only edit files that role
+  owns; optimize for that role's metric in TEAM_PLAN; never change a signature in `src/app/building/`
+  without the user agreeing to announce it to the team.
 - Golden scoreboard: `uv run pytest tests/building -q -rs` checks each interface against Synera's answers
   (unimplemented stubs are skipped). Make the relevant tests pass; never weaken them.
 

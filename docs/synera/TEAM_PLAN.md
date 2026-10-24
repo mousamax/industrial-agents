@@ -33,21 +33,42 @@ jobs we test separately:
 
 ## Roles
 
-Pick names in the first sync; suggested fits in brackets.
+Agreed Sat 24 Oct.
 
-| Role | Owns (only they edit) | Points it drives |
-|---|---|---|
-| **A · Graph & state** [CS or maths] | `src/app/building/routing.py`, `state.py`, `queries.py` | errand, wide delivery, what-if door (41 of 145 test questions), every route in the Sunday benchmark, Levels 2–3, EDIT/REACT |
-| **B · Geometry & build** [maths or physics] | `src/app/building/geometry.py`, `build.py` | areas, shared walls, stacking, 3D distance (104 of 145 test questions), Level 4 |
-| **C · Agent harness & benchmark** [Mousa] | `src/app/agents/building_guide/`, `src/app/api/`, `BENCHMARK.md`, evals, `model.py`, `view.py` | turns all of the above into scored answers (a wrong tool call scores 0), Interaction 25 |
-| **D · Product & story** [physics/aerospace or Vadim] | `web/`, `docs/synera/pitch/` | Interaction (voice, UX), Creativity 10, Submission demo 10, the 3-minute pitch |
+| Role | Owner | Owns (only they edit) | Points it drives |
+|---|---|---|---|
+| **A · Graph & state** | **Magnus** | `src/app/building/routing.py`, `state.py`, `queries.py` | errand, wide delivery, what-if door (41 of 145 test questions), every route in the Sunday benchmark, Levels 2–3, EDIT/REACT |
+| **B · Geometry & build** | **Vadim** | `src/app/building/geometry.py`, `build.py` | areas, shared walls, stacking, 3D distance (104 of 145 test questions), Level 4 |
+| **C · Agent harness & benchmark** | **Mousa** | `src/app/agents/building_guide/`, `src/app/api/`, `BENCHMARK.md`, evals, `model.py`, `view.py`, `uv.lock` | turns all of the above into scored answers (a wrong tool call scores 0), Interaction 25 |
+| **D · Product & story** | **Maximilian** | `web/`, `docs/synera/pitch/` | Interaction (voice, UX), Creativity 10, Submission demo 10, the 3-minute pitch |
+
+Shared files (`CLAUDE.md`, this plan, `src/app/building/__init__.py`, `tests/`): small edits are fine, say so
+in the chat. Each owner adds tests for their own interfaces.
+
+## What each of us optimizes for
+
+The scoring (`README.md`): **55** automatic benchmark, **25** interaction, **10** creativity, **10** submission
+demo. Then the top four pitch on stage. One metric per person, so trade-offs are easy: when in doubt, do what
+moves your number.
+
+| Owner | Optimize for | Measured by | Don't spend time on |
+|---|---|---|---|
+| **Magnus** (A) | **Exact routes and graph answers on unseen buildings.** The Sunday building is mostly routes; one wrong edge cost or a missing constraint fails every question on it | `GOLDEN_SPLIT=train GOLDEN_SAMPLE=all uv run pytest tests/building -k "route or graph"` at 100%, then dev | Clever algorithms: Dijkstra on a few hundred nodes is instant. Port the kit's model exactly, then constraints, then state |
+| **Vadim** (B) | **Geometry accuracy across all four sources**, because geometry is 104 of 145 test questions (72% of the automatic points). OSM overlaps and Swiss duplicate names are where points leak | `GOLDEN_SAMPLE=all uv run pytest tests/building -k geometry` on train and dev, broken down by source | Level 4 (`build.py`) before geometry is green, and before Synera tells us how it is checked |
+| **Mousa** (C) | **End-to-end score: question text → right tool and arguments → correctly formatted `Answer:` line**, plus behaviour in the scripted tricky-user conversation. A correct computation behind a wrong tool call scores 0 | Official evaluator on dev (`BENCHMARK.md`), tool-choice accuracy against the train `inputs`, interaction cases in `ia eval building_guide` | Reimplementing A's or B's maths in tools: call the interfaces and report gaps to the owner |
+| **Maximilian** (D) | **What the jury sees and hears:** the scripted conversation (25), Level 5 add-ins (10), the demo video and technical explanation (10), and the 3-minute pitch if we make the final | One demo that runs end to end on a building nobody prepared, by voice, with the route drawn; a demo video recorded before Sun 11:00 | Visual polish nobody sees in 3 minutes; features the demo story doesn't use |
+
+How the numbers connect: Magnus and Vadim make each answer *correct*, Mousa makes it *scored* (asked
+right, called right, formatted right), Maximilian makes it *seen*. The stage only happens if the
+submission ranks top four, so the 55 come first; but the interaction and demo points (45) are the
+cheapest left once the benchmark is above ~90%.
 
 Why this split: the 55 automatic points need A and B exact, but they only count if C's agent calls them
 correctly and formats the answer; D is the other 45 points and the stage. Nobody waits for anybody: A and B
 test against golden answers, C tests tool choice against the question `inputs`, D builds on the scene
 endpoint that already works.
 
-### A · Graph & state
+### A · Graph & state (Magnus)
 - **Start:** port `synera-kit/starter_agent/building_map.py` `graph()` + Dijkstra into `RouteGraph` (it
   already reproduces all 369 warm-up answers), add `min_width_m` and `closed`. Then `reachable`,
   `distances_from`, `queries.*`, then `BuildingState`.
@@ -57,7 +78,7 @@ endpoint that already works.
   Until they land, use a placeholder locally and don't commit it into B's file.
 - **Then:** multi-building walkways (Level 3), the forklift/logistics add-in if we pick it.
 
-### B · Geometry & build
+### B · Geometry & build (Vadim)
 - **Start:** `rooms_by_area` and `total_area` (a few lines each, 54 test questions), `centroid_3d` /
   `straight_line_3d`, then `stacked`, then `shared_walls` (tolerances; OSM overlaps). `shared_wall_midpoint`
   early, because A needs it.
@@ -74,7 +95,7 @@ endpoint that already works.
 - **Then:** the Sunday runner in whatever format Synera announces, the test-set CSV, prompt caching and
   cost, conversation memory per chat (one `BuildingState` per conversation).
 
-### D · Product & story
+### D · Product & story (Maximilian)
 - **Start:** a web app (Lovable or Vite + React + three.js, your call) in `web/`: building picker
   (`GET /buildings`), floors drawn from `GET /buildings/{id}/scene`, a chat panel on
   `POST /buildings/{id}/chat` (Vercel AI SDK `useChat`), and route animation from `ShowRoute` view commands.
@@ -133,7 +154,7 @@ Every tool returns compact JSON for the model plus `view: [...]` for the UI, nev
 
 | When | Checkpoint (10 min standup, everyone) |
 |---|---|
-| Sat now | Read this, pick roles, ask Synera the open questions (`README.md`) |
+| Sat now | Read this (roles agreed), ask Synera the open questions (`README.md`) |
 | Sat 18:00 | A: routes green. B: areas + 3D green. C: tools on interfaces, tool-choice eval running. D: floors drawn, chat connected |
 | Sat 22:00 | All golden kinds ≥ 90% on dev. First full dev run through the agent. Routes animated in the UI. Voice prototype |
 | Sun 08:00 | Golden green on train. First test-set CSV. Level 4 prototype. Demo script written |
