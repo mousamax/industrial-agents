@@ -73,7 +73,7 @@ function dist(a: XY, b: XY): number {
 }
 
 /** The door between two neighbouring spaces on one floor, closest to the straight line between anchors. */
-function doorBetween(index: SceneIndex, a: string, b: string): XY | null {
+export function doorBetween(index: SceneIndex, a: string, b: string): XY | null {
   const sa = index.spaceById.get(a)
   const sb = index.spaceById.get(b)
   if (!sa || !sb || sa.floor_id !== sb.floor_id) return null
@@ -91,42 +91,120 @@ function doorBetween(index: SceneIndex, a: string, b: string): XY | null {
   return best
 }
 
+function bboxOfPoly(pts: readonly (readonly [number, number])[]) {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const [x, y] of pts) {
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+    if (x > maxX) maxX = x
+    if (y > maxY) maxY = y
+  }
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY }
+}
+
+/** True when a space is a rectangular pass-through corridor whose centre line routes should follow. */
+function isCorridorLike(s: { polygon: readonly (readonly [number, number])[]; type: string }): boolean {
+  if (s.polygon.length !== 4 || s.type === 'room') return false
+  const bb = bboxOfPoly(s.polygon)
+  return Math.max(bb.w, bb.h) / Math.max(0.1, Math.min(bb.w, bb.h)) >= 2.5
+}
+
+function onCorridorAxis(s: { polygon: readonly (readonly [number, number])[] }, p: XY): XY {
+  const bb = bboxOfPoly(s.polygon)
+  if (bb.w >= bb.h) {
+    return [Math.min(bb.maxX - 0.6, Math.max(bb.minX + 0.6, p[0])), (bb.minY + bb.maxY) / 2]
+  }
+  return [(bb.minX + bb.maxX) / 2, Math.min(bb.maxY - 0.6, Math.max(bb.minY + 0.6, p[1]))]
+}
+
 /**
  * Per-floor polylines through the nodes in order: space anchors, plus door positions (`door:<id>` nodes,
- * or the shared door looked up between consecutive spaces). A new segment starts when the floor changes.
+ * or the shared door looked up between consecutive spaces). Rectangular pass-through corridors follow their
+ * centre line (door -> axis -> axis -> door). A new segment starts when the floor changes.
  */
 export function segmentsFor(nodes: string[], index: SceneIndex): RouteSegment[] {
+  // Expand bare space-to-space transitions with their connecting door position when on the same floor.
+  const expanded: { kind: 'space' | 'door'; id: string; floorId: string; pos: XY }[] = []
+  let prevSpaceId: string | null = null
+  let prevWasDoor = false
+  for (const node of nodes) {
+    if (node.startsWith('door:')) {
+      const o = index.openingById.get(node.slice(5))
+      if (o) expanded.push({ kind: 'door', id: o.id, floorId: o.floor_id, pos: o.position as XY })
+      prevWasDoor = true
+      continue
+    }
+    const space = index.spaceById.get(node)
+    if (!space) continue
+    if (prevSpaceId && !prevWasDoor) {
+      const doorPos = doorBetween(index, prevSpaceId, node)
+      if (doorPos) expanded.push({ kind: 'door', id: `${prevSpaceId}-${node}`, floorId: space.floor_id, pos: doorPos })
+    }
+    expanded.push({ kind: 'space', id: space.id, floorId: space.floor_id, pos: space.anchor as XY })
+    prevSpaceId = node
+    prevWasDoor = false
+  }
+
   const segments: RouteSegment[] = []
   const push = (floor: string, p: XY) => {
     const last = segments[segments.length - 1]
     if (!last || last.floor_id !== floor) segments.push({ floor_id: floor, points: [p] })
     else last.points.push(p)
   }
-  let prevSpace: string | null = null
-  let prevWasDoor = false
-  for (const node of nodes) {
-    if (node.startsWith('door:')) {
-      const o = index.openingById.get(node.slice(5))
-      if (o) push(o.floor_id, o.position as XY)
-      prevWasDoor = true
+
+  for (let i = 0; i < expanded.length; i++) {
+    const item = expanded[i]
+    if (item.kind === 'door') {
+      push(item.floorId, item.pos)
       continue
     }
-    const space = index.spaceById.get(node)
-    if (!space) continue // "outside" and unknown nodes
-    if (prevSpace && !prevWasDoor) {
-      const door = doorBetween(index, prevSpace, node)
-      if (door) push(space.floor_id, door)
+    const space = index.spaceById.get(item.id)
+    const prev = expanded[i - 1]
+    const next = expanded[i + 1]
+    const viaConn = (prev && prev.kind === 'space') || (next && next.kind === 'space')
+    if (!space || i === 0 || i === expanded.length - 1 || viaConn) {
+      push(item.floorId, item.pos)
+      continue
     }
-    push(space.floor_id, space.anchor as XY)
-    prevSpace = node
-    prevWasDoor = false
+    if (isCorridorLike(space) && prev?.kind === 'door' && next?.kind === 'door') {
+      push(item.floorId, onCorridorAxis(space, prev.pos))
+      push(item.floorId, onCorridorAxis(space, next.pos))
+    } else {
+      push(item.floorId, item.pos)
+    }
   }
   return segments
+}
+
+/** building_guide `route` output: {reachable, total_length_m, legs: [{length_m, steps, space_path, element_path}]}. */
+function routeFromLegs(data: Rec, index: SceneIndex): ShowRoute | null {
+  if (!Array.isArray(data.legs) || !data.legs.length) return null
+  const legs = data.legs.filter(isRec)
+  const nodes = legs.flatMap((l, i) => {
+    const p = pathIds(l.space_path) ?? []
+    return i ? p.slice(1) : p // each leg starts where the previous one ended
+  })
+  const spaceIds = nodes.filter((id) => index.spaceById.has(id))
+  if (spaceIds.length < 2) return null
+  const length =
+    typeof data.total_length_m === 'number'
+      ? data.total_length_m
+      : legs.reduce((sum, l) => sum + (typeof l.length_m === 'number' ? l.length_m : 0), 0)
+  // The tool's steps are a skeleton for the agent; drop the door-by-door lines a walker doesn't need.
+  const steps = legs
+    .flatMap((l) => (Array.isArray(l.steps) ? l.steps : []))
+    .filter((s): s is string => typeof s === 'string' && !/^through the /i.test(s))
+  return { kind: 'route', segments: segmentsFor(nodes, index), length_m: length, space_ids: spaceIds, steps }
 }
 
 /** A ShowRoute built from an output that looks like a route (ordered space path, length in metres). */
 export function routeFromData(data: unknown, index: SceneIndex | null, depth = 0): ShowRoute | null {
   if (!index || !isRec(data) || depth > 2) return null
+  const fromLegs = routeFromLegs(data, index)
+  if (fromLegs) return fromLegs
   for (const nested of ['route', 'result']) {
     if (isRec(data[nested])) {
       const inner = routeFromData(data[nested], index, depth + 1)
@@ -205,6 +283,12 @@ export function toolEffect(
     effect.error = data.error
     if (saysNoRoute(data.error)) effect.unreachable = data.error
   }
+  // building_guide `route`: {reachable: false, stops, note} is a normal result, not an error.
+  if (isRec(data) && data.reachable === false) {
+    const stops = Array.isArray(data.stops) ? data.stops.filter((s) => typeof s === 'string').join(' → ') : ''
+    const note = typeof data.note === 'string' ? data.note : 'No route under these constraints.'
+    effect.unreachable = stops ? `${note} (${stops})` : note
+  }
 
   effect.views = viewCommands(data)
   if (effect.views.length) {
@@ -212,7 +296,9 @@ export function toolEffect(
   } else if (!effect.error && index) {
     effect.route = routeFromData(data, index)
     if (!effect.route && !NO_HIGHLIGHT_TOOLS.test(toolName)) {
-      const ids = (isRec(data) && resultIds(data, index)) || idsIn(index, text)
+      // building_guide tools put the ids to light up in `highlight`.
+      const explicit = isRec(data) ? pathIds(data.highlight)?.filter((id) => idsIn(index, id).length > 0) : null
+      const ids = (explicit?.length ? explicit : null) ?? ((isRec(data) && resultIds(data, index)) || idsIn(index, text))
       effect.highlight = ids.slice(0, MAX_HIGHLIGHT)
     }
   }
@@ -220,8 +306,50 @@ export function toolEffect(
   if (effect.route) effect.summary = `${Math.round(effect.route.length_m * 10) / 10} m`
   else if (effect.unreachable) effect.summary = 'no route'
   else if (effect.error) effect.summary = 'no match'
-  else if (isRec(data) && typeof data.matches === 'number') effect.summary = `${data.matches} found`
+  else if (isRec(data)) effect.summary = summaryOf(data)
   return effect
+}
+
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+const round1 = (n: number) => Math.round(n * 10) / 10
+
+/** Chip summary for building_guide results (find, nearest, reachable_rooms, what_if, set_closed...). */
+function summaryOf(data: Rec): string | null {
+  if (num(data.matches) !== null) return `${data.matches} found`
+  if (num(data.rooms_total) !== null || num(data.items_total) !== null) {
+    const rt = num(data.rooms_total) ?? 0
+    const it = num(data.items_total) ?? 0
+    if (it > 0 && rt > 0) return `${it} items · ${rt} rooms`
+    return `${rt + it} found`
+  }
+  if (Array.isArray(data.nearest)) {
+    const first = data.nearest.find(isRec)
+    if (first && num(first.walk_m) !== null) {
+      const rm = typeof first.room === 'string' ? first.room.replace(/\s*\([^)]*\)\s*$/, '') : null
+      return rm ? `${rm} · ${round1(first.walk_m as number)} m` : `${round1(first.walk_m as number)} m`
+    }
+    return 'none reachable'
+  }
+  if (num(data.reachable_count) !== null) return `${data.reachable_count} reachable`
+  const shorterKey = Object.keys(data).find((k) => k.startsWith('shorter_by_more_than'))
+  const longerKey = Object.keys(data).find((k) => k.startsWith('longer_by_more_than'))
+  if (shorterKey) {
+    const sh = num(data[shorterKey]) ?? 0
+    const lg = longerKey ? (num(data[longerKey]) ?? 0) : 0
+    const cut = num(data.no_longer_reachable) ?? 0
+    if (cut || lg) return `${cut} cut off · ${lg} longer`
+    return `${sh} shorter`
+  }
+  if (typeof data.status === 'string') {
+    if (data.status.startsWith('proposed')) return 'preview only'
+    if (data.status === 'done') return 'applied'
+  }
+  if (typeof data.closed === 'boolean') return data.closed ? 'closed' : 'open again'
+  if (num(data.distance_m) !== null) return `${round1(data.distance_m as number)} m`
+  if (num(data.total_area_m2) !== null) return `${round1(data.total_area_m2 as number)} m²`
+  if (num(data.area_m2) !== null) return `${round1(data.area_m2 as number)} m²`
+  if (num(data.count) !== null) return `${data.count}`
+  return null
 }
 
 // ---- end of an answer: which route / highlight is the one the agent settled on ---------------------------

@@ -31,7 +31,6 @@ function PickerDialog({ onClose }: { onClose: () => void }) {
   const currentId = useApp((s) => s.buildingId)
   const loadBuilding = useApp((s) => s.loadBuilding)
   const loadBuildings = useApp((s) => s.loadBuildings)
-  const setMode = useApp((s) => s.setMode)
   const setSheet = useApp((s) => s.setSheet)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<string | null>(null)
@@ -71,8 +70,7 @@ function PickerDialog({ onClose }: { onClose: () => void }) {
 
   const pick = (id: string) => {
     onClose()
-    setMode('browse')
-    setSheet('peek')
+    if (useApp.getState().mode === 'browse') setSheet('peek')
     if (id !== currentId) void loadBuilding(id)
   }
 

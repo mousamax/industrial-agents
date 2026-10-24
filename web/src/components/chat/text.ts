@@ -2,20 +2,37 @@
 import type { SceneIndex } from '../../lib/sceneIndex'
 import { spaceLabel } from '../../lib/sceneIndex'
 
-// ---- step-free preference ------------------------------------------------------------------------------
+// ---- step-free & session memory preferences -------------------------------------------------------------
 
 /** Machine-readable suffix appended to the outgoing user text when the step-free chip is on. */
 export const STEP_FREE_SUFFIX = '\n\n(Preference: step-free routes only.)'
+const CONTEXT_PREFIX = '\n\n(Remembered context:'
 
-export function withPreferences(text: string, stepFree: boolean): string {
-  return stepFree ? text + STEP_FREE_SUFFIX : text
+export function withPreferences(text: string, stepFree: boolean, extraContext?: string[]): string {
+  const parts: string[] = []
+  if (stepFree) parts.push('step-free routes only')
+  if (extraContext?.length) parts.push(...extraContext)
+  if (!parts.length) return text
+  if (parts.length === 1 && parts[0] === 'step-free routes only') return text + STEP_FREE_SUFFIX
+  return `${text}${CONTEXT_PREFIX} ${parts.join('; ')}.)`
 }
 
 /** The text a user bubble shows, and whether the step-free preference was attached. */
 export function stripPreferences(text: string): { text: string; stepFree: boolean } {
-  const i = text.lastIndexOf(STEP_FREE_SUFFIX.trim())
-  if (i === -1) return { text, stepFree: false }
-  return { text: text.slice(0, i).trimEnd(), stepFree: true }
+  let clean = text
+  let stepFree = false
+  const ctxIdx = clean.lastIndexOf(CONTEXT_PREFIX.trim())
+  if (ctxIdx !== -1) {
+    const suffix = clean.slice(ctxIdx)
+    if (/step-free/i.test(suffix)) stepFree = true
+    clean = clean.slice(0, ctxIdx).trimEnd()
+  }
+  const i = clean.lastIndexOf(STEP_FREE_SUFFIX.trim())
+  if (i !== -1) {
+    stepFree = true
+    clean = clean.slice(0, i).trimEnd()
+  }
+  return { text: clean, stepFree }
 }
 
 // ---- "Answer: ..." line ----------------------------------------------------------------------------------
@@ -81,7 +98,7 @@ export function formatWalk(m: number): string {
   return `${Math.round(s / 60)} min`
 }
 
-// ---- tool chips ------------------------------------------------------------------------------------------
+// ---- tool chips & trace formatting -----------------------------------------------------------------------
 
 function humanizeName(name: string): string {
   const words = name.replace(/[_-]+/g, ' ').trim()
@@ -92,10 +109,64 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
+/** Format raw tool input as readable `key="val", ...` for the live tool-call trace box. */
+export function formatToolArgs(rawInput: unknown, index: SceneIndex | null): string {
+  const input = asRecord(rawInput)
+  const parts: string[] = []
+  for (const [k, v] of Object.entries(input)) {
+    if (v === undefined || v === null || v === false || (Array.isArray(v) && v.length === 0)) continue
+    if (typeof v === 'string') {
+      parts.push(`${k}="${placeName(v, index)}"`)
+    } else if (Array.isArray(v)) {
+      parts.push(`${k}=[${v.map((x) => (typeof x === 'string' ? `"${placeName(x, index)}"` : String(x))).join(', ')}]`)
+    } else {
+      parts.push(`${k}=${String(v)}`)
+    }
+  }
+  return parts.join(', ')
+}
+
 /** "Searched: 3d printer", "Route: Lobby → Kitchen 0.33 · step-free"... what the agent understood. */
+const lower = (v: unknown) => humanizeName(String(v ?? '')).toLowerCase()
+const list = (v: unknown, index: SceneIndex | null) =>
+  Array.isArray(v) ? v.map((x) => placeName(x, index)).join(', ') : ''
+
 export function toolLabel(toolName: string, rawInput: unknown, index: SceneIndex | null): string {
   const input = asRecord(rawInput)
+  const sf = input.step_free ? ' · step-free' : ''
+  const width = typeof input.min_width_m === 'number' ? ` · ≥ ${input.min_width_m} m wide` : ''
+  const floor = input.floor !== undefined && input.floor !== null ? ` · floor ${input.floor}` : ''
   switch (toolName) {
+    // ---- building_guide tools (src/app/agents/building_guide/tools.py on main)
+    case 'find':
+      return `Searched: ${input.query ?? '…'}${floor}`
+    case 'route': {
+      if (input.start === undefined && input.destination === undefined) return 'Route'
+      const via = Array.isArray(input.via) && input.via.length ? ` via ${list(input.via, index)}` : ''
+      return `Route: ${placeName(input.start, index)} → ${placeName(input.destination, index)}${via}${sf}${width}`
+    }
+    case 'nearest':
+      return `Nearest ${lower(input.item_type ?? input.room_type ?? 'place')} from ${placeName(input.start, index)}${sf}`
+    case 'room_details':
+      return `Room details: ${placeName(input.room, index)}`
+    case 'list_rooms':
+      return `Rooms${input.room_type ? `: ${lower(input.room_type)}` : ''}${floor}`
+    case 'count_items':
+      return `Counted: ${lower(input.item_type)}${floor}`
+    case 'distance_3d':
+      return `Straight line: ${placeName(input.first, index)} ↔ ${placeName(input.second, index)}`
+    case 'reachable_rooms': {
+      const closed = Array.isArray(input.closed) && input.closed.length ? ` · without ${list(input.closed, index)}` : ''
+      return `Reachable${floor} from ${placeName(input.start, index)}${sf}${width}${closed}`
+    }
+    case 'what_if': {
+      const door = Array.isArray(input.add_door_between) && input.add_door_between.length === 2
+        ? `new door ${placeName(input.add_door_between[0], index)} ↔ ${placeName(input.add_door_between[1], index)}`
+        : ''
+      const closed = Array.isArray(input.close) && input.close.length ? `closed ${list(input.close, index)}` : ''
+      return `What if: ${[door, closed].filter(Boolean).join(', ') || 'change'}${floor}${sf}`
+    }
+    // ---- starter-kit tools (kept so old chats still render)
     case 'search_building': {
       const floor = typeof input.floor_level === 'number' ? ` · floor ${input.floor_level}` : ''
       return `Searched: ${input.query ?? '…'}${floor}`
@@ -111,7 +182,7 @@ export function toolLabel(toolName: string, rawInput: unknown, index: SceneIndex
     case 'set_closed':
       return `${input.closed === false ? 'Reopened' : 'Closed'}: ${placeName(input.element, index)}`
     case 'add_door':
-      return `New door: ${placeName(input.first_space, index)} ↔ ${placeName(input.second_space, index)}`
+      return `New door: ${placeName(input.first ?? input.first_space, index)} ↔ ${placeName(input.second ?? input.second_space, index)}`
     case 'building_overview':
       return 'Checked building overview'
     case 'show_route':

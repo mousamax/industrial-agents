@@ -28,10 +28,13 @@ export function Pin({ color = 'var(--color-pin)' }: { color?: string }) {
   )
 }
 
-/** Route start: white dot with a blue ring. */
-export function StartDot({ r = 7 }: { r?: number }) {
+/** Route start / You-are-here marker: blue pulsing halo + white-bordered blue dot. */
+export function StartDot({ r = 8 }: { r?: number }) {
   return (
-    <circle r={r} fill="#fff" strokeWidth={3} style={{ stroke: 'var(--color-route-casing)' }} pointerEvents="none" />
+    <g pointerEvents="none">
+      <circle r={r * 2} fill="#1a73e8" fillOpacity={0.18} />
+      <circle r={r} fill="#1a73e8" stroke="#fff" strokeWidth={3} />
+    </g>
   )
 }
 

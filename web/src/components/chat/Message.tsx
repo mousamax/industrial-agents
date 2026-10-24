@@ -13,9 +13,9 @@ import { toolEffect } from './viewSync'
 type ToolPart = ToolUIPart | DynamicToolUIPart
 
 function toolIcon(name: string) {
-  if (name.includes('search')) return Search
-  if (name.includes('route')) return Route
-  if (name.includes('door')) return DoorOpen
+  if (name === 'find' || name.includes('search')) return Search
+  if (name.includes('route') || name === 'nearest' || name === 'reachable_rooms') return Route
+  if (name.includes('door') || name === 'what_if') return DoorOpen
   if (name.includes('close')) return Lock
   return Wrench
 }

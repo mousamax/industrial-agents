@@ -1,7 +1,8 @@
 // App state shared by map, floor picker, browse and chat. One store, small actions; components subscribe to slices.
 import { create } from 'zustand'
 import { fetchBuildings, fetchScene } from './api/client'
-import type { BuildingInfo, Scene, ShowRoute, ViewCommand } from './api/types'
+import type { BuildingInfo, Scene, ShowRoute, ViewCommand, XY } from './api/types'
+import type { MemoryChip } from './lib/buildingGraph'
 import { buildIndex, floorOf, type SceneIndex } from './lib/sceneIndex'
 
 export type Mode = 'browse' | 'chat'
@@ -12,6 +13,25 @@ export interface RouteState {
   route: ShowRoute | null
   /** Set when the agent says no route exists under the rules (no lift, closed area...). */
   unreachable: string | null
+}
+
+export interface GhostDoorState {
+  floorId: string
+  pos: XY
+  vertical: boolean
+  applied: boolean
+}
+
+export interface WalkMarkerState {
+  floorId: string
+  pos: XY
+}
+
+export interface MapInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
 }
 
 interface AppState {
@@ -29,6 +49,18 @@ interface AppState {
   highlight: { ids: string[]; label: string | null }
   routeState: RouteState
   stepFree: boolean
+  /** Closed spaces, connectors or doors (red dashed fill/stroke on map). */
+  closedIds: string[]
+  /** Rooms affected by a closure or change (amber fill/stroke on map). */
+  affectedIds: string[]
+  /** Proposed or newly added door on a shared wall. */
+  ghostDoor: GhostDoorState | null
+  /** Active user position during Walk Mode. */
+  walkMarker: WalkMarkerState | null
+  /** Custom camera fit insets for the active screen layout (Phone Result sheet, Walk mode banners, Desktop). */
+  mapInsets: MapInsets | null
+  /** Remembered user context chips ("At Main lobby 0.18", "Step-free routes", "Forklift · 3 m openings"). */
+  memory: MemoryChip[]
   /** Bumped whenever the map should fit these ids into view (selection, highlight, route). */
   focus: { ids: string[]; nonce: number }
   /** A question another panel wants the chat to send (e.g. "Directions" on a place card). */
@@ -46,6 +78,16 @@ interface AppState {
   setRoute: (route: ShowRoute | null) => void
   setUnreachable: (message: string | null) => void
   setStepFree: (on: boolean) => void
+  setMapOverlays: (o: {
+    closedIds?: string[]
+    affectedIds?: string[]
+    ghostDoor?: GhostDoorState | null
+    walkMarker?: WalkMarkerState | null
+  }) => void
+  setMapInsets: (insets: MapInsets | null) => void
+  remember: (chips: MemoryChip[]) => void
+  forgetOne: (idx: number) => void
+  forgetAll: () => void
   focusOn: (ids: string[]) => void
   clearMap: () => void
   applyView: (cmd: ViewCommand) => void
@@ -54,6 +96,18 @@ interface AppState {
 }
 
 const DEFAULT_BUILDING = 'proc-factory-dev-003'
+
+const sceneCache = new Map<string, { scene: Scene; index: SceneIndex }>()
+
+export async function getOrLoadBuildingIndex(id: string): Promise<{ scene: Scene; index: SceneIndex }> {
+  const hit = sceneCache.get(id)
+  if (hit) return hit
+  const scene = await fetchScene(id)
+  const index = buildIndex(scene)
+  const entry = { scene, index }
+  sceneCache.set(id, entry)
+  return entry
+}
 
 export const useApp = create<AppState>((set, get) => ({
   buildings: [],
@@ -64,12 +118,18 @@ export const useApp = create<AppState>((set, get) => ({
   error: null,
 
   floorId: null,
-  mode: 'browse',
+  mode: 'chat',
   sheet: 'peek',
   selection: null,
   highlight: { ids: [], label: null },
   routeState: { route: null, unreachable: null },
   stepFree: false,
+  closedIds: [],
+  affectedIds: [],
+  ghostDoor: null,
+  walkMarker: null,
+  mapInsets: null,
+  memory: [],
   focus: { ids: [], nonce: 0 },
   pendingPrompt: null,
 
@@ -82,10 +142,10 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   loadBuilding: async (id) => {
+    if (get().buildingId === id && get().scene && get().index) return
     set({ loading: true, error: null, buildingId: id })
     try {
-      const scene = await fetchScene(id)
-      const index = buildIndex(scene)
+      const { scene, index } = await getOrLoadBuildingIndex(id)
       const ground = index.floors.find((f) => f.level === 0) ?? index.floors[0]
       set({
         scene,
@@ -94,6 +154,10 @@ export const useApp = create<AppState>((set, get) => ({
         selection: null,
         highlight: { ids: [], label: null },
         routeState: { route: null, unreachable: null },
+        closedIds: [],
+        affectedIds: [],
+        ghostDoor: null,
+        walkMarker: null,
         loading: false,
       })
       const url = new URL(window.location.href)
@@ -108,7 +172,9 @@ export const useApp = create<AppState>((set, get) => ({
     const id = get().buildingId
     if (!id) return
     const scene = await fetchScene(id)
-    set({ scene, index: buildIndex(scene) })
+    const index = buildIndex(scene)
+    sceneCache.set(id, { scene, index })
+    set({ scene, index })
   },
 
   clearError: () => set({ error: null }),
@@ -128,13 +194,48 @@ export const useApp = create<AppState>((set, get) => ({
 
   setRoute: (route) => {
     // A route replaces whatever was picked before: its own end pin marks the destination.
-    set(route ? { routeState: { route, unreachable: null }, selection: null } : { routeState: { route, unreachable: null } })
+    set(
+      route
+        ? { routeState: { route, unreachable: null }, selection: null }
+        : { routeState: { route: null, unreachable: null } },
+    )
     if (route?.segments.length) set({ floorId: route.segments[0].floor_id })
     if (route) get().focusOn(route.space_ids)
   },
 
   setUnreachable: (message) => set({ routeState: { route: null, unreachable: message } }),
   setStepFree: (stepFree) => set({ stepFree }),
+
+  setMapOverlays: (o) =>
+    set((s) => ({
+      closedIds: o.closedIds !== undefined ? o.closedIds : s.closedIds,
+      affectedIds: o.affectedIds !== undefined ? o.affectedIds : s.affectedIds,
+      ghostDoor: o.ghostDoor !== undefined ? o.ghostDoor : s.ghostDoor,
+      walkMarker: o.walkMarker !== undefined ? o.walkMarker : s.walkMarker,
+    })),
+
+  setMapInsets: (mapInsets) => set({ mapInsets }),
+
+  remember: (chips) =>
+    set((s) => {
+      let next = [...s.memory]
+      let sf = s.stepFree
+      for (const m of chips) {
+        const key = m.icon === 'map-pin' ? 'map-pin' : m.text
+        next = [...next.filter((x) => (x.icon === 'map-pin' ? 'map-pin' : x.text) !== key), m]
+        if (m.stepFree) sf = true
+      }
+      return { memory: next, stepFree: sf }
+    }),
+
+  forgetOne: (idx) =>
+    set((s) => {
+      const next = s.memory.filter((_, i) => i !== idx)
+      const sf = next.some((m) => m.stepFree)
+      return { memory: next, stepFree: sf }
+    }),
+
+  forgetAll: () => set({ memory: [], stepFree: false }),
 
   focusOn: (ids) => {
     const { index, floorId } = get()
@@ -147,7 +248,15 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   clearMap: () =>
-    set({ selection: null, highlight: { ids: [], label: null }, routeState: { route: null, unreachable: null } }),
+    set({
+      selection: null,
+      highlight: { ids: [], label: null },
+      routeState: { route: null, unreachable: null },
+      closedIds: [],
+      affectedIds: [],
+      ghostDoor: null,
+      walkMarker: null,
+    }),
 
   applyView: (cmd) => {
     switch (cmd.kind) {

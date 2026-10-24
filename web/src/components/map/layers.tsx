@@ -3,9 +3,10 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ShowRoute } from '../../api/types'
 import type { SceneIndex } from '../../lib/sceneIndex'
+import type { GhostDoorState } from '../../store'
 import { LINE_H, labelFor, routeOnFloor, showsPoi } from './derive'
 import { At, FloorChip, Pin, PoiBadge, StartDot } from './markers'
-import { TONES, TONE_FILL, type FloorGeo, type LowerFloor, type Pt, type SpaceGeo } from './geometry'
+import { TONES, TONE_FILL, toSvg, type FloorGeo, type LowerFloor, type Pt, type SpaceGeo } from './geometry'
 
 const NS = 'non-scaling-stroke' as const
 
@@ -124,7 +125,7 @@ export const AssetDots = memo(function AssetDots({ geo, level }: { geo: FloorGeo
   )
 })
 
-// ---------- highlight & selection ----------
+// ---------- highlight, selection, closures, affected rooms, ghost door ----------
 
 export function HighlightFill({ geo, ids }: { geo: FloorGeo; ids: string[] }) {
   const d = useMemo(() => ids.map((id) => geo.byId.get(id)?.d ?? '').join(''), [geo, ids])
@@ -132,6 +133,71 @@ export function HighlightFill({ geo, ids }: { geo: FloorGeo; ids: string[] }) {
   return (
     <path d={d} pointerEvents="none" fillOpacity={0.16} strokeWidth={2} vectorEffect={NS} strokeLinejoin="round"
       style={{ fill: 'var(--color-accent)', stroke: 'var(--color-accent)' }} />
+  )
+}
+
+export function ClosedFill({ geo, index, closedIds }: { geo: FloorGeo; index: SceneIndex; closedIds: string[] }) {
+  const d = useMemo(() => {
+    if (!closedIds.length) return ''
+    const spaceIds = new Set<string>()
+    for (const id of closedIds) {
+      if (geo.byId.has(id)) spaceIds.add(id)
+      const c = index.connectorById.get(id)
+      if (c) {
+        for (const [fid, sid] of c.stops) {
+          if (fid === geo.floorId && geo.byId.has(sid)) spaceIds.add(sid)
+        }
+      }
+    }
+    return [...spaceIds].map((id) => geo.byId.get(id)?.d ?? '').join('')
+  }, [geo, index, closedIds])
+  if (!d) return null
+  return (
+    <g pointerEvents="none">
+      <path d={d} fill="#fce8e6" />
+      <path d={d} fill="none" stroke="#d93025" strokeWidth={2} strokeDasharray="5 3" vectorEffect={NS} strokeLinejoin="round" />
+    </g>
+  )
+}
+
+export function AffectedFill({ geo, ids }: { geo: FloorGeo; ids: string[] }) {
+  const d = useMemo(() => ids.map((id) => geo.byId.get(id)?.d ?? '').join(''), [geo, ids])
+  if (!d) return null
+  return (
+    <path d={d} pointerEvents="none" fill="#f29900" fillOpacity={0.22} stroke="#e37400" strokeWidth={1.5}
+      vectorEffect={NS} strokeLinejoin="round" />
+  )
+}
+
+export function GhostDoorLayer({ door, floorId }: { door: GhostDoorState | null; floorId: string }) {
+  if (!door || door.floorId !== floorId) return null
+  const hl = 0.6
+  const [x, y] = door.pos
+  const a = toSvg(door.vertical ? [x, y - hl] : [x - hl, y])
+  const c = toSvg(door.vertical ? [x, y + hl] : [x + hl, y])
+  const center = toSvg([x, y])
+  return (
+    <g pointerEvents="none">
+      <At p={center}>
+        <circle
+          r={16}
+          fill="#1a73e8"
+          fillOpacity={0.18}
+          style={{ animation: 'ttyb-pulse 1.6s ease-out infinite' }}
+        />
+      </At>
+      <line x1={a[0]} y1={a[1]} x2={c[0]} y2={c[1]} stroke="#fff" strokeWidth={7} vectorEffect={NS} />
+      <line
+        x1={a[0]}
+        y1={a[1]}
+        x2={c[0]}
+        y2={c[1]}
+        stroke="#1a73e8"
+        strokeWidth={3.5}
+        strokeDasharray={door.applied ? undefined : '4 3'}
+        vectorEffect={NS}
+      />
+    </g>
   )
 }
 
@@ -230,11 +296,21 @@ export function RouteLines({ route, floorId, index }: { route: ShowRoute; floorI
 }
 
 /** Route markers (screen-size overlay): start dot, floor-change chips, destination pin. */
-export function RouteMarkers({ route, floorId, index }: { route: ShowRoute; floorId: string; index: SceneIndex }) {
+export function RouteMarkers({
+  route,
+  floorId,
+  index,
+  hideStart,
+}: {
+  route: ShowRoute
+  floorId: string
+  index: SceneIndex
+  hideStart?: boolean
+}) {
   const d = useMemo(() => routeOnFloor(route, floorId, index), [route, floorId, index])
   return (
     <g>
-      {d.start && (
+      {d.start && !hideStart && (
         <At p={d.start}>
           <StartDot />
         </At>

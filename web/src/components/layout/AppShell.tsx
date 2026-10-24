@@ -1,11 +1,12 @@
-// OWNER: layout agent. Phone: full-screen map behind a draggable bottom sheet. md+: map left, sidebar right.
-// One DOM tree for both, so map and panels never remount when the breakpoint flips (rotation, resizing).
+// OWNER: layout agent.
+// Default mode ('chat') renders the Agent-First workspace (AgentPhone on <768px, AgentDesktop on md+).
+// Floor-plan mode ('browse') renders the full-screen map explorer with SearchBar, FloorPicker & BrowsePanel.
 import clsx from 'clsx'
-import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useRef, type CSSProperties } from 'react'
 import { useApp } from '../../store'
+import { AgentWorkspace } from '../agent/AgentWorkspace'
 import { BrowsePanel } from '../browse/BrowsePanel'
 import { SearchBar } from '../browse/SearchBar'
-import { ChatPanel } from '../chat/ChatPanel'
 import { FloorPicker } from '../map/FloorPicker'
 import { MapView } from '../map/MapView'
 import { BottomSheet } from './BottomSheet'
@@ -25,10 +26,9 @@ export function AppShell() {
     rootRef.current?.style.setProperty('--sheet-offset', `${px}px`)
   }, [])
 
-  // Switching to Ask while the sheet only peeks: open it so the conversation is visible.
-  useEffect(() => {
-    if (phone && mode === 'chat' && useApp.getState().sheet === 'peek') setSheet('half')
-  }, [phone, mode, setSheet])
+  if (mode === 'chat') {
+    return <AgentWorkspace phone={phone} />
+  }
 
   return (
     <div
@@ -59,30 +59,13 @@ export function AppShell() {
         header={<ModeTabs />}
         peek={<SheetSummary onOpen={() => setSheet('half')} />}
       >
-        {/* Both panels stay mounted: chat history, inputs and scroll positions survive mode switches. */}
-        <Panel active={mode === 'browse'}>
+        <div
+          role="tabpanel"
+          className="absolute inset-0 flex flex-col overflow-y-auto overscroll-contain"
+        >
           <BrowsePanel />
-        </Panel>
-        <Panel active={mode === 'chat'}>
-          <ChatPanel />
-        </Panel>
+        </div>
       </BottomSheet>
-    </div>
-  )
-}
-
-function Panel({ active, children }: { active: boolean; children: ReactNode }) {
-  return (
-    <div
-      role="tabpanel"
-      aria-hidden={!active || undefined}
-      inert={!active || undefined}
-      className={clsx(
-        'absolute inset-0 flex flex-col overflow-y-auto overscroll-contain',
-        !active && 'invisible pointer-events-none',
-      )}
-    >
-      {children}
     </div>
   )
 }

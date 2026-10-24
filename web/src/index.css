@@ -41,3 +41,8 @@ svg text { text-rendering: geometricPrecision; }
 .chip-row { --fade-l: 0px; --fade-r: 0px; mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%); }
 .chip-row[data-fade-left] { --fade-l: 28px; }
 .chip-row[data-fade-right] { --fade-r: 36px; }
+
+@keyframes ttyb-draw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
+@keyframes ttyb-pulse { 0% { transform: scale(.6); opacity: .9 } 100% { transform: scale(1.8); opacity: 0 } }
+@keyframes ttyb-spin { to { transform: rotate(360deg) } }
+@keyframes ttyb-wave { 0%, 100% { transform: scaleY(.35) } 50% { transform: scaleY(1) } }

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { ShowRoute } from '../../api/types'
 import type { SceneIndex } from '../../lib/sceneIndex'
-import { useApp } from '../../store'
+import { useApp, type GhostDoorState } from '../../store'
 import { useIsPhone } from '../layout/useViewport'
 import { DevPanel, type DevStats } from '../map3d/DevPanel'
 import { devMode, useMap3DSettings } from '../map3d/devSettings'
@@ -28,9 +28,12 @@ import {
   type Pt,
 } from './geometry'
 import {
+  AffectedFill,
   AssetDots,
+  ClosedFill,
   FloorBase,
   Footprints,
+  GhostDoorLayer,
   HighlightDots,
   HighlightFill,
   Labels,
@@ -41,6 +44,7 @@ import {
   SelectedPin,
 } from './layers'
 import { MapControls } from './MapControls'
+import { At, StartDot } from './markers'
 import { Overlay3D } from './Overlay3D'
 
 const SEARCH_BAR = 110 // floating search bar + chips row over the top of the map
@@ -73,7 +77,13 @@ const fade = (on: boolean): CSSProperties => ({
   transition: `opacity ${FADE_MS}ms ease, visibility ${FADE_MS}ms`,
 })
 
-function focusBBox(ids: string[], geo: FloorGeo, index: SceneIndex, route: ShowRoute | null): BBox | null {
+function focusBBox(
+  ids: string[],
+  geo: FloorGeo,
+  index: SceneIndex,
+  route: ShowRoute | null,
+  ghostDoor: GhostDoorState | null,
+): BBox | null {
   let b: BBox | null = null
   const pt = (p: Pt, pad: number) => padBBox(bboxOf([p])!, pad)
   for (const id of ids) {
@@ -86,18 +96,26 @@ function focusBBox(ids: string[], geo: FloorGeo, index: SceneIndex, route: ShowR
     const c = index.connectorById.get(id)
     if (c) for (const [f, sid] of c.stops) if (f === geo.floorId) b = unionBBox(b, geo.byId.get(sid)?.bbox ?? null)
   }
+  if (ghostDoor && ghostDoor.floorId === geo.floorId) {
+    b = unionBBox(b, pt(toSvg(ghostDoor.pos), 3))
+  }
   if (route && ids === route.space_ids)
     for (const seg of route.segments) if (seg.floor_id === geo.floorId) b = unionBBox(b, bboxOf(seg.points.map(toSvg)))
   return b
 }
 
-export function MapView() {
+export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   const scene = useApp((s) => s.scene)
   const index = useApp((s) => s.index)
   const floorId = useApp((s) => s.floorId)
   const selection = useApp((s) => s.selection)
   const highlight = useApp((s) => s.highlight)
   const route = useApp((s) => s.routeState.route)
+  const closedIds = useApp((s) => s.closedIds)
+  const affectedIds = useApp((s) => s.affectedIds)
+  const ghostDoor = useApp((s) => s.ghostDoor)
+  const walkMarker = useApp((s) => s.walkMarker)
+  const mapInsets = useApp((s) => s.mapInsets)
   const focus = useApp((s) => s.focus)
   const select = useApp((s) => s.select)
   const setFloor = useApp((s) => s.setFloor)
@@ -129,6 +147,8 @@ export function MapView() {
   geoRef.current = geo
   const multiRef = useRef(multiFloor)
   multiRef.current = multiFloor
+  const mapInsetsRef = useRef(mapInsets)
+  mapInsetsRef.current = mapInsets
   const buildingBBox = useRef(building)
   buildingBBox.current = building
   const settingsRef = useRef(settings)
@@ -165,6 +185,7 @@ export function MapView() {
   // ---------- camera core ----------
 
   const insets = useCallback((): Insets => {
+    if (mapInsetsRef.current) return mapInsetsRef.current
     const el = containerRef.current
     const sheet = el ? parseFloat(getComputedStyle(el).getPropertyValue('--sheet-offset')) || 0 : 0
     // A full sheet (e.g. while typing) leaves almost no map: fit as if it were at half height instead, so the
@@ -237,7 +258,7 @@ export function MapView() {
     const z = floorElev.current
     for (const it of overlayItems.current) {
       const p = e.project([it.x, -it.y], z)
-      const ok = p.visible && (!it.cull || (p.y > SEARCH_BAR * 0.7 && p.y < h && p.x > 0 && p.x < w))
+      const ok = p.visible && (!it.cull || (p.y > 40 && p.y < h && p.x > 0 && p.x < w))
       if (ok) it.el.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`
       if (ok !== it.shown) {
         it.el.style.visibility = ok ? 'visible' : 'hidden'
@@ -562,7 +583,7 @@ export function MapView() {
     updateLimits()
 
     if (newScene && !nonceChanged) return fitFloor(false)
-    if (nonceChanged && focus.ids.length) {
+    if (nonceChanged && (focus.ids.length || ghostDoor)) {
       // A tap on the map selected this: keep the zoom, only make sure the pin is not under the sheet.
       if (tapFocus.current && focus.ids.length === 1 && focus.ids[0] === tapFocus.current) {
         tapFocus.current = null
@@ -572,10 +593,10 @@ export function MapView() {
         if (pt) ensureVisible(pt)
         return
       }
-      const b = focusBBox(focus.ids, geo, index, route)
+      const b = focusBBox(focus.ids, geo, index, route, ghostDoor)
       if (b) {
         const ins = insets()
-        const pad = 28
+        const pad = 20
         const padded = { top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad }
         const { w, h } = size.current
         const maxK = Math.min(
@@ -591,6 +612,23 @@ export function MapView() {
     }
     if (newScene) fitFloor(false)
     else if (floorChanged) {
+      // If there's an active route on this floor, fit to the route segment on this floor
+      if (route) {
+        const b = focusBBox(route.space_ids, geo, index, route, ghostDoor)
+        if (b) {
+          const ins = insets()
+          const pad = 20
+          const padded = { top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad }
+          const { w, h } = size.current
+          const maxK = Math.min(
+            MAX_K,
+            Math.max(w - padded.left - padded.right, 40) / FOCUS_MIN_SPAN_M,
+            Math.max(h - padded.top - padded.bottom, 40) / FOCUS_MIN_SPAN_M,
+          )
+          set(fitCamera(b, w, h, padded, maxK), true)
+          return
+        }
+      }
       // Plain floor switch (picker, "Continue on" chip): keep centre, zoom and pitch so the floors stack in place;
       // only pan (never zoom) if the new floor would be entirely off screen.
       cam.current = clampPan(cam.current)
@@ -598,7 +636,7 @@ export function MapView() {
     }
     // `route` is read for its points only; focus is driven by the nonce.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geo, sized, focus.nonce, scene?.id])
+  }, [geo, sized, focus.nonce, scene?.id, mapInsets])
 
   // ---------- 3D engine: lazy creation, sync with the store, fallback ----------
 
@@ -1014,13 +1052,28 @@ export function MapView() {
               <LowerFloors floors={lower} />
               <FloorBase geo={geo} />
               <Footprints geo={geo} visible={assetLevel > 0} />
+              <ClosedFill geo={geo} index={index} closedIds={closedIds} />
+              <AffectedFill geo={geo} ids={affectedIds} />
               <HighlightFill geo={geo} ids={hl.spaces} />
               {sel?.space && <SelectedOutline space={sel.space} />}
               {route && <RouteLines route={route} floorId={geo.floorId} index={index} />}
+              <GhostDoorLayer door={ghostDoor} floorId={geo.floorId} />
               <Labels geo={geo} k={zoomK} skipId={sel?.space?.id ?? null} />
               <AssetDots geo={geo} level={assetLevel} />
               <HighlightDots points={hl.dots} />
-              {route && <RouteMarkers route={route} floorId={geo.floorId} index={index} />}
+              {route && (
+                <RouteMarkers
+                  route={route}
+                  floorId={geo.floorId}
+                  index={index}
+                  hideStart={!!walkMarker && walkMarker.floorId === geo.floorId}
+                />
+              )}
+              {walkMarker && walkMarker.floorId === geo.floorId && (
+                <At p={toSvg(walkMarker.pos)}>
+                  <StartDot />
+                </At>
+              )}
               {sel && <SelectedPin p={sel.p} lines={sel.lines} />}
             </g>
           )}
@@ -1031,7 +1084,7 @@ export function MapView() {
           <Overlay3D rootRef={overlayRef} geo={geo} index={index} k={zoomK} sel={sel} route={route} dots={hl.dots} />
         )}
       </div>
-      {geo && (
+      {geo && !hideControls && (
         <MapControls
           onFit={() => fitFloor(true)}
           onZoomIn={() => zoomBy(1.6, undefined, undefined, true)}
