@@ -19,12 +19,21 @@ Golden tests: tests/building/test_golden.py::test_route* (warm-up routes, step-f
 
 from __future__ import annotations
 
+import heapq
+import itertools
+import math
+from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from app.building.model import OUTSIDE, Building
 
 __all__ = ["OUTSIDE", "WALKING", "Constraints", "Route", "RouteGraph", "Tour"]
+
+DOOR_PREFIX = "door:"
+STAIRS_COST_PER_FLOOR_M = 12.0
+LIFT_WAIT_COST_M = 15.0
+LIFT_COST_PER_FLOOR_M = 6.0
 
 
 @dataclass(frozen=True)
@@ -75,21 +84,111 @@ class RouteGraph:
     def __init__(self, building: Building, constraints: Constraints = WALKING) -> None:
         self.building = building
         self.constraints = constraints
-        raise NotImplementedError("Owner A: port BuildingMap.graph() + min_width_m + closed")
+        # Multigraph as adjacency lists: node -> [(neighbour, metres, element id)]. Parallel edges are kept.
+        self._edges: dict[str, list[tuple[str, float, str]]] = defaultdict(list)
+        self._build()
+
+    def _add_edge(self, a: str, b: str, weight: float, via: str) -> None:
+        self._edges[a].append((b, weight, via))
+        self._edges[b].append((a, weight, via))
+
+    def _build(self) -> None:
+        b, c = self.building, self.constraints
+        anchors = {sid: s.anchor for sid, s in b.spaces.items() if sid not in c.closed}
+        self._nodes = set(anchors)
+        for opening in b.openings.values():
+            if opening.id in c.closed or (c.step_free and not opening.step_free):
+                continue
+            if c.min_width_m is not None and opening.width_m < c.min_width_m:
+                continue
+            door = DOOR_PREFIX + opening.id
+            for sid in opening.space_ids:
+                if sid == OUTSIDE:
+                    self._add_edge(OUTSIDE, door, 0.0, opening.id)
+                elif sid in anchors:
+                    self._add_edge(sid, door, math.dist(anchors[sid], opening.position), opening.id)
+        levels = {fid: f.level for fid, f in b.floors.items()}
+        for connector in b.connectors.values():
+            if connector.id in c.closed or (c.step_free and not connector.step_free):
+                continue
+            for (low_floor, low), (high_floor, high) in itertools.pairwise(connector.stops):
+                if low not in anchors or high not in anchors:
+                    continue
+                span = abs(levels[high_floor] - levels[low_floor])
+                cost = (
+                    LIFT_WAIT_COST_M + LIFT_COST_PER_FLOOR_M * span
+                    if connector.kind == "lift"
+                    else STAIRS_COST_PER_FLOOR_M * span
+                )
+                self._add_edge(low, high, cost, connector.id)
+
+    def _has(self, node: str) -> bool:
+        return node in self._nodes or (node == OUTSIDE and OUTSIDE in self._edges)
+
+    def _dijkstra(
+        self, sources: Iterable[str], goal: str | None = None
+    ) -> tuple[dict[str, float], dict[str, tuple[str, str]]]:
+        """Distances and predecessor (node, element) for every node reached; stops early at `goal`."""
+        dist: dict[str, float] = {}
+        prev: dict[str, tuple[str, str]] = {}
+        counter = itertools.count()
+        heap = [(0.0, next(counter), s) for s in dict.fromkeys(sources) if self._has(s)]
+        best = {s: 0.0 for _, _, s in heap}
+        heapq.heapify(heap)
+        while heap:
+            d, _, node = heapq.heappop(heap)
+            if node in dist:
+                continue
+            dist[node] = d
+            if node == goal:
+                break
+            for other, weight, via in self._edges.get(node, ()):
+                nd = d + weight
+                if other not in dist and nd < best.get(other, math.inf):
+                    best[other] = nd
+                    prev[other] = (node, via)
+                    heapq.heappush(heap, (nd, next(counter), other))
+        return dist, prev
 
     def shortest(self, start: str, goal: str) -> Route | None:
         """Shortest route between two space ids (or OUTSIDE). None if unreachable under the constraints."""
-        raise NotImplementedError
+        if not self._has(start) or not self._has(goal):
+            return None
+        dist, prev = self._dijkstra([start], goal)
+        if goal not in dist:
+            return None
+        nodes, elements = [goal], []
+        while nodes[-1] != start:
+            node, via = prev[nodes[-1]]
+            nodes.append(node)
+            elements.append(via)
+        nodes.reverse()
+        elements.reverse()
+        return Route(
+            from_space_id=start,
+            to_space_id=goal,
+            length_m=round(dist[goal], 2),
+            space_path=[n for n in nodes if not n.startswith(DOOR_PREFIX)],
+            element_path=elements,
+            node_path=nodes,
+        )
 
     def tour(self, stops: list[str]) -> Tour | None:
         """Visit stops in the given order: the sum of shortest legs. None if any leg is unreachable."""
-        raise NotImplementedError
+        legs = []
+        for a, b in itertools.pairwise(stops):
+            leg = self.shortest(a, b)
+            if leg is None:
+                return None
+            legs.append(leg)
+        return Tour(stops=list(stops), length_m=round(sum(leg.length_m for leg in legs), 2), legs=legs)
 
     def distances_from(self, sources: Iterable[str]) -> dict[str, float]:
         """Multi-source Dijkstra: shortest distance from the nearest source to every reachable space.
         `distances_from([OUTSIDE])` = walk to the nearest entrance (what_if_door)."""
-        raise NotImplementedError
+        dist, _ = self._dijkstra(sources)
+        return {n: d for n, d in dist.items() if not n.startswith(DOOR_PREFIX)}
 
     def reachable(self, start: str) -> set[str]:
         """Space ids reachable from `start` under the constraints (wide_delivery, step_free counts)."""
-        raise NotImplementedError
+        return {n for n in self.distances_from([start]) if n != OUTSIDE}
