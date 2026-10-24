@@ -1,5 +1,11 @@
 # Industrial Agents: guide for coding agents (Claude Code, Cursor, Codex)
 
+## North star
+We are building for a 3-minute live pitch. What wins: an idea that is valuable, solves a real problem for
+the partner's users, and is presentable on stage. Code is only the tool for iterating on that idea fast.
+Prefer the quickest change that makes the live demo
+convincing on the partner's real data and error free.
+
 Hackathon repo. Python 3.12, uv, Pydantic AI 2.60 on Claude (Anthropic API or OpenRouter), Langfuse
 tracing, pydantic-evals. Built for fast iteration: no Docker, no Makefile, no CI. Every agent change is
 checked with its evals, not by eyeballing one output.
