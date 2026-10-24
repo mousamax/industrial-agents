@@ -10,6 +10,10 @@ spanned, lift 15 m + 6 m per floor; MultiGraph (a stair and a lift may join the 
 step-free drops every element with step_free False. New here: `min_width_m` (drop openings narrower than
 the load) and `closed`. The kit's code is the reference: port it, don't reinvent it.
 
+Scoring: docs/synera/ROUTE_SCORING.md is Synera's announced route scoring (door-to-door distance, stairs
+2 m per metre climbed, lift 15 m + 1 m per metre, forklift >= 3 m, no passing through production bays).
+It differs from the kit's cost model above; read it before changing how routes are ranked.
+
 Golden tests: tests/building/test_golden.py::test_route* (warm-up routes, step-free, closures, tours).
 """
 

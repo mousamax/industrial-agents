@@ -14,8 +14,11 @@ checked with its evals, not by eyeballing one output.
 We chose Synera's track. Brief, scoring and open questions: `docs/synera/README.md`. Finalists are picked
 from the online submission, where 55 of 100 points are an automatic benchmark on unseen buildings: never
 hard-code anything to a building or question.
-- `synera-kit/`: Synera's kit as a git submodule (data, `starter_agent/building_map.py` with the exact
-  route model, `benchmark/score.py` the judges' scorer). Don't edit it; import from it.
+- **Read `docs/synera/ROUTE_SCORING.md` before touching routing, queries, state or any route tool or
+  answer.** It is Synera's announced rule for scoring routes (distance model, forklift/step-free/closure/
+  production-bay rules, score = best length ÷ ours, invalid route = 0) and overrides the kit where they differ.
+- `synera-kit/`: Synera's kit as a git submodule (data, `starter_agent/building_map.py` with the route
+  model behind the golden answers, `benchmark/score.py` the judges' scorer). Don't edit it; import from it.
 - `src/app/agents/building_guide/`: baseline agent on that kit. `BENCHMARK.md`: the official run command.
 - `src/app/building/`: the domain core (model, geometry, routing, state, queries, build, view) as typed
   interfaces. Four people build behind them in parallel: **roles, file ownership and rules are in

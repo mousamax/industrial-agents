@@ -15,7 +15,8 @@ weekend on **agent design, prompts and flows**.
 | Tooling | uv, ruff, pytest. No Docker, no Makefile, no CI: just Python | |
 
 **Track: Synera, "Talk to Your Building".** Start at [docs/synera/README.md](docs/synera/README.md)
-(brief, scoring, questions for Synera) and [BENCHMARK.md](BENCHMARK.md). Clone with
+(brief, scoring, questions for Synera), [docs/synera/ROUTE_SCORING.md](docs/synera/ROUTE_SCORING.md)
+(how route answers are scored) and [BENCHMARK.md](BENCHMARK.md). Clone with
 `git clone --recurse-submodules`, or run `git submodule update --init` after cloning: Synera's kit and data
 are the `synera-kit/` submodule.
 

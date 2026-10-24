@@ -1,7 +1,7 @@
 # Team plan: four builders, one repo, no collisions
 
-Team: **Mousa, Magnus, Maximilian, Vadim**. Code freeze **Sun 13:00**. Read `README.md` (scoring) and
-`DATA_MODEL.md` (the data) in this folder first.
+Team: **Mousa, Magnus, Maximilian, Vadim**. Code freeze **Sun 13:00**. Read `README.md` (scoring),
+`ROUTE_SCORING.md` (how route answers are scored) and `DATA_MODEL.md` (the data) in this folder first.
 
 ## The idea in one picture
 
