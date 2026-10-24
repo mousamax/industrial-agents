@@ -713,7 +713,7 @@ export function AgentWorkspace({ phone }: { phone: boolean }) {
           phone={phone}
           buildingId={buildingId}
           history={history}
-          drafted={buildings.find((b) => b.id === buildingId)?.source === 'floor_plans'}
+          drafted={buildings.find((b) => b.id === buildingId)?.split === 'draft'}
           phase={phase}
           buildingName={result?.buildingName ?? activeBuildingName}
           memory={memory}

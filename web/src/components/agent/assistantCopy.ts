@@ -119,9 +119,19 @@ export interface ReplyBlock {
 /** The whole reply after its headline, as paragraphs and list items, so nothing the guide said is cut. */
 export function replyBlocks(text: string, headline: string): ReplyBlock[] {
   const blocks: ReplyBlock[] = []
+  let inTable = false
   for (const raw of text.replace(/\*\*/g, '').split('\n')) {
     const line = raw.replace(/^#+\s*/, '').trim()
     if (!line || /^answer:/i.test(line)) continue
+    // A markdown table reads as a list: its header and the |---| rule are dropped, each row is one line.
+    if (line.startsWith('|')) {
+      const cells = line.split('|').map((c) => c.trim()).filter(Boolean)
+      const rule = cells.every((c) => /^:?-+:?$/.test(c))
+      if (inTable && !rule) blocks.push({ kind: 'li', text: cells.join(cells.length === 2 ? ': ' : ', ') })
+      inTable = true
+      continue
+    }
+    inTable = false
     const item = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/)
     blocks.push(item ? { kind: 'li', text: item[1] } : { kind: 'p', text: line })
   }
@@ -136,7 +146,9 @@ export function replyBlocks(text: string, headline: string): ReplyBlock[] {
 
 /** An earlier reply in the thread, as one plain paragraph. */
 export function plainReply(text: string): string {
-  return clean(text.replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, ''))
+  return replyBlocks(text, '')
+    .map((b) => b.text)
+    .join(' ')
 }
 
 /** A short label to pin on the map next to the answer room, or null when the headline is too long for it. */

@@ -22,6 +22,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildingSuggestions, floorNameOf, fmtM, type MemoryChip, type StepIcon } from '../../lib/buildingGraph'
+import { floorShort, type SceneIndex } from '../../lib/sceneIndex'
+import { useApp } from '../../store'
 import { MapView } from '../map/MapView'
 import { OFFLINE_DETAIL, OFFLINE_HEADLINE, plainReply, replyBlocks, shapeAnswer, workingLine } from './assistantCopy'
 import type { PastTurn, ViewProps } from './AgentWorkspace'
@@ -131,6 +133,89 @@ function PrimaryButton({ onClick, children }: { onClick: () => void; children: R
   )
 }
 
+/** The floor you're on, as one small button on the right edge of the map; tap it to open the building's
+ *  levels (highest on top) and pick another. A dot marks floors the current answer is about. */
+function FloorRail({
+  index,
+  current,
+  marked,
+  onPick,
+}: {
+  index: SceneIndex
+  current: string
+  marked: string[]
+  onPick: (floorId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => setOpen(false), [index])
+  useEffect(() => {
+    if (!open) return
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  if (index.floors.length <= 1) return null
+
+  const here = index.floorById.get(current) ?? index.floors.find((f) => f.level === 0) ?? index.floors[0]
+  const elsewhere = marked.some((id) => id !== here.id)
+  const dot = <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-sun" aria-hidden />
+
+  return (
+    <nav
+      ref={ref}
+      aria-label="Floors"
+      className={clsx(
+        'absolute top-1/2 right-3 z-20 flex max-h-[min(440px,60dvh)] w-12 -translate-y-1/2 flex-col gap-1 overflow-y-auto rounded-full p-1 [scrollbar-width:none]',
+        GLASS,
+      )}
+    >
+      {open ? (
+        [...index.floors].reverse().map((f) => {
+          const active = f.id === here.id
+          return (
+            <button
+              key={f.id}
+              type="button"
+              title={f.name}
+              aria-label={f.name}
+              aria-pressed={active}
+              onClick={() => {
+                onPick(f.id)
+                setOpen(false)
+              }}
+              className={clsx(
+                'anim-rise relative grid size-10 shrink-0 place-items-center rounded-full text-[15px] font-bold transition-colors',
+                active ? 'bg-ink text-white' : 'text-ink hover:bg-ink/5',
+              )}
+            >
+              {floorShort(f)}
+              {marked.includes(f.id) && !active && dot}
+            </button>
+          )
+        })
+      ) : (
+        <button
+          type="button"
+          title={`${here.name}: change floor`}
+          aria-label={`${here.name}, change floor`}
+          aria-expanded={false}
+          onClick={() => setOpen(true)}
+          className="relative grid size-10 place-items-center rounded-full bg-ink text-[15px] font-bold text-white"
+        >
+          {floorShort(here)}
+          {elsewhere && dot}
+        </button>
+      )}
+    </nav>
+  )
+}
+
 /** The guide's first sentence: large when it's a short answer, calmer when it's a long one. */
 function headlineClass(text: string): string {
   return text.length <= 56
@@ -237,7 +322,8 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
   // Per-step distances only when they add up to the route: two numbers that disagree are worse than one.
   const stepDistancesAgree = total > 0 && Math.abs(stepSum - total) / total < 0.2
   const progress = total > 0 ? Math.min(1, done / Math.max(stepSum, 1)) : 0
-  const activeFloor = (isWalk && curStep?.floorId ? curStep.floorId : floor) ?? result?.focusFloor ?? ''
+  const mapFloor = useApp((s) => s.floorId)
+  const activeFloor = (isWalk && curStep?.floorId ? curStep.floorId : floor) ?? result?.focusFloor ?? mapFloor ?? ''
 
   const suggestions = useMemo(() => {
     const here = starterList.filter((s) => !props.buildingId || s.buildingId === props.buildingId)
@@ -349,6 +435,18 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
         <MapView hideControls={phone || isWalk} />
       </div>
 
+      {activeIndex && !isWalk && (
+        <FloorRail
+          index={activeIndex}
+          current={activeFloor}
+          marked={result?.floors ?? []}
+          onPick={(fid) => {
+            setFloorState(fid)
+            useApp.getState().setFloor(fid)
+          }}
+        />
+      )}
+
       {/* Top: where you are. Nothing else lives up here except the way back. */}
       {!isWalk && (
         <div className="pointer-events-none absolute inset-x-3 top-[calc(12px+env(safe-area-inset-top))] z-30 flex items-start justify-between gap-2 [&>*]:pointer-events-auto">
@@ -359,12 +457,9 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
             className={clsx('flex h-12 items-center gap-2.5 rounded-full pr-4 pl-2', GLASS)}
           >
             <Orb size={32} />
-            {/* A phone showing the floor switcher keeps only the orb here, so both fit on one row. */}
-            {!(phone && (result?.floors.length ?? 0) > 1) && (
-              <span className="font-display max-w-[46vw] truncate text-[18px] font-bold whitespace-nowrap">
-                {buildingName}
-              </span>
-            )}
+            <span className="font-display max-w-[46vw] truncate text-[18px] font-bold whitespace-nowrap">
+              {buildingName}
+            </span>
             {activeIndex && activeFloor && !phone && (
               <span className="text-[14px] whitespace-nowrap text-ink-soft">
                 {floorNameOf(activeIndex, activeFloor)}
@@ -373,24 +468,6 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
             <ChevronDown className="size-4 text-ink-soft" aria-hidden />
           </button>
           <div className="flex items-center gap-2">
-            {result && result.floors.length > 1 && (
-              <div role="group" aria-label="Floor" className={clsx('flex gap-1 rounded-full p-1', GLASS)}>
-                {result.floors.map((fid) => (
-                  <button
-                    key={fid}
-                    type="button"
-                    aria-pressed={fid === activeFloor}
-                    onClick={() => setFloorState(fid)}
-                    className={clsx(
-                      'h-10 whitespace-nowrap rounded-full px-3.5 text-[14px] font-bold',
-                      fid === activeFloor ? 'bg-ink text-white' : 'text-ink',
-                    )}
-                  >
-                    {activeIndex ? floorNameOf(activeIndex, fid) : fid}
-                  </button>
-                ))}
-              </div>
-            )}
             {!isHome && (
               <button
                 type="button"
