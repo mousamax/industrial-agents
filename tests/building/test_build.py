@@ -233,3 +233,28 @@ def test_draft_rejects_what_it_cannot_read():
         draft_from_plans(plans(FACTORY), name="x", levels=[0])
     with pytest.raises(NotImplementedError):
         draft_from_plans([building_dir(FACTORY) / "floor_0_plain.png"], name="x")
+
+
+def test_drafted_rooms_and_assets_get_their_types_from_the_furniture():
+    # FACTORY is a dev building: the type model learned from train has never seen it.
+    scores = compare(draft_from_plans(plans(FACTORY), name="x"), raw_copy(FACTORY), align=True)
+    assert scores["room_type_accuracy"] > 0.95
+    assert scores["asset_recall"] == pytest.approx(1.0)  # every piece of furniture, where the truth has it
+    assert scores["asset_type_accuracy"] > 0.95
+
+
+def test_guesses_list_every_value_the_plans_dont_state():
+    drafted = draft_from_plans(plans(FACTORY), name="x")
+    guesses = drafted["guesses"]
+    assert errors(drafted) == []  # the extra key doesn't disturb the kit format
+    assert {g["source"] for g in guesses} <= {"furniture", "footprint", "reachability", "default"}
+    assert all(g["confidence"] is None or 0.0 <= g["confidence"] <= 1.0 for g in guesses)
+    typed = {g["element_id"] for g in guesses if g["field"] == "room_type"}
+    assert typed == {s["id"] for s in drafted["spaces"] if s["type"] in ("room", "hall", "corridor")}
+    assert {g["element_id"] for g in guesses if g["field"] == "type"} == {a["id"] for a in drafted["assets"]}
+    for field in ("elevation_m", "height_m"):
+        assert {g["element_id"] for g in guesses if g["field"] == field} == {
+            f["id"] for f in drafted["floors"]
+        }
+    stairs = {c["id"] for c in drafted["vertical_connectors"] if c["synthetic"]}
+    assert {g["element_id"] for g in guesses if g["field"] == "vertical_connector"} == stairs

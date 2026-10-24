@@ -11,20 +11,23 @@ Measured: `validate` finds 0 errors in all 280 kit buildings (266 warnings, all 
 0.5-53 m off their wall). `compare` scores every train building 1.0 against itself; without `align` a
 draft shifted by 0.5 m already loses ~14% of its space matches.
 
-`draft_from_plans` reads the kit's SVG plans. On train, compare(align=True): procedural and ResPlan
-rooms, doors, stairs and lifts exact; OSM and Swiss outlines exact too, but floors sit differently from
-the truth (Swiss truth floors aren't aligned either), Swiss stairs are guesses; room types within a
-colour aren't in the plans (23% right). Every draft of train and dev passes `validate`.
+`draft_from_plans` reads the kit's SVG plans. On dev and test (held out), compare(align=True) scores
+0.90: procedural and ResPlan rooms, doors, stairs and lifts exact; OSM and Swiss outlines exact too, but
+floors sit differently from the truth (Swiss truth floors aren't aligned either) and Swiss stairs are
+guesses. Room types (95-97%) and asset types (94-95%) are learned from the furniture in train; every
+such value is in the draft's "guesses" with its confidence. Every draft of train and dev passes `validate`.
 """
 
 from __future__ import annotations
 
 import itertools
+import json
+import math
 import re
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
-from functools import partial
+from functools import cache, partial
 from numbers import Real
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -35,6 +38,7 @@ from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
 from app.building.model import OUTSIDE, Building, ConnectorKind, OpeningKind, SpaceType, parse_building
+from app.settings import get_settings
 
 
 @dataclass(frozen=True)
@@ -250,6 +254,12 @@ FILL_TYPES = {
     "#fff2b3": ("hall", "lobby"),
 }
 MARKER_KINDS = {"#8b4513": "door", "#d32f2f": "entrance", "#9e9e9e": "opening"}
+ASSET_CATEGORIES = {
+    "#7f6a4f": "furniture",
+    "#2e7d32": "equipment",
+    "#4f81bd": "fixture",
+    "#c0504d": "machine",
+}
 TYPE_NAMES = {"room": "Room", "corridor": "Corridor", "hall": "Hall", "stair": "Staircase", "lift": "Lift",
               "outdoor": "Balcony"}  # fmt: skip
 DOOR_SNAP_M = 0.6
@@ -271,6 +281,8 @@ class _PlanFloor:
     outlines: list[tuple[str | None, list[tuple[float, float]]]]
     markers: list[tuple[str | None, tuple[float, float]]]
     labels: list[tuple[str, tuple[float, float]]]
+    assets: list[tuple[str, list[tuple[float, float]]]]
+    """(category, rectangle corners) for every drawn asset; floor_<level>_plain plans have none."""
 
 
 def _style(element: ET.Element) -> dict[str, str]:
@@ -293,7 +305,7 @@ def _read_plan(path: Path, metres_per_pt: float | None) -> _PlanFloor:
     axes, clip = root.find(".//svg:g[@id='axes_1']", SVG), root.find(".//svg:clipPath/svg:rect", SVG)
     if axes is None or clip is None:
         raise ValueError(f"{path.name}: not a kit floor plan (no matplotlib axes)")
-    outlines, markers = [], []
+    outlines, markers, assets = [], [], []
     for group in axes:
         gid, path_el = group.get("id", ""), group.find("svg:path", SVG)
         if path_el is None:
@@ -301,6 +313,8 @@ def _read_plan(path: Path, metres_per_pt: float | None) -> _PlanFloor:
         style = _style(path_el)
         if gid.startswith("patch_") and style.get("stroke") == OUTLINE_STROKE:
             outlines.append((style.get("fill"), _path_points(path_el.get("d", ""))))
+        elif gid.startswith("patch_") and style.get("fill") in ASSET_CATEGORIES:
+            assets.append((ASSET_CATEGORIES[style["fill"]], _path_points(path_el.get("d", ""))))
         elif gid.startswith("line2d_"):
             markers.append((style.get("stroke"), _path_points(path_el.get("d", ""))[0]))
     if not outlines:
@@ -333,6 +347,7 @@ def _read_plan(path: Path, metres_per_pt: float | None) -> _PlanFloor:
         outlines=[(fill, [metres(p) for p in pts]) for fill, pts in outlines],
         markers=[(stroke, metres(p)) for stroke, p in markers],
         labels=labels,
+        assets=[(category, [metres(p) for p in pts]) for category, pts in assets],
     )
 
 
@@ -453,7 +468,11 @@ def _openings(
 
 
 STOP_RANK = {"stair": 2, "lift": 2, "corridor": 1, "hall": 1}
-"""Where a guessed staircase should stop: stair spaces first, then corridors and halls, rooms last."""
+"""Where a guessed staircase should stop: stair spaces (and stairwells) first, then corridors and halls."""
+
+
+def _stop_rank(space: dict[str, Any]) -> int:
+    return 2 if space["room_type"] == "stairwell" else STOP_RANK.get(space["type"], 0)
 
 
 def _guessed_stairs(
@@ -471,7 +490,7 @@ def _guessed_stairs(
         pa, pb = shapes[a], shapes[b]
         overlap = pa.intersection(pb).area
         iou = overlap / (pa.area + pb.area - overlap) if overlap else 0.0
-        rank = min(STOP_RANK.get(by_id[a]["type"], 0), STOP_RANK.get(by_id[b]["type"], 0))
+        rank = min(_stop_rank(by_id[a]), _stop_rank(by_id[b]))
         return (rank, iou, -pa.centroid.distance(pb.centroid))
 
     links = []
@@ -480,14 +499,16 @@ def _guessed_stairs(
         missing = [sid for sid in by_id if sid not in reached]
         if not missing or len(reached) == 1:  # all reachable, or no entrance to start from
             return links
-        best_rank = max(STOP_RANK.get(by_id[sid]["type"], 0) for sid in missing)
         options = []
-        for a in (sid for sid in missing if STOP_RANK.get(by_id[sid]["type"], 0) == best_rank):
-            i = levels.index(level_of[a])
-            for lv in levels[max(i - 1, 0) : i + 2]:
-                options += [
-                    (a, b["id"]) for b in spaces_by_level[lv] if lv != level_of[a] and b["id"] in reached
-                ]
+        for rank in sorted({_stop_rank(by_id[sid]) for sid in missing}, reverse=True):
+            for a in (sid for sid in missing if _stop_rank(by_id[sid]) == rank):
+                i = levels.index(level_of[a])
+                for lv in levels[max(i - 1, 0) : i + 2]:
+                    options += [
+                        (a, b["id"]) for b in spaces_by_level[lv] if lv != level_of[a] and b["id"] in reached
+                    ]
+            if options:  # best-ranked unreachable spaces that have a reachable floor next to them
+                break
         if not options:
             return links
         a, b = max(options, key=lambda pair: fit(*pair))
@@ -543,17 +564,217 @@ def _connectors(
     ]
 
 
+# ---- types from furniture, learned from the kit's train buildings -------------------------------------------
+#
+# The kit furnishes each room by its type (beds in bedrooms, desks in offices, CNC mills in production zones)
+# and the plans draw every piece: category by colour, exact footprint. So a room's furniture tells its type,
+# and a piece's size and room tell what it is. Held out (dev, test): room types 98-99% right, asset types
+# 96%. That leans on the kit's generator, which a real architect's plan won't follow, so every such value
+# is listed in the draft's "guesses" with its confidence.
+
+TYPES_LEARNED_FROM = "train"
+SMOOTHING = 0.1
+AMBIGUOUS_TYPES = frozenset({"room", "hall", "corridor"})
+"""Space types whose colour leaves the room type open (corridor: corridor or stairwell)."""
+
+
+@dataclass
+class _TypeModel:
+    rooms: Counter  # (space type, room type) -> spaces seen
+    room_tokens: dict[tuple[str, str], Counter]  # -> furniture and area tokens seen in them
+    token_totals: dict[tuple[str, str], int]
+    vocabulary: int
+    asset_types: dict[tuple[str, ...], Counter]  # (category, size, room type), (category, size), (category,)
+    room_names: dict[str, str]  # room type -> name prefix: "Quality lab"
+    asset_names: dict[str, str]  # asset type -> name prefix: "CNC mill"
+
+
+def _size(width: float, depth: float, digits: int) -> str:
+    short, long = sorted((width, depth))
+    return f"{short:.{digits}f}x{long:.{digits}f}"
+
+
+def _room_tokens(area: float, furniture: list[tuple[str, float, float]]) -> list[str]:
+    """What a space looks like on the plan: each piece's category and size, plus its area (counted twice)."""
+    area_token = f"area:{int(math.log2(area + 1))}"
+    return [f"{c}:{_size(w, d, 1)}" for c, w, d in furniture] + [area_token, area_token]
+
+
+def _name_prefix(name: str, ref: str) -> str | None:
+    """'Quality lab 0.21' (ref 0.21) -> 'Quality lab'; 'Desk 2.03-B' (in room 2.03) -> 'Desk'."""
+    head, _, tail = name.rpartition(" ")
+    return head if head and ref and tail.startswith(ref) else None
+
+
+@cache
+def _type_model() -> _TypeModel | None:
+    """Room and asset types as the kit's train buildings use them; None without the kit's data."""
+    files = sorted((get_settings().synera_kit_dir / "data" / TYPES_LEARNED_FROM).glob("*/building.json"))
+    if not files:
+        return None
+    rooms: Counter = Counter()
+    room_tokens: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    asset_types: dict[tuple[str, ...], Counter] = defaultdict(Counter)
+    room_names: dict[str, Counter] = defaultdict(Counter)
+    asset_names: dict[str, Counter] = defaultdict(Counter)
+    for path in files:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        spaces = {s["id"]: s for s in raw["spaces"]}
+        furniture = defaultdict(list)
+        for a in raw["assets"]:
+            width, depth, space = a["footprint"]["width_m"], a["footprint"]["depth_m"], spaces[a["space_id"]]
+            furniture[space["id"]].append((a["category"], width, depth))
+            size = _size(width, depth, 2)
+            for key in ((a["category"], size, space["room_type"]), (a["category"], size), (a["category"],)):
+                asset_types[key][a["type"]] += 1
+            if prefix := _name_prefix(a["name"], space["ref"]):
+                asset_names[a["type"]][prefix] += 1
+        for s in raw["spaces"]:
+            rooms[(s["type"], s["room_type"])] += 1
+            room_tokens[(s["type"], s["room_type"])].update(
+                _room_tokens(Polygon(s["polygon"]).area, furniture[s["id"]])
+            )
+            if prefix := _name_prefix(s["name"], s["ref"]):
+                room_names[s["room_type"]][prefix] += 1
+    return _TypeModel(
+        rooms=rooms,
+        room_tokens=dict(room_tokens),
+        token_totals={k: sum(v.values()) for k, v in room_tokens.items()},
+        vocabulary=len({t for tokens in room_tokens.values() for t in tokens}),
+        asset_types=dict(asset_types),
+        room_names={k: v.most_common(1)[0][0] for k, v in room_names.items()},
+        asset_names={k: v.most_common(1)[0][0] for k, v in asset_names.items()},
+    )
+
+
+def _guess_room_type(model: _TypeModel, space_type: str, tokens: list[str]) -> tuple[str, float] | None:
+    """Most likely room type for a space of this type and its probability (naive Bayes over the tokens),
+    or None when the type has only one room type."""
+    scores = {}
+    for (kind, room_type), n in model.rooms.items():
+        if kind != space_type:
+            continue
+        seen, total = model.room_tokens[(kind, room_type)], model.token_totals[(kind, room_type)]
+        scores[room_type] = math.log(n) + sum(
+            math.log((seen[t] + SMOOTHING) / (total + SMOOTHING * model.vocabulary)) for t in tokens
+        )
+    if len(scores) < 2:
+        return None
+    top = max(scores.values())
+    weights = {room_type: math.exp(score - top) for room_type, score in scores.items()}
+    best = max(weights, key=lambda room_type: weights[room_type])
+    return best, weights[best] / sum(weights.values())
+
+
+def _guess_asset_type(
+    model: _TypeModel, category: str, width: float, depth: float, room_type: str
+) -> tuple[str, float]:
+    """Most common asset type for this category and size (in this room type if seen), and its share."""
+    size = _size(width, depth, 2)
+    for key in ((category, size, room_type), (category, size), (category,)):
+        if seen := model.asset_types.get(key):
+            asset_type, n = seen.most_common(1)[0]
+            return asset_type, n / sum(seen.values())
+    return category, 0.0
+
+
+def _guess(
+    element_id: str | None, field: str, value: Any, source: str, confidence: float | None
+) -> dict[str, Any]:
+    """One value the plan didn't state. source: furniture | footprint | reachability | default."""
+    rounded = None if confidence is None else round(confidence, 4)
+    return {"element_id": element_id, "field": field, "value": value, "source": source, "confidence": rounded}
+
+
+def _furniture(
+    plan: _PlanFloor, spaces: list[dict[str, Any]], shift: tuple[float, float]
+) -> list[dict[str, Any]]:
+    """Drawn assets in the building frame, each in the (smallest) space containing its centre."""
+    shapes = [Polygon(s["polygon"]) for s in spaces]
+    tree = STRtree(shapes)
+    out = []
+    for category, corners in plan.assets:
+        if len(corners) < 4:
+            continue
+        (x0, y0), (x1, y1), (x2, y2) = corners[:3]
+        centre = Point(
+            sum(x for x, _ in corners[:4]) / 4 + shift[0], sum(y for _, y in corners[:4]) / 4 + shift[1]
+        )
+        inside = [int(i) for i in tree.query(centre, predicate="within")]
+        out.append({
+            "space": min(inside, key=lambda i: shapes[i].area) if inside else int(tree.nearest(centre)),
+            "category": category, "position": [round(centre.x, 4), round(centre.y, 4)],
+            "width_m": round(math.hypot(x1 - x0, y1 - y0), 3), "depth_m": round(math.hypot(x2 - x1, y2 - y1), 3),
+            "rotation_deg": round(math.degrees(math.atan2(y1 - y0, x1 - x0)) % 360, 1),
+        })  # fmt: skip
+    return out
+
+
+def _type_and_name(
+    level: int, floor_id: str, spaces: list[dict[str, Any]], furniture: list[dict[str, Any]], guesses: list
+) -> list[dict[str, Any]]:
+    """Room types from each space's furniture, names like the kit's ('Office 0.21'), and the assets typed
+    from their size and room ('Desk 0.21-B'). Every guessed value goes into `guesses`."""
+    model = _type_model()
+    pieces = defaultdict(list)
+    for f in furniture:
+        pieces[f["space"]].append((f["category"], f["width_m"], f["depth_m"]))
+    for i, s in enumerate(spaces):
+        if s["type"] in AMBIGUOUS_TYPES and model is None:
+            guesses.append(_guess(s["id"], "room_type", s["room_type"], "default", None))
+        elif s["type"] in AMBIGUOUS_TYPES and model is not None:
+            tokens = _room_tokens(Polygon(s["polygon"]).area, pieces[i])
+            if guess := _guess_room_type(model, s["type"], tokens):
+                s["room_type"] = guess[0]
+                guesses.append(_guess(s["id"], "room_type", guess[0], "furniture", guess[1]))
+        prefix = (model.room_names.get(s["room_type"]) if model else None) or TYPE_NAMES[s["type"]]
+        s["name"] = f"{prefix} {s['ref'] or f'{level}-{i:03d}'}"
+
+    typed = []
+    for f in furniture:
+        if model is None:
+            typed.append((f, f["category"], "default", None))
+        else:
+            asset_type, confidence = _guess_asset_type(
+                model, f["category"], f["width_m"], f["depth_m"], spaces[f["space"]]["room_type"]
+            )
+            typed.append((f, asset_type, "footprint", confidence))
+    per_room, numbered = Counter((f["space"], t) for f, t, _, _ in typed), Counter()
+    assets = []
+    for k, (f, asset_type, source, confidence) in enumerate(typed):
+        space = spaces[f["space"]]
+        prefix = (model.asset_names.get(asset_type) if model else None) or asset_type.replace(
+            "_", " "
+        ).capitalize()
+        numbered[(f["space"], asset_type)] += 1
+        n = numbered[(f["space"], asset_type)]
+        suffix = "" if per_room[(f["space"], asset_type)] == 1 else f"-{chr(64 + n) if n <= 26 else n}"
+        asset_id = f"{floor_id}-A{k:04d}"
+        assets.append({
+            "id": asset_id, "name": f"{prefix} {space['ref'] or space['name']}{suffix}",
+            "category": f["category"], "type": asset_type, "space_id": space["id"], "floor_id": floor_id,
+            "position": f["position"],
+            "footprint": {"width_m": f["width_m"], "depth_m": f["depth_m"], "rotation_deg": f["rotation_deg"]},
+            "source": "plan",
+        })  # fmt: skip
+        guesses.append(_guess(asset_id, "type", asset_type, source, confidence))
+    return assets
+
+
 def draft_from_plans(
     images: list[Path], *, name: str, levels: list[int] | None = None, metres_per_pixel: float | None = None
 ) -> dict[str, Any]:
     """Floor plans -> kit-format building.json. Reads the kit's vector plans (floor_<level>.svg) exactly:
-    outlines, space types, refs, doors and entrances; stairs and lifts from spaces stacked between floors.
-    `levels` default to the number in each file name (floor_-1.svg), else 0, 1, 2, ...; the scale comes
-    from the plan's 2 m margin unless `metres_per_pixel` (metres per SVG pt) is given.
+    outlines, space types, refs, doors and entrances, furniture; stairs and lifts from spaces stacked
+    between floors. `levels` default to the number in each file name (floor_-1.svg), else 0, 1, 2, ...;
+    the scale comes from the plan's 2 m margin unless `metres_per_pixel` (metres per SVG pt) is given.
 
-    Guessed, because plans don't show them: room types inside a colour (rooms -> generic_room, halls ->
-    lobby), door widths (0.9 m), steps (none), floor heights (3 m per level) and the origin of the frame.
-    PNG plans aren't supported yet."""
+    Everything the plans don't state is listed in an extra top-level "guesses" key (the rest of the code
+    ignores it): {element_id, field, value, source, confidence}, element_id None for the whole building.
+    Sources: furniture (room types, with their probability), footprint (asset types, with the share of
+    same-sized pieces that type had in train), reachability (staircases added so every space can be
+    reached), default (floor heights 3 m, door widths 0.9 m, no steps). The frame's origin is arbitrary.
+    Use floor_<level>.svg, not the _plain ones, which have no furniture. PNG plans aren't supported yet."""
     if not images:
         raise ValueError("no floor plans given")
     paths = [Path(p) for p in images]
@@ -570,8 +791,11 @@ def draft_from_plans(
     building_id = re.sub(r"[^a-z0-9]+", "-", name.casefold()).strip("-") or "drafted"
     raw: dict[str, Any] = {
         "building": {"id": building_id, "name": name, "source": "floor_plans", "units": "m"},
-        "floors": [], "spaces": [], "openings": [], "vertical_connectors": [], "assets": [],
+        "floors": [], "spaces": [], "openings": [], "vertical_connectors": [], "assets": [], "guesses": [],
     }  # fmt: skip
+    guesses = raw["guesses"]
+    guesses.append(_guess(None, "openings.width_m", DEFAULT_DOOR_WIDTH_M, "default", None))
+    guesses.append(_guess(None, "openings.step_free", True, "default", None))
     spaces_by_level: dict[int, list[dict[str, Any]]] = {}
     for level in sorted(plans):
         plan, (dx, dy) = plans[level], shifts[level]
@@ -585,6 +809,8 @@ def draft_from_plans(
             "id": floor_id, "level": level, "name": floor_name,
             "elevation_m": DEFAULT_STOREY_M * level, "height_m": DEFAULT_STOREY_M,
         })  # fmt: skip
+        guesses.append(_guess(floor_id, "elevation_m", DEFAULT_STOREY_M * level, "default", None))
+        guesses.append(_guess(floor_id, "height_m", DEFAULT_STOREY_M, "default", None))
         spaces = []
         for i, (fill, pts) in enumerate(plan.outlines):
             space_type, room_type = FILL_TYPES.get(fill or "", ("room", "generic_room"))
@@ -602,12 +828,15 @@ def draft_from_plans(
                 else min(range(len(shapes)), key=lambda i: shapes[i].distance(point))
             )
             spaces[target]["ref"] = label
-        for i, s in enumerate(spaces):
-            s["name"] = f"{TYPE_NAMES[s['type']]} {s['ref'] or f'{level}-{i:03d}'}"
+        furniture = _furniture(plan, spaces, (dx, dy))
+        raw["assets"] += _type_and_name(level, floor_id, spaces, furniture, guesses)
         raw["spaces"] += spaces
         raw["openings"] += _openings(plan, floor_id, spaces, (dx, dy))
         spaces_by_level[level] = spaces
     raw["vertical_connectors"] = _connectors(building_id, spaces_by_level, raw["openings"])
+    for c in raw["vertical_connectors"]:
+        if c["synthetic"]:
+            guesses.append(_guess(c["id"], "vertical_connector", c["space_ids"], "reachability", None))
     return raw
 
 
@@ -667,6 +896,30 @@ def _found(drafted: Counter, true: Counter) -> tuple[float, float]:
     """(precision, recall) of two multisets of keys."""
     hits = sum((drafted & true).values())
     return _ratio(hits, sum(drafted.values())), _ratio(hits, sum(true.values()))
+
+
+ASSET_MATCH_M = 0.3
+"""A drafted asset counts as a true one when it stands within this distance of it, on the same level."""
+
+
+def _asset_scores(predicted: Building, truth: Building) -> tuple[float, float]:
+    """(share of true assets with a drafted one within ASSET_MATCH_M, share of those found with the right type)."""
+    by_floor: dict[str, list[Any]] = defaultdict(list)
+    for a in predicted.assets.values():
+        by_floor[a.floor_id].append(a)
+    found = right = 0
+    for floor in truth.floors.values():
+        drafted_floor = predicted.floor_at_level(floor.level)
+        drafted = by_floor.get(drafted_floor.id, []) if drafted_floor else []
+        if not drafted:
+            continue
+        tree = STRtree([Point(a.position) for a in drafted])
+        for a in (a for a in truth.assets.values() if a.floor_id == floor.id):
+            nearest = drafted[int(tree.nearest(Point(a.position)))]
+            if math.dist(nearest.position, a.position) <= ASSET_MATCH_M:
+                found += 1
+                right += nearest.type == a.type
+    return _ratio(found, len(truth.assets)), _ratio(right, found)
 
 
 def _footprints(b: Building) -> dict[int, Any]:
@@ -754,6 +1007,7 @@ def compare(predicted: dict[str, Any], truth: dict[str, Any], *, align: bool = F
         "connector_precision": connector_precision,
         "connector_recall": connector_recall,
     }
+    scores["asset_recall"], scores["asset_type_accuracy"] = _asset_scores(p, t)
     headline = (
         scores["area_iou"],
         _f1(space_precision, space_recall),
