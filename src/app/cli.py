@@ -249,6 +249,10 @@ def scoreboard(
     ] = None,
     model: Annotated[str | None, typer.Option(help="Model alias or id for --run")] = None,
     split: Annotated[str, typer.Option(help="Split for the golden tests")] = "dev",
+    only: Annotated[
+        list[str] | None,
+        typer.Option("--only", help="With --run scenarios: just these scenario names or prefixes (live-)"),
+    ] = None,
 ) -> None:
     """Points per person and per row (docs/synera/scoreboard.yaml); writes docs/synera/SCOREBOARD.md."""
     from app import scoreboard as sb
@@ -257,7 +261,7 @@ def scoreboard(
     if unknown := set(suites) - set(sb.AGENT_SUITES):
         raise typer.BadParameter(f"unknown suites {sorted(unknown)}; pick from {sb.AGENT_SUITES} or all")
     if suites:
-        sb.refresh(suites, resolve_model(model) if model else None)
+        sb.refresh(suites, resolve_model(model) if model else None, only)
     before = sb.previous()
     board = sb.build(split)
     sb.save(board)

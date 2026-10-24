@@ -133,14 +133,31 @@
    "output_tokens": 11271
   },
   "scenarios": {
-   "at": "2026-10-24T19:05:39+00:00",
+   "at": "2026-10-24T20:11:50+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 11,
-   "total": 12,
+   "correct": 14,
+   "total": 15,
    "failing": [
     "hands-full-voice"
-   ]
+   ],
+   "results": {
+    "first-day-coffee": true,
+    "wrong-room-number": true,
+    "which-cnc-mill": true,
+    "vague-press": true,
+    "wheelchair-is-sticky": true,
+    "lift-closed-mid-conversation": true,
+    "change-of-mind": true,
+    "hands-full-voice": false,
+    "wide-pallet": true,
+    "not-in-this-building": true,
+    "add-a-door": true,
+    "cross-building-wheelchair": true,
+    "live-delivery-colleague": true,
+    "live-what-came-yesterday": true,
+    "live-moved-machine": true
+   }
   },
   "unseen": {
    "at": "2026-10-24T18:39:40+00:00",

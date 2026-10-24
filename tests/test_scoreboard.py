@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import yaml
 
 from app import scoreboard as sb
@@ -37,5 +38,23 @@ def test_config_rows_are_well_formed():
     sources = {"pytest", "bench", "scenarios", "manual", "missing"}
     assert sum(r["stake"] for r in config["rows"]) == 100
     for r in config["rows"]:
-        assert len(sources & r.keys()) == 1, r["id"]
+        used = sources & r.keys()
+        assert len(used) == 1 or used == {"pytest", "scenarios"}, r["id"]  # code tests + agent scenarios
         assert set(r["owners"]) <= set(config["people"]), r["id"]
+
+
+def test_a_row_measured_by_tests_and_scenarios_needs_both():
+    state = {
+        "suites": {
+            "scenarios": {
+                "correct": 2,
+                "total": 3,
+                "failing": ["live-b"],
+                "results": {"live-a": True, "live-b": False, "other": True},
+            }
+        }
+    }
+    row = {"pytest": ["test_live_"], "scenarios": ["live-"]}
+    m = sb.measure(row, {"test_live_x": "passed", "test_live_y": "passed"}, state)
+    assert m.rate == pytest.approx((1.0 + 0.5) / 2)
+    assert "live-b" in m.failing

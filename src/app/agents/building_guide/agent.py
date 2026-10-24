@@ -19,7 +19,7 @@ from app.core import AgentCard, load_prompt
 from app.models import model
 from app.settings import get_settings
 
-from .tools import TOOLS, Deps, _label, overview
+from .tools import TOOLS, Deps, _ago, _clock, _label, overview
 
 
 class Question(BaseModel):
@@ -33,7 +33,8 @@ class Question(BaseModel):
 
 
 def _building_context(ctx: RunContext[Deps]) -> str:
-    return "Building overview:\n" + json.dumps(overview(ctx.deps.building), ensure_ascii=False)
+    """The plan as drawn (not today's state), so the cached prefix stays the same while things move."""
+    return "Building overview:\n" + json.dumps(overview(ctx.deps.state.base), ensure_ascii=False)
 
 
 def _location_context(ctx: RunContext[Deps]) -> str:
@@ -43,6 +44,20 @@ def _location_context(ctx: RunContext[Deps]) -> str:
     return (
         f"The person is in {_label(ctx.deps.building, ctx.deps.here)} [{ctx.deps.here}] (from the app, not "
         "from them). Use it when they say here, this room, or don't say where they start; their own words win."
+    )
+
+
+def _live_context(ctx: RunContext[Deps]) -> str:
+    """The clock, and whether anyone recorded changes, so "yesterday" and "what changed?" have a reference."""
+    state = ctx.deps.state
+    now = f"It is now {_clock(state.now())}."
+    if not state.edits:
+        return now
+    latest = state.stamps[-1]
+    return (
+        f"{now} {len(state.edits)} change(s) to the building are recorded (latest: {latest.said} "
+        f"{_ago(latest.at, state.now())}, by {latest.by or 'this conversation'}); tools already apply them, "
+        "building_changes lists them."
     )
 
 
@@ -104,6 +119,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
     )
     built.instructions(_building_context)
     built.instructions(_location_context)
+    built.instructions(_live_context)
     built.output_validator(_answer_line_is_committed_and_grounded)
     return built
 

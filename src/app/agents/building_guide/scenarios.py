@@ -4,7 +4,8 @@
     uv run python -m app.agents.building_guide.scenarios --only vague-press --model smart
 
 Each scenario plays its user turns in one conversation (fresh session state), runs the code checks on each
-turn's tool calls, then an LLM judge reads the transcript (replies, tool calls and results) and rules on
+turn's tool calls. A turn {who, say} is a colleague in their own chat on the same live building, and
+`setup` records scanner events before anyone talks (the Level 5 "live building"). Then then an LLM judge reads the transcript (replies, tool calls and results) and rules on
 the three rubric points and every `expect` line, three times; the majority decides. Saves evals/reports/scenarios-<label>.jsonl.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -26,7 +28,7 @@ from app.models import model as resolve_model
 from app.settings import ROOT
 
 from .agent import make_agent
-from .tools import Deps, overview
+from .tools import Deps, overview, report_item
 
 SCENARIOS = Path(__file__).with_name("scenarios.yaml")
 REPORTS = ROOT / "evals" / "reports"
@@ -110,15 +112,19 @@ def check(rule: dict, turn: dict) -> str | None:
     return None
 
 
-def transcript(scenario: dict, turns: list[dict], deps: Deps) -> str:
+def transcript(scenario: dict, turns: list[dict], deps: Deps, recorded: list[dict] | None = None) -> str:
     """What the agent knew (the building overview it gets as context) plus every turn, tool call and result."""
     out = [
         f"Persona: {scenario['persona']}",
         "Building overview the assistant is given as context (also ground truth):",
-        json.dumps(overview(deps.building), ensure_ascii=False),
+        json.dumps(overview(deps.state.base), ensure_ascii=False),
     ]
+    if recorded:
+        out.append("Recorded by scanners and colleagues before the conversation (ground truth):")
+        out += [json.dumps(r, ensure_ascii=False) for r in recorded]
     for i, t in enumerate(turns, 1):
-        out.append(f"\n--- Turn {i}\nUSER: {t['user']}")
+        speaker = f"USER ({t['who']}, own chat)" if t.get("who") else "USER"
+        out.append(f"\n--- Turn {i}\n{speaker}: {t['user']}")
         for c in t["tool_calls"]:
             out.append(
                 f"TOOL {c['tool']}({json.dumps(c['args'], ensure_ascii=False)}) -> {c['result'][:1500]}"
@@ -128,20 +134,53 @@ def transcript(scenario: dict, turns: list[dict], deps: Deps) -> str:
     return "\n".join(out)
 
 
+def record(deps: Deps, events: list[dict]) -> list[dict]:
+    """Apply a scenario's `setup`: {item, to, type?, day (0 today, -1 yesterday, 2), time "09:30", by,
+    source} each, as a scanner would have reported it. Returns what was recorded, for the judge."""
+    today = deps.state.now()
+    out = []
+    for e in events:
+        day = (today + timedelta(days=e.get("day", 0))).date()
+        at = datetime.combine(
+            day, time.fromisoformat(e.get("time", "09:00"))
+        ).astimezone()  # that day's offset
+        r = report_item(
+            deps.state,
+            e["item"],
+            e["to"],
+            at=at,
+            new_item_type=e.get("type"),
+            by=e.get("by", "scanner"),
+            source=e.get("source", "barcode"),
+        )
+        out.append({k: r[k] for k in ("item", "from", "to", "when", "status", "reported_by")})
+    return out
+
+
 async def play(agent, scenario: dict) -> dict:
-    deps, history, turns = Deps.load(scenario["building"]), [], []
+    deps, turns = Deps.load(scenario["building"]), []
+    recorded = record(deps, scenario.get("setup", []))
+    chats: dict[str, tuple[Deps, list]] = {"": (deps, [])}  # one chat per colleague, one shared building
     with observability.entrypoint("building_guide", kind="eval", tags=["synera-scenario", scenario["name"]]):
-        for text in scenario["turns"]:
+        for turn in scenario["turns"]:
+            who, text = (turn["who"], turn["say"]) if isinstance(turn, dict) else ("", turn)
+            own, history = chats.setdefault(who, (Deps(deps.state, who=who), []))
             try:
-                result = await agent.run(text, deps=deps, message_history=history)
-                history = result.all_messages()
+                result = await agent.run(text, deps=own, message_history=history)
+                chats[who] = (own, result.all_messages())
                 turns.append(
-                    {"user": text, "reply": result.output, "tool_calls": _calls(result.new_messages())}
+                    {
+                        "who": who,
+                        "user": text,
+                        "reply": result.output,
+                        "tool_calls": _calls(result.new_messages()),
+                    }
                 )
             except Exception as e:
-                turns.append({"user": text, "reply": f"[crash: {type(e).__name__}: {e}]", "tool_calls": []})
+                reply = f"[crash: {type(e).__name__}: {e}]"
+                turns.append({"who": who, "user": text, "reply": reply, "tool_calls": []})
     failed_checks = [f for rule in scenario.get("checks", []) if (f := check(rule, turns[rule["turn"] - 1]))]
-    text = transcript(scenario, turns, deps)
+    text = transcript(scenario, turns, deps, recorded)
     verdicts = [v.output for v in await asyncio.gather(*(judge.run(text) for _ in range(JUDGES)))]
     passes = [_passes(v) for v in verdicts]
     verdict = next(
@@ -156,6 +195,10 @@ async def play(agent, scenario: dict) -> dict:
         "verdict": verdict.model_dump(),
         "turns": turns,
     }
+
+
+def names() -> list[str]:
+    return [s["name"] for s in yaml.safe_load(SCENARIOS.read_text(encoding="utf-8"))["scenarios"]]
 
 
 def run_scenarios(

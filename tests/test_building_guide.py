@@ -18,7 +18,6 @@ from app.agents.building_guide.tools import (
     calculate,
     find,
     list_rooms,
-    move_item,
     route,
     undo_last_change,
 )
@@ -73,9 +72,9 @@ def test_edits_need_a_yes_in_a_later_turn():
 
 
 def test_confirming_without_a_proposal_is_refused():
-    deps = Deps.load(FACTORY)
+    deps = Deps.load(CAMPUS)
     with pytest.raises(ModelRetry):
-        move_item(ctx(deps, "turn-2"), "CNC mill H-A1-B", "Warehouse zone H-C2", confirmed=True)
+        add_door(ctx(deps, "turn-2"), "Seminar room 2.06", "Kitchen 2.07", confirmed=True)
 
 
 async def test_a_reply_that_keeps_failing_the_answer_check_is_returned_not_crashed():

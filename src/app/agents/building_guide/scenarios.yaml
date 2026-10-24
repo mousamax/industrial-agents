@@ -9,6 +9,10 @@
 # checks: {turn: 1-based, tool: name, args: {subset that must match}}  -> that tool was called so in that turn
 #         {turn, no_tool: name}                                          -> that tool was NOT called
 #         {turn, max_words: n}                                           -> the reply is short (voice, hands full)
+#
+# Level 5 "live building" (live-* scenarios, scored as level5-addin): a turn {who: name, say: text} is a
+# colleague in their own chat on the same building; `setup` lists scanner events recorded before anyone
+# talks: {item, to, type (new item), day (0 today, -1 yesterday, 2 = in two days), time, by, source}.
 scenarios:
 - name: first-day-coffee
   building: proc-factory-dev-003
@@ -141,3 +145,46 @@ scenarios:
   expect:
   - Turn 1 gives a step-free route from Lab 3.06 across to a factory kitchen with a coffee machine, naming the walkway it uses between the buildings.
   - Turn 2 says there is no step-free way now (the other link starts at an entrance with steps), instead of inventing one.
+
+- name: live-delivery-colleague
+  building: proc-factory-dev-003
+  persona: Two colleagues in their own chats. Goods-in reports a delivery; a machinist then looks for it.
+  turns:
+  - {who: goods-in, say: "Delivery just came in, a pallet of aluminium sheets. I put it in Logistics zone H-C5."}
+  - {who: machinist, say: "Where are the aluminium sheets that came in today? I'm in Assembly zone H-A2."}
+  checks:
+  - {turn: 1, tool: move_item}
+  - {turn: 2, tool: route}
+  expect:
+  - Turn 1 records the new pallet in Logistics zone H-C5 right away, without asking for confirmation, and says colleagues will see it.
+  - Turn 2 (a different person, who never saw turn 1) finds the sheets in Logistics zone H-C5, says goods-in reported them, and gives walking directions there from Assembly zone H-A2.
+
+- name: live-what-came-yesterday
+  building: proc-factory-dev-003
+  persona: Shift lead catching up on deliveries recorded by the dock scanners.
+  setup:
+  - {item: Pallet of steel tubes, type: pallet, to: Logistics zone H-C5, day: -1, time: "09:30", by: dock scanner}
+  - {item: Crate of sensors, type: crate, to: Logistics zone H-C5, day: -1, time: "14:10", by: dock scanner}
+  - {item: Pallet of steel tubes, to: Warehouse zone H-C3, day: -1, time: "16:45", by: forklift RFID, source: rfid}
+  - {item: Crate of motor parts, type: crate, to: Warehouse zone H-C2, day: 2, time: "08:00", by: purchasing, source: app}
+  turns:
+  - What was delivered yesterday, and where is it now?
+  - Anything arriving in the next few days?
+  checks:
+  - {turn: 1, tool: building_changes}
+  expect:
+  - Turn 1 names both deliveries from yesterday (the steel tubes and the sensors) and where each is now, noting that the steel tubes were moved on to Warehouse zone H-C3.
+  - Turn 2 names the expected crate of motor parts, when it is due and that it will go to Warehouse zone H-C2, and does not claim it is already there.
+
+- name: live-moved-machine
+  building: proc-factory-dev-003
+  persona: Maintenance moves a machine; an apprentice in another chat then needs it.
+  turns:
+  - {who: maintenance, say: "FYI we just moved Drill press H-A1 over to Assembly zone H-A2."}
+  - {who: apprentice, say: "I'm in Kitchen 0.28. How do I get to Drill press H-A1? Where was it before?"}
+  checks:
+  - {turn: 1, tool: move_item}
+  - {turn: 2, tool: route}
+  expect:
+  - Turn 1 records the move right away and says what it recorded.
+  - Turn 2 routes the apprentice to Assembly zone H-A2 (the new place, not Production zone H-A1) and says it used to be in Production zone H-A1 and that maintenance moved it.

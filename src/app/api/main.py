@@ -10,6 +10,11 @@
     GET  /buildings/{id}/scene          floors, space polygons, openings, stairs/lifts, assets, in metres
     POST /buildings/{id}/chat           the building guide for that building, Vercel AI SDK stream
                                         (?location=<space id or room> = where the user is)
+    POST /buildings/{id}/scan           "this is now here" from a barcode/RFID reader or another app
+    GET  /buildings/{id}/changes        what moved, arrived, closed or opened (?since=&until= ISO times)
+
+Every chat and the scene of one building share one live state (Level 5 "live building"): what one colleague
+or scanner reports, the others' answers and the map show at once.
 
 Run: `uv run uvicorn app.api.main:app --reload` -> http://localhost:8000/docs
 """
@@ -17,6 +22,9 @@ Run: `uv run uvicorn app.api.main:app --reload` -> http://localhost:8000/docs
 from __future__ import annotations
 
 import csv
+import json
+from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -27,8 +35,9 @@ from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from starlette.responses import Response
 
 from app import observability
-from app.agents.building_guide.tools import _space_id
+from app.agents.building_guide.tools import Deps, _space_id, building_changes, report_item
 from app.building import load_building
+from app.building.state import BuildingState
 from app.building.view import Scene, scene
 from app.core import AgentCard
 from app.registry import Entry, get, registry
@@ -122,35 +131,97 @@ async def list_buildings(split: str | None = None, source: str | None = None) ->
     ]
 
 
+_live: dict[str, BuildingState] = {}
+"""One live state per building, shared by every chat, scanner and map viewer. In memory: a restart starts
+from the plan again, which is fine for a demo."""
+
+
+def live_state(building_id: str) -> BuildingState:
+    if building_id not in _live:
+        try:
+            _live[building_id] = BuildingState(load_building(building_id))
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e)) from None
+    return _live[building_id]
+
+
 @app.get("/buildings/{building_id}/scene")
 async def building_scene(building_id: str) -> Scene:
+    """The building as it is now: moved and delivered items where they were last reported."""
+    return scene(live_state(building_id).building)
+
+
+class Scan(BaseModel):
+    item: str
+    place: str
+    type: str | None = None
+    """Set for an item the building doesn't know yet (a delivery): pallet, crate, ..."""
+    by: str = "scanner"
+    source: str = "barcode"
+    when: str | None = None
+    """ISO time; omit for now. A future time announces an expected delivery."""
+
+
+@app.post("/buildings/{building_id}/scan")
+async def scan(building_id: str, event: Scan) -> dict[str, Any]:
+    """A barcode or RFID reader (or any app) reports "this is now here". Every chat and the map see it."""
+    state = live_state(building_id)
     try:
-        return scene(load_building(building_id))
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e)) from None
+        return report_item(
+            state,
+            event.item,
+            event.place,
+            at=_time(event.when),
+            new_item_type=event.type,
+            by=event.by,
+            source=event.source,
+        )
+    except ModelRetry as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.get("/buildings/{building_id}/changes")
+async def changes(building_id: str, since: str | None = None, until: str | None = None) -> dict[str, Any]:
+    deps = Deps(live_state(building_id))
+    try:
+        return json.loads(building_changes(SimpleNamespace(deps=deps), since, until))  # type: ignore[arg-type]
+    except ModelRetry as e:
+        raise HTTPException(400, str(e)) from None
+
+
+def _time(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    try:
+        t = datetime.fromisoformat(text)
+    except ValueError:
+        raise HTTPException(400, f"when must be an ISO time, not {text!r}") from None
+    return t if t.tzinfo else t.astimezone()
 
 
 _sessions: dict[tuple[str, str], Any] = {}
-"""One building_guide Deps per (building, chat id): closures and other session state survive between turns.
-In memory: a restart starts every conversation fresh, which is fine for a demo."""
+"""One building_guide Deps per (building, chat id): the pending edit and where the person is survive between
+turns; the building state itself is the shared live one."""
 
 
 @app.post("/buildings/{building_id}/chat")
-async def building_chat(building_id: str, request: Request, location: str | None = None) -> Response:
+async def building_chat(
+    building_id: str, request: Request, location: str | None = None, who: str | None = None
+) -> Response:
     """Chat with the building guide about one building (Vercel AI SDK protocol, like /chat/{name}).
 
-    The SDK sends the whole message history every turn; state the tools changed (closures) is kept per
-    chat `id` from the request body. `?location=<space id or room name>` tells the agent where the user is
-    (QR code at a door, a tap on the map); send it whenever it changes."""
+    The SDK sends the whole message history every turn; the pending edit and location are kept per chat
+    `id` from the request body, the building state is shared with every colleague. `?location=<space id or
+    room name>` tells the agent where the user is (QR code at a door, a tap on the map); send it whenever it
+    changes. `?who=<name>` is stamped on the changes this person reports (default: the chat id)."""
     card = _entry("building_guide").card
     assert isinstance(card, AgentCard) and card.deps_from_input
     chat_id = str((await request.json()).get("id") or "default")  # Starlette caches the body for dispatch
     key = (building_id, chat_id)
     if key not in _sessions:
-        try:
-            _sessions[key] = card.deps_from_input(card.coerce({"building": building_id, "question": ""}))
-        except FileNotFoundError as e:
-            raise HTTPException(404, str(e)) from None
+        _sessions[key] = Deps(live_state(building_id), who=f"chat {chat_id[:8]}")
+    if who:
+        _sessions[key].who = who
     if location:
         try:
             _sessions[key].here = _space_id(_sessions[key].building, location)

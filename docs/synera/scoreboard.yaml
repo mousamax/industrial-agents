@@ -98,11 +98,11 @@ rows:
 # ---- Creativity (10) and Submission demo (10) -----------------------------------------------------------
 - id: level5-addin
   part: Creativity
-  what: One Level 5 add-in done well (pick it as a team)
+  what: 'Level 5 "live building": things move and deliveries arrive ("this is now here" in chat, or a barcode/RFID scan), every colleague and the map see it at once, and time questions work (delivered yesterday, where was it, arriving Monday)'
   owners: [A, B, C, D]
   stake: 10
-  manual: 0.0
-  note: not picked yet
+  pytest: [test_live_]
+  scenarios: [live-]
 - id: demo-video
   part: Submission demo
   what: Demo video and short technical explanation

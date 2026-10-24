@@ -114,22 +114,38 @@ def measure_bench(suite: str, kinds: list[str] | None, state: dict) -> Measured:
     return Measured(ok / total if total else 0.0, f"{ok}/{total} questions", failing)
 
 
-def measure_scenarios(state: dict) -> Measured:
+def measure_scenarios(state: dict, prefixes: list[str] | None = None) -> Measured:
+    """All scenarios (`scenarios: true`), or only those whose names start with one of `prefixes`."""
     s = state.get("suites", {}).get("scenarios")
     if not s:
         return Measured(0.0, "not run yet", "uv run ia scoreboard --run scenarios")
+    if not prefixes:
+        return Measured(
+            s["correct"] / s["total"], f"{s['correct']}/{s['total']} scenarios", ", ".join(s["failing"])
+        )
+    picked = {n: ok for n, ok in s.get("results", {}).items() if any(n.startswith(p) for p in prefixes)}
+    if not picked:
+        return Measured(0.0, "not run yet", "uv run ia scoreboard --run scenarios")
+    failing = ", ".join(n for n, ok in picked.items() if not ok)
     return Measured(
-        s["correct"] / s["total"], f"{s['correct']}/{s['total']} scenarios", ", ".join(s["failing"])
+        sum(picked.values()) / len(picked), f"{sum(picked.values())}/{len(picked)} scenarios", failing
     )
 
 
 def measure(row: dict, tests: dict[str, str], state: dict) -> Measured:
+    if "pytest" in row and "scenarios" in row:  # both must hold: the code and the agent using it
+        parts = [measure_pytest(row["pytest"], tests), measure_scenarios(state, row["scenarios"])]
+        return Measured(
+            sum(m.rate for m in parts) / len(parts),
+            " + ".join(m.detail for m in parts),
+            "; ".join(m.failing for m in parts if m.failing),
+        )
     if "pytest" in row:
         return measure_pytest(row["pytest"], tests)
     if "bench" in row:
         return measure_bench(row["bench"], row.get("kinds"), state)
     if "scenarios" in row:
-        return measure_scenarios(state)
+        return measure_scenarios(state, row["scenarios"] if isinstance(row["scenarios"], list) else None)
     if "manual" in row:
         return Measured(
             float(row["manual"]), f"{float(row['manual']):.0%} (owner's call)", row.get("note", "")
@@ -140,8 +156,9 @@ def measure(row: dict, tests: dict[str, str], state: dict) -> Measured:
 # ---- refreshing agent suites -----------------------------------------------------------------------------
 
 
-def refresh(suites: list[str], model: str | None = None) -> None:
-    """Re-run agent suites on dev (full) and store their summaries in evals/scoreboard.json."""
+def refresh(suites: list[str], model: str | None = None, only: list[str] | None = None) -> None:
+    """Re-run agent suites on dev (full) and store their summaries in evals/scoreboard.json. `only` re-runs
+    just the scenarios with those names (or name prefixes) and keeps the others' last results."""
     from app.agents.building_guide import bench, scenarios
 
     state = load_state()
@@ -152,11 +169,18 @@ def refresh(suites: list[str], model: str | None = None) -> None:
             "model": model or "default",
         }
         if suite == "scenarios":
-            results, _ = scenarios.run_scenarios(model=model, label="scoreboard")
+            names = scenarios.names()
+            picked = [n for n in names if any(n.startswith(o) for o in only)] if only else None
+            results, _ = scenarios.run_scenarios(only=picked, model=model, label="scoreboard")
+            prev = state["suites"].get("scenarios", {}) if only else {}
+            # A board from before per-scenario results: the rest passed except the ones listed as failing.
+            old = prev.get("results") or {n: n not in prev.get("failing", []) for n in names if prev}
+            merged = {n: ok for n, ok in (old | {r["name"]: r["ok"] for r in results}).items() if n in names}
             state["suites"]["scenarios"] = stamp | {
-                "correct": sum(r["ok"] for r in results),
-                "total": len(results),
-                "failing": [r["name"] for r in results if not r["ok"]],
+                "correct": sum(merged.values()),
+                "total": len(merged),
+                "failing": [n for n, ok in merged.items() if not ok],
+                "results": merged,
             }
         else:
             results, _ = bench.run_suite("dev", suite, model=model, label=f"scoreboard-{suite}")

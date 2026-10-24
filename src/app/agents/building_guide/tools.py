@@ -3,8 +3,9 @@
 Tools are small building blocks the agent composes: look things up (find, room_details, list_rooms,
 count_items), move through the building (route, nearest, reachable_rooms, distance_3d), derive numbers
 (calculate), and change the building (what_if simulates; set_closed, add_door, move_item, undo_last_change
-edit the session's BuildingState, real edits only after the person confirms). Every number comes from
-code; the model picks tools and arguments.
+edit the session's BuildingState, plan edits only after the person confirms), and follow it over time
+(item_history, building_changes: the Level 5 "live building", where colleagues and scanners report what
+moved or arrived). Every number comes from code; the model picks tools and arguments.
 
 Places are passed as text, the way people and questions name them ("Office 0.29 (Ground floor)", "0.29",
 an id, or an item name such as "CNC mill 1.04"). Resolving that text is its own step: an unknown name is a
@@ -22,6 +23,7 @@ import math
 import operator
 import re
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,7 +32,7 @@ from pydantic_ai import ModelRetry, RunContext
 from app.building import geometry
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
 from app.building.routing import Constraints, Route
-from app.building.state import AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen
+from app.building.state import AddAsset, AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen, Stamp
 
 from .graph import route_graph
 
@@ -50,13 +52,17 @@ class Deps:
         state: BuildingState,
         pending: dict[str, Any] | None = None,
         here: str | None = None,
+        who: str = "",
     ) -> None:
         self.state: BuildingState = state
+        """Shared by every colleague in the app (one per building); one per question in the benchmark."""
         self.pending: dict[str, Any] | None = pending
         """An edit proposed to the person and waiting for their yes: {"edit": Edit, "run_id": str}."""
         self.here: str | None = here
         """Space id where the person is, when the app knows it (a QR code at a door, a tap on the map, or the
         `start` a benchmark line carries). The agent gets it as context; it never overrides what they say."""
+        self.who: str = who
+        """Who this conversation is with (a chat id or name): stamped on the changes they report."""
 
     @property
     def building(self) -> Building:
@@ -129,6 +135,144 @@ def _spaces_named(b: Building, text: str, floor: str | int | None) -> list[Space
 def _asset_named(b: Building, text: str):
     needle = text.strip().casefold()
     return next((a for a in b.assets.values() if a.id == text or a.name.casefold() == needle), None)
+
+
+def _matcher(query: str):
+    """A test that every word of `query` starts a word in a text ("press" finds "drill press", not
+    "compressor"), plurals too."""
+    words = [w for w in re.split(r"[\s_]+", query.casefold()) if w]
+    patterns = [
+        re.compile(
+            r"(?<!\w)(?:"
+            + "|".join(re.escape(v) for v in {w, w.removesuffix("s"), w.removesuffix("es")} if v)
+            + ")"
+        )
+        for w in words
+    ]
+
+    def hit(*texts: str) -> bool:
+        blob = " ".join(texts).casefold().replace("_", " ")
+        return all(p.search(blob) for p in patterns)
+
+    return hit
+
+
+def _item_of(b: Building, text: str, exact_only: bool = False):
+    """One asset by exact name or id, else the only one whose name and type fit the words. None if
+    nothing fits; ModelRetry listing them if several do."""
+    if (asset := _asset_named(b, text)) or exact_only:
+        return asset
+    hit = _matcher(re.sub(r"^(the|a|an|our|my)\s+", "", text.strip(), flags=re.I))
+    hits = [a for a in b.assets.values() if hit(a.name, a.type)]
+    if len(hits) > 1:
+        options = "; ".join(f"{a.name} (in {_label(b, a.space_id)})" for a in hits[:MAX_RESULTS])
+        raise ModelRetry(
+            f"{text!r} fits {len(hits)} items: {options}. Pass the exact name; if the person's words "
+            "don't settle it, ask them which one."
+        )
+    return hits[0] if hits else None
+
+
+# ---- time: the live building ------------------------------------------------------------------------------
+
+
+def _when(d: Deps, text: str | None) -> datetime:
+    """A time the model passes (ISO, local when it has no zone), or now."""
+    if not text or text.strip().casefold() == "now":
+        return d.state.now()
+    try:
+        t = datetime.fromisoformat(text.strip())
+    except ValueError:
+        raise ModelRetry(
+            f"Give times as ISO, e.g. {d.state.now():%Y-%m-%dT%H:%M}. It is now {_clock(d.state.now())}."
+        ) from None
+    return t if t.tzinfo else t.astimezone()
+
+
+def _clock(at: datetime) -> str:
+    return at.astimezone().strftime("%a %d %b %Y %H:%M")
+
+
+def _ago(at: datetime, now: datetime) -> str:
+    if at.year == 1:
+        return "before the app was started"
+    seconds = (now - at).total_seconds()
+    span = abs(seconds)
+    if span < 90:
+        return "just now"
+    text = (
+        f"{span / 60:.0f} min"
+        if span < 90 * 60
+        else f"{span / 3600:.0f} h"
+        if span < 48 * 3600
+        else f"{span / 86400:.0f} days"
+    )
+    return f"{text} ago" if seconds > 0 else f"in {text}"
+
+
+def _stamp(s: Stamp, now: datetime) -> dict:
+    return {
+        "when": "earlier" if s.at.year == 1 else _clock(s.at),
+        "ago": _ago(s.at, now),
+        "by": s.by or "this conversation",
+        "source": s.source,
+    }
+
+
+def _reported(s: Stamp, now: datetime) -> str:
+    when = "" if s.at.year == 1 else f" ({_clock(s.at)})"
+    return f"put there {_ago(s.at, now)}{when} by {s.by or 'this conversation'} via {s.source}"
+
+
+def _last_reports(state: BuildingState) -> dict[str, Stamp]:
+    """{asset id: the latest report that holds now} for every asset someone moved or registered."""
+    now, out = state.now(), {}
+    for i, (e, s) in enumerate(zip(state.edits, state.stamps, strict=True)):
+        if s.at <= now and isinstance(e, MoveAsset | AddAsset):
+            out[e.asset_id if isinstance(e, MoveAsset) else state.asset_id(i)] = s
+    return out
+
+
+def report_item(
+    state: BuildingState,
+    item: str,
+    place: str,
+    *,
+    at: datetime | None = None,
+    new_item_type: str | None = None,
+    by: str = "",
+    source: str = "chat",
+) -> dict:
+    """Record "this is now here" (or "will be here then") for everyone sharing `state`: an item that
+    moved, or with `new_item_type` a new one (a delivery). Shared by move_item and the scanner endpoint."""
+    now = state.now()
+    at = at or now
+    b = state.view(at)
+    target = _space_id(b, place)
+    asset = _item_of(b, item, exact_only=bool(new_item_type))
+    if asset is None and not new_item_type:
+        close = difflib.get_close_matches(item, [a.name for a in b.assets.values()], n=5, cutoff=0.5)
+        raise ModelRetry(
+            f"No item called {item!r} in the building (closest: {', '.join(close) or 'none'}). If it is new "
+            'here (a delivery, a new machine), pass new_item_type, e.g. "pallet"; else use find.'
+        )
+    edit = MoveAsset(asset.id, target) if asset else AddAsset(item.strip(), _key(new_item_type or ""), target)
+    try:
+        message = state.apply(edit, at=at, by=by, source=source)
+    except ValueError as e:
+        raise ModelRetry(str(e)) from None
+    return {
+        "item": asset.name if asset else item.strip(),
+        "type": asset.type if asset else _key(new_item_type or ""),
+        "from": _label(b, asset.space_id) if asset else None,
+        "to": _label(b, target),
+        "when": _clock(at),
+        "status": "expected" if at > now else "done",
+        "change": message,
+        "reported_by": by or "this conversation",
+        "seen_by": "everyone using this building (chats, map, scanners)",
+        "highlight": [asset.space_id, target] if asset else [target],
+    }
 
 
 def space_of(b: Building, text: str, floor: str | int | None = None) -> Space | str:
@@ -280,20 +424,8 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
     """
     b = ctx.deps.building
     floor_id = floor_of(b, floor).id if floor else None
-    words = [w for w in re.split(r"[\s_]+", query.casefold()) if w]
-    # A word matches at the start of a word ("press" finds "drill press", not "compressor"), plurals too.
-    patterns = [
-        re.compile(
-            r"(?<!\w)(?:"
-            + "|".join(re.escape(v) for v in {w, w.removesuffix("s"), w.removesuffix("es")} if v)
-            + ")"
-        )
-        for w in words
-    ]
-
-    def hit(*texts: str) -> bool:
-        blob = " ".join(texts).casefold().replace("_", " ")
-        return all(p.search(blob) for p in patterns)
+    hit = _matcher(query)
+    reports, now = _last_reports(ctx.deps.state), ctx.deps.state.now()
 
     rooms = [
         {"room": _label(b, s.id), "id": s.id, "type": s.room_type}
@@ -302,6 +434,7 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
     ]
     items = [
         {"item": a.name, "type": a.type, "in": _label(b, a.space_id), "space_id": a.space_id}
+        | ({"reported": _reported(reports[a.id], now)} if a.id in reports else {})
         for a in b.assets.values()
         if (floor_id is None or a.floor_id == floor_id) and hit(a.name, a.type)
     ]
@@ -763,7 +896,7 @@ def _propose_or_apply(ctx: RunContext[Deps], edit: Edit, preview: dict, confirme
     if d.pending["run_id"] == ctx.run_id:
         raise ModelRetry("The person hasn't answered yet: ask them, and apply it after they say yes.")
     try:
-        message = d.state.apply(edit)
+        message = d.state.apply(edit, by=d.who)
     except ValueError as e:
         raise ModelRetry(str(e)) from None
     d.pending = None
@@ -781,7 +914,7 @@ def set_closed(ctx: RunContext[Deps], element: str, closed: bool = True) -> str:
     d = ctx.deps
     eid = element_of(d.building, element)
     try:
-        message = d.state.apply(Close(eid) if closed else Reopen(eid))
+        message = d.state.apply(Close(eid) if closed else Reopen(eid), by=d.who)
     except ValueError as e:
         message = str(e)  # already closed / not closed: nothing to do, tell the agent
     return _json({"element": eid, "closed": closed, "change": message, "all_closed": sorted(d.closed)})
@@ -815,36 +948,106 @@ def add_door(
     return _propose_or_apply(ctx, AddDoor(a, c, width_m=width_m), preview, confirmed)
 
 
-def move_item(ctx: RunContext[Deps], item: str, to_room: str, confirmed: bool = False) -> str:
-    """Record that an item (machine, equipment, furniture) now stands in another room, so searches and
-    routes find it there. First call proposes it; after the person says yes, call again with confirmed=true.
+def move_item(
+    ctx: RunContext[Deps],
+    item: str,
+    to_room: str,
+    when: str | None = None,
+    new_item_type: str | None = None,
+) -> str:
+    """Record "this is now here", as the person reports it: a machine or tool that moved, or a delivery
+    that arrived. Recorded at once (no confirmation needed) for everyone using this building, so their
+    searches, routes and the map find it there; undo_last_change takes it back.
 
     Args:
-        item: The item's exact name or id, e.g. "CNC mill H-A1-B" (use find first).
-        to_room: Where it is now.
-        confirmed: True only after the person agreed to this exact change.
+        item: The item's exact name or id from find, e.g. "CNC mill H-A1-B". For something new to the
+            building, the name people will search for, e.g. "Pallet of aluminium sheets".
+        to_room: The room, hall or zone where it is now.
+        when: ISO time it got there (or will), e.g. "2026-10-27T08:00"; omit for now. A future time records
+            an expected delivery: it is listed by building_changes but not found until then.
+        new_item_type: Only for an item the building doesn't have yet (a delivery, a new machine): its type,
+            e.g. "pallet", "crate", "3d_printer".
     """
     d = ctx.deps
-    b = d.building
-    asset = _asset_named(b, item)
+    return _json(
+        report_item(d.state, item, to_room, at=_when(d, when), new_item_type=new_item_type, by=d.who)
+    )
+
+
+def item_history(ctx: RunContext[Deps], item: str) -> str:
+    """Where an item is now, where it was before (the plan, then every reported move, with when and by
+    whom) and any expected arrival. For "where was it yesterday?", "who moved it?", "when did it come?".
+
+    Args:
+        item: The item's name or id, e.g. "Drill press H-A1" or "Pallet of aluminium sheets".
+    """
+    d, now = ctx.deps, ctx.deps.state.now()
+    everything = d.state.view(datetime.max.replace(tzinfo=UTC))  # includes items still expected
+    asset = _item_of(d.building, item) or _item_of(everything, item)
     if asset is None:
-        names = [a.name for a in b.assets.values()]
-        close = difflib.get_close_matches(item, names, n=5, cutoff=0.5)
-        raise ModelRetry(f"No item called {item!r}. Closest: {', '.join(close) or 'none'}. Use find.")
-    target = _space_id(b, to_room)
-    preview = {
-        "item": asset.name,
-        "from": _label(b, asset.space_id),
-        "to": _label(b, target),
-        "highlight": [asset.space_id, target],
-    }
-    return _propose_or_apply(ctx, MoveAsset(asset.id, target), preview, confirmed)
+        raise ModelRetry(f"No item called {item!r}, now or expected. Use find or building_changes.")
+    history = [
+        {"in": _label(d.building, space_id)}
+        | ({"when": "in the building plan"} if stamp is None else _stamp(stamp, now))
+        | ({"status": "expected"} if stamp and stamp.at > now else {})
+        for stamp, space_id in d.state.timeline(asset.id)
+    ]
+    current = d.building.assets.get(asset.id)
+    return _json(
+        {
+            "item": asset.name,
+            "type": asset.type,
+            "now_in": _label(d.building, current.space_id) if current else "not here yet (expected)",
+            "history": history,
+            "highlight": [current.space_id] if current else [],
+        }
+    )
+
+
+KINDS = {Close: "closed", Reopen: "reopened", AddDoor: "door added", MoveAsset: "moved", AddAsset: "arrived"}
+
+
+def building_changes(ctx: RunContext[Deps], since: str | None = None, until: str | None = None) -> str:
+    """What colleagues, scanners and this conversation recorded in a time window, oldest first: deliveries
+    that arrived, items that moved, closures, new doors, each with when, who and where items are now. For
+    "what was delivered yesterday?", "what changed since this morning?", "anything arriving this week?"
+    (entries after now are expected, not there yet).
+
+    Args:
+        since: ISO start, e.g. "2026-10-23T00:00"; omit for everything recorded.
+        until: ISO end (not included), e.g. "2026-10-24T00:00"; omit for no end, expected ones included.
+    """
+    d = ctx.deps
+    state, now, b = d.state, d.state.now(), d.building
+    lo = _when(d, since) if since else None
+    hi = _when(d, until) if until else None
+    entries = []
+    for i, edit, stamp in state.changes(lo, hi):
+        entry = {"kind": KINDS[type(edit)], "change": stamp.said} | _stamp(stamp, now)
+        entry["status"] = "expected" if stamp.at > now else "done"
+        if isinstance(edit, MoveAsset | AddAsset):
+            asset_id = edit.asset_id if isinstance(edit, MoveAsset) else state.asset_id(i)
+            current = b.assets.get(asset_id)
+            name = current.name if current else getattr(edit, "name", asset_id)
+            entry |= {"item": name, "to": _label(b, edit.space_id)}
+            entry["now_in"] = _label(b, current.space_id) if current else "not here yet"
+        entries.append(entry)
+    return _json(
+        {
+            "now": _clock(now),
+            "window": [_clock(lo) if lo else "start", _clock(hi) if hi else "open end"],
+            "total": len(entries),
+            "changes": entries[-30:],
+            "note": "Only the newest 30 are listed." if len(entries) > 30 else "",
+        }
+    )
 
 
 def undo_last_change(ctx: RunContext[Deps]) -> str:
-    """Undo the most recent change in this conversation (a closure, reopening, new door or moved item)."""
+    """Undo the most recent change made in this conversation (a closure, reopening, new door, moved or
+    delivered item). Colleagues' changes stay."""
     d = ctx.deps
-    edit = d.state.undo()
+    edit = d.state.undo(by=d.who) if d.who else d.state.undo()
     return _json(
         {
             "undone": repr(edit) if edit else None,
@@ -868,5 +1071,7 @@ TOOLS = [
     set_closed,
     add_door,
     move_item,
+    item_history,
+    building_changes,
     undo_last_change,
 ]
