@@ -72,6 +72,10 @@ svg text { text-rendering: geometricPrecision; }
 .chip-row[data-fade-left] { --fade-l: 28px; }
 .chip-row[data-fade-right] { --fade-r: 36px; }
 
+/* "Let's go" popping in once a route has drawn in. */
+.pop-in { animation: pop-in 420ms cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes pop-in { 0% { transform: scale(.85); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
+
 @keyframes ttyb-draw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
 @keyframes ttyb-pulse { 0% { transform: scale(.6); opacity: .9 } 100% { transform: scale(1.8); opacity: 0 } }
 @keyframes ttyb-spin { to { transform: rotate(360deg) } }

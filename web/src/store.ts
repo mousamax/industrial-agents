@@ -69,9 +69,11 @@ interface AppState {
   /** Remembered user context chips ("At Main lobby 0.18", "Step-free routes", "Forklift · 3 m openings"). */
   memory: MemoryChip[]
   /** Bumped whenever the map should fit these ids into view (selection, highlight, route). */
-  focus: { ids: string[]; nonce: number }
+  focus: { ids: string[]; nonce: number; points?: XY[]; follow?: boolean }
   /** A question another panel wants the chat to send (e.g. "Directions" on a place card). */
   pendingPrompt: string | null
+  /** How much of the route is drawn (0..1) while an answer draws it in; null draws it the usual way. */
+  routeReveal: number | null
 
   loadBuildings: () => Promise<void>
   loadBuilding: (id: string) => Promise<void>
@@ -97,10 +99,14 @@ interface AppState {
   forgetOne: (idx: number) => void
   forgetAll: () => void
   focusOn: (ids: string[]) => void
+  /** Fit these points (building metres) on that floor into view, e.g. one floor's stretch of a route. `follow`:
+   *  called every frame with a moving point, the camera eases after it closely instead of animating each time. */
+  focusPoints: (floorId: string, points: XY[], follow?: boolean) => void
   clearMap: () => void
   applyView: (cmd: ViewCommand) => void
   ask: (text: string) => void
   consumePrompt: () => string | null
+  setRouteReveal: (frac: number | null) => void
 }
 
 const DEFAULT_BUILDING = 'proc-factory-dev-003'
@@ -141,6 +147,7 @@ export const useApp = create<AppState>((set, get) => ({
   memory: [],
   focus: { ids: [], nonce: 0 },
   pendingPrompt: null,
+  routeReveal: null,
 
   loadBuildings: async () => {
     try {
@@ -258,6 +265,9 @@ export const useApp = create<AppState>((set, get) => ({
     set((s) => ({ focus: { ids, nonce: s.focus.nonce + 1 } }))
   },
 
+  focusPoints: (floorId, points, follow = false) =>
+    set((s) => ({ floorId, focus: { ids: [], points, follow, nonce: s.focus.nonce + 1 } })),
+
   clearMap: () =>
     set({
       selection: null,
@@ -290,6 +300,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (text) set({ pendingPrompt: null })
     return text
   },
+  setRouteReveal: (routeReveal) => set({ routeReveal }),
 }))
 
 export const initialBuildingId = () => new URL(window.location.href).searchParams.get('b') ?? DEFAULT_BUILDING

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { ShowRoute } from '../../api/types'
 import type { SceneIndex } from '../../lib/sceneIndex'
 import { useApp, type GhostDoorState, type MapInsets } from '../../store'
+import { truncateRoute } from '../../lib/routeReveal'
 import { useIsPhone } from '../layout/useViewport'
 import { DevPanel, type DevStats } from '../map3d/DevPanel'
 import { devMode, useMap3DSettings } from '../map3d/devSettings'
@@ -52,6 +53,18 @@ import { Overlay3D } from './Overlay3D'
 const SEARCH_BAR = 110 // floating search bar + chips row over the top of the map
 const PICKER_GUTTER = 60 // floor picker on the right edge
 const FOCUS_MIN_SPAN_M = 16 // never zoom in so far that less than this many metres are visible
+const FOLLOW_MIN_SPAN_M = 9 // a camera following a point (a route drawing in) may come closer
+const FOLLOW_EASE = 0.14 // share of the way to the followed point the camera moves per frame
+
+/** One frame of a camera chasing `to`: centre moves linearly, zoom geometrically, FOLLOW_EASE of the way. */
+function chase(from: Camera, to: Camera, w: number, h: number): Camera {
+  const k = from.k * Math.pow(to.k / from.k, FOLLOW_EASE)
+  const c0 = [(w / 2 - from.tx) / from.k, (h / 2 - from.ty) / from.k]
+  const c1 = [(w / 2 - to.tx) / to.k, (h / 2 - to.ty) / to.k]
+  const cx = c0[0] + (c1[0] - c0[0]) * FOLLOW_EASE
+  const cy = c0[1] + (c1[1] - c0[1]) * FOLLOW_EASE
+  return { k, tx: w / 2 - cx * k, ty: h / 2 - cy * k }
+}
 const MAX_K = 160 // px per metre
 const ASSET_K = [12, 28] // zoom (px/m) at which machines/equipment, then furniture/fixtures appear
 const TAP_SLOP = 7
@@ -137,6 +150,12 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   const selection = useApp((s) => s.selection)
   const highlight = useApp((s) => s.highlight)
   const route = useApp((s) => s.routeState.route)
+  // An answer can draw the route in by hand; its pins stay on the whole route, only the line grows.
+  const routeReveal = useApp((s) => s.routeReveal)
+  const drawnRoute = useMemo(
+    () => (route && routeReveal !== null ? truncateRoute(route, routeReveal) : route),
+    [route, routeReveal],
+  )
   const closedIds = useApp((s) => s.closedIds)
   const affectedIds = useApp((s) => s.affectedIds)
   const ghostDoor = useApp((s) => s.ghostDoor)
@@ -642,7 +661,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     prev.current = { sceneId: scene.id, floorId: geo.floorId, nonce: focus.nonce, sized, insets: mapInsets }
     updateLimits()
 
-    if ((nonceChanged || newScene) && (focus.ids.length || ghostDoor)) {
+    if ((nonceChanged || newScene) && (focus.ids.length || focus.points?.length || ghostDoor)) {
       // A tap on the map selected this: keep the zoom, only make sure the pin is not under the sheet.
       if (tapFocus.current && focus.ids.length === 1 && focus.ids[0] === tapFocus.current) {
         tapFocus.current = null
@@ -652,20 +671,25 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
         if (pt) ensureVisible(pt)
         return
       }
-      const b = focusBBox(focus.ids, geo, index, route, ghostDoor, !!view3dRef.current)
+      const pts = focus.points?.length ? bboxOf(focus.points.map(toSvg)) : null
+      const follow = !!pts && !!focus.follow
+      const b = pts ? padBBox(pts, follow ? 0 : 4) : focusBBox(focus.ids, geo, index, route, ghostDoor, !!view3dRef.current)
       if (b) {
         const ins = insets()
         const pad = 20
         const padded = forTilt({ top: ins.top + pad, bottom: ins.bottom + pad, left: ins.left + pad, right: ins.right + pad })
         const { w, h } = size.current
+        const minSpan = follow ? FOLLOW_MIN_SPAN_M : FOCUS_MIN_SPAN_M
         const maxK = Math.min(
           MAX_K,
-          Math.max(w - padded.left - padded.right, 40) / FOCUS_MIN_SPAN_M,
-          Math.max(h - padded.top - padded.bottom, 40) / FOCUS_MIN_SPAN_M,
+          Math.max(w - padded.left - padded.right, 40) / minSpan,
+          Math.max(h - padded.top - padded.bottom, 40) / minSpan,
         )
+        const target = fitCamera(b, w, h, padded, maxK)
         // The pitch is kept: the fit moves the centre and zoom only.
-        if (newScene || floorChanged) set(fitCamera(b, w, h, padded, maxK), true)
-        else animateTo(fitCamera(b, w, h, padded, maxK))
+        if (newScene || floorChanged) set(target, true)
+        else if (follow) set(chase(cam.current, target, w, h), true) // asked every frame: ease towards it
+        else animateTo(target)
         return
       }
     }
@@ -801,9 +825,9 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
 
   useEffect(() => {
     if (!ready) return
-    engine.current?.setRoute(route)
+    engine.current?.setRoute(drawnRoute)
     engine.current?.requestRender()
-  }, [ready, route])
+  }, [ready, drawnRoute])
 
   useEffect(() => {
     if (!ready) return
@@ -1155,7 +1179,9 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
               <AffectedFill geo={geo} ids={affectedIds} />
               <HighlightFill geo={geo} ids={hl.spaces} />
               {sel?.space && <SelectedOutline space={sel.space} />}
-              {route && <RouteLines route={route} floorId={geo.floorId} index={index} />}
+              {drawnRoute && (
+                <RouteLines route={drawnRoute} floorId={geo.floorId} index={index} instant={routeReveal !== null} />
+              )}
               <GhostDoorLayer door={ghostDoor} floorId={geo.floorId} />
               <Labels geo={geo} k={zoomK} skipId={sel?.space?.id ?? null} />
               <AssetDots geo={geo} level={assetLevel} />
@@ -1181,7 +1207,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
         {hasCanvas && <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" style={fade(is3D)} />}
         {is3D && geo && index && (
           <Overlay3D rootRef={overlayRef} geo={geo} index={index} k={zoomK} sel={sel} route={route} dots={hl.dots}
-            link={view3d?.link ?? null} />
+            link={view3d?.link ?? null} quiet={routeReveal !== null && routeReveal < 1} />
         )}
       </div>
       {surroundings && (

@@ -100,6 +100,8 @@ export interface Overlay3DProps {
   route: ShowRoute | null
   dots: { id: string; p: Pt }[]
   link: View3DIntent['link']
+  /** While a route draws in: no room names or floor chips over the line. */
+  quiet?: boolean
 }
 
 /** Where the link's label sits: halfway along the line, or on the room it points to. */
@@ -113,7 +115,17 @@ function linkLabelAt(index: SceneIndex, link: NonNullable<View3DIntent['link']>)
   return { p: toSvg([(a.anchor[0] + b.anchor[0]) / 2, (a.anchor[1] + b.anchor[1]) / 2]), elev: (ea + eb) / 2 + 0.6 }
 }
 
-export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, route, dots, link }: Overlay3DProps) {
+export const Overlay3D = memo(function Overlay3D({
+  rootRef,
+  geo,
+  index,
+  k,
+  sel,
+  route,
+  dots,
+  link,
+  quiet = false,
+}: Overlay3DProps) {
   const skipId = sel?.space?.id ?? null
   const labels = useMemo(() => {
     const kk = k * LABEL_K_FACTOR
@@ -138,7 +150,7 @@ export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, 
               <PoiBadge kind={s.poi!} />
             </SvgMark>
           )}
-          {label && <Label lines={label} top={poi ? 13 : -(label.length * 13) / 2} />}
+          {label && !quiet && <Label lines={label} top={poi ? 13 : -(label.length * 13) / 2} />}
         </Anchor>
       ))}
       {dots.map(({ id, p }) => (
@@ -163,7 +175,7 @@ export const Overlay3D = memo(function Overlay3D({ rootRef, geo, index, k, sel, 
           </SvgMark>
         </Anchor>
       )}
-      {r?.chips.map((c, i) => (
+      {!quiet && r?.chips.map((c, i) => (
         <Anchor key={i} p={c.p} z={4}>
           <HtmlFloorChip text={c.text} floorId={c.floorId} />
         </Anchor>

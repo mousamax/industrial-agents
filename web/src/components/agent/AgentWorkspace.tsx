@@ -72,6 +72,7 @@ import { VoiceBar, VoiceDock } from '../voice/VoiceDock'
 import { mapLabel, shapeAnswer } from './assistantCopy'
 import { AssistantView } from './AssistantView'
 import { extractLiveTurn } from './liveBridge'
+import { REVEAL_TIMING, revealTimeline, truncateRoute } from '../../lib/routeReveal'
 
 /** One finished exchange of the conversation, shown above the current answer. */
 export interface PastTurn {
@@ -297,6 +298,67 @@ function Workspace({ phone }: { phone: boolean }) {
     [loadBuilding, remember, memory, speakText, stopSpeech],
   )
 
+  // A route answer draws in: tilted, the line walks from the start through every floor to the destination
+  // (REVEAL_TIMING), then the map goes back to the start floor and "Let's go" pops up. While it draws
+  // (`routeDrawing`) the phone's answer card steps aside and the map gets the screen.
+  const [routeDrawing, setRouteDrawing] = useState(false)
+  const revealTimer = useRef(0)
+  const revealRaf = useRef(0)
+  const cancelReveal = useCallback(() => {
+    window.clearTimeout(revealTimer.current)
+    cancelAnimationFrame(revealRaf.current)
+    useApp.getState().setRouteReveal(null)
+    setRouteDrawing(false)
+  }, [])
+  useEffect(() => cancelReveal, [cancelReveal])
+
+  const playResult = useCallback(
+    (res: ScenarioResult, autoSpeak = false, initialApplied = false) => {
+      cancelReveal()
+      const route = res.route?.showRoute
+      if (res.kind !== 'route' || !route?.segments.length) return showResult(res, autoSpeak, initialApplied)
+      const T = REVEAL_TIMING
+      useApp.getState().setRouteReveal(0)
+      setRouteDrawing(true)
+      // Always tilted while it draws: the climb through the floors reads best in 3D.
+      showResult(
+        { ...res, focusFloor: route.segments[0].floor_id, view3d: res.view3d ?? { link: null } },
+        autoSpeak,
+        initialApplied,
+      )
+      const timeline = revealTimeline(route)
+      const t0 = performance.now() + T.settleMs // the camera tilts and settles before the line starts
+      let shownFloor: string | null = null
+      const tick = (now: number) => {
+        const reveal = timeline.at(Math.max(0, now - t0))
+        const app = useApp.getState()
+        app.setRouteReveal(reveal)
+        const drawn = truncateRoute(route, reveal).segments
+        const tip = drawn[drawn.length - 1]?.floor_id
+        const headPts = drawn[drawn.length - 1]?.points ?? []
+        const head = headPts[headPts.length - 1]
+        if (phone && tip && head && reveal < 1) {
+          // A phone is too small for the whole route: the camera follows the head of the line up close.
+          const r = T.followRadiusM
+          app.focusPoints(tip, [[head[0] - r, head[1] - r], [head[0] + r, head[1] + r]], true)
+        } else if (!phone && tip && tip !== shownFloor) {
+          // Desktop has room for the whole route: the map switches floor as the line reaches it.
+          shownFloor = tip
+          if (tip !== app.floorId) app.setFloor(tip)
+        }
+        if (reveal < 1) revealRaf.current = requestAnimationFrame(tick)
+        else
+          revealTimer.current = window.setTimeout(() => {
+            // Back on the start floor, shown as the answer asked (flat unless it wanted 3D), card back up.
+            setResult((r) => (r?.route?.showRoute === route ? { ...r, view3d: res.view3d } : r))
+            setRouteDrawing(false)
+          }, T.endHoldMs)
+      }
+      revealRaf.current = requestAnimationFrame(tick)
+    },
+    [cancelReveal, showResult, phone],
+  )
+
   // Send a prompt to the live building_guide backend (POST /buildings/{id}/chat)
   const prevAssistantCountRef = useRef<number>(0)
   const sendToBackend = useCallback(
@@ -308,6 +370,9 @@ function Workspace({ phone }: { phone: boolean }) {
       note?: string,
     ) => {
       stopSpeech()
+      cancelReveal()
+      // A route the guide finds on the way stays hidden until its answer draws it in (playResult).
+      useApp.getState().setRouteReveal(0)
       const bId = targetBuildingId ?? useApp.getState().buildingId ?? 'proc-campus-dev-000'
       if (bId !== useApp.getState().buildingId) {
         await loadBuilding(bId)
@@ -344,7 +409,7 @@ function Workspace({ phone }: { phone: boolean }) {
         ),
       })
     },
-    [stopSpeech, loadBuilding, clearLiveError],
+    [stopSpeech, cancelReveal, loadBuilding, clearLiveError],
   )
 
   // During a live voice call, typed and tapped turns go to the voice agent too, so it answers out loud
@@ -415,7 +480,7 @@ function Workspace({ phone }: { phone: boolean }) {
         setPhase('ask')
         setAsk(extracted.ask)
       } else if (extracted.result) {
-        showResult(extracted.result, Boolean(scenario?.voice), Boolean(extracted.alreadyApplied))
+        playResult(extracted.result, Boolean(scenario?.voice), Boolean(extracted.alreadyApplied))
       }
       // The voice agent hears the turn it asked for; any other turn it learns as context
       const answer = summarizeTurn(extracted, index)
@@ -434,7 +499,7 @@ function Workspace({ phone }: { phone: boolean }) {
     buildingId,
     activeBuildingName,
     userText,
-    showResult,
+    playResult,
   ])
 
   // Submit handler (free-form user input or starter prompt -> live backend agent)
@@ -594,6 +659,7 @@ function Workspace({ phone }: { phone: boolean }) {
 
   // Back to the welcome screen: no answer, route or highlight left on the map
   const clearView = useCallback(() => {
+    cancelReveal()
     stopSpeech()
     voiceTurnRef.current?.('The screen was cleared; that question was dropped.')
     voiceTurnRef.current = null
@@ -619,7 +685,7 @@ function Workspace({ phone }: { phone: boolean }) {
     setMapInsets({ top: 0, right: 0, bottom: 0, left: 0 })
     // Where you were belongs to the last question; preferences (step-free, short answers) carry over.
     useApp.setState((s) => ({ memory: s.memory.filter((m) => !m.spaceId) }))
-  }, [stopSpeech, setRoute, setHighlight, setMapOverlays, setMapInsets])
+  }, [cancelReveal, stopSpeech, setRoute, setHighlight, setMapOverlays, setMapInsets])
 
   // Start over: the welcome screen, and the guide forgets this conversation
   const reset = useCallback(() => {
@@ -788,7 +854,7 @@ function Workspace({ phone }: { phone: boolean }) {
             ? { top: 64, right: 20, bottom: 360, left: 20 }
             : { top: 84, right: 32, bottom: 52, left: 32 }
           : phone
-            ? { top: 72, right: 16, bottom: 420, left: 16 }
+            ? { top: 72, right: 16, bottom: routeDrawing ? 110 : 420, left: 16 }
             : { top: 88, right: 40, bottom: 40, left: 460 },
       )
       setRoute(result.route?.showRoute ?? null)
@@ -812,6 +878,7 @@ function Workspace({ phone }: { phone: boolean }) {
     stepIdx,
     applied,
     phone,
+    routeDrawing,
     index,
     setFloor,
     setRoute,
@@ -872,6 +939,7 @@ function Workspace({ phone }: { phone: boolean }) {
           onForgetOne={forgetOne}
           onForgetAll={forgetAll}
           onArrive={arrive}
+          drawing={routeDrawing}
           voiceBar={voice.phase === 'off' ? undefined : (inPanel) => <VoiceBar voice={voice} inPanel={inPanel} />}
         />
       </>
@@ -1025,6 +1093,8 @@ export interface ViewProps {
   onArrive?: () => void
   /** The live voice call, drawn where the guide bar is (`inPanel`: at the foot of the thread); null when off. */
   voiceBar?: (inPanel: boolean) => ReactNode
+  /** A route answer is drawing in: the phone's answer card steps aside and "Let's go" waits. */
+  drawing?: boolean
 }
 
 // ---- Shared Subcomponents --------------------------------------------------------------------------------
