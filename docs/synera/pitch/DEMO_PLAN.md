@@ -60,22 +60,35 @@ from the entrance, and no clash with other events that day.
   per room and a hover preview.
 - 2.6: the nudge card. 2.7: render the `plan_event` result: a plan card, highlight `highlight` ids on the
   map, the main room in a stronger colour. 2.8: booked state.
-- **Fallback:** if the agent call fails or takes longer than 8 s, show the saved plan from
-  `data/calendars/munich-urban-colab.plan.json` (Mousa commits it). The audience can't tell the difference.
+- **No model call needed for the clicks:** 2.5–2.8 use the calendar endpoints below. They answer instantly
+  and give the same plan the agent gives in chat, so nothing on stage waits on a model.
 
-**Mousa (C, `src/app/agents/building_guide/`, `data/calendars/`): the data and the plan**
-- Widen the calendar file:
-  - `resources`: per bookable room, `capacity` and `equipment` (screens, projector, whiteboard), as
-    Outlook/Google room resources carry them.
-  - Events across the week, so every main room has a schedule, and Saturday has some clashes the plan
-    must avoid.
-  - `requests`: the seeded hackathon request for the nudge.
-- New agent tool `plan_event(title, date, people, teams, needs)`. It filters rooms that are free on that
-  date and have enough capacity and screens. Then it picks a main room, plus breakouts within a short walk
-  of it (`route`), and the nearest kitchen and toilets. It returns the contract below.
-- An eval case: the hackathon request → the plan uses free rooms only, the seats cover 60, and every
-  breakout is within N m.
-- Commit the saved fallback plan JSON. Expose the tool through the API the web app already calls.
+**Mousa (C): done.** The mock calendar, the `plan_event` agent tool and the endpoints are in place.
+- `data/calendars/munich-urban-colab.json`:
+  - `resources`: 36 bookable rooms with seats and equipment, in the shape of Outlook/Google room resources.
+  - 26 events over the next 7 days. The week always starts on the day the app runs.
+  - On Saturday the Foyer (Open House) and Seminarraum 2 (Founder bootcamp) are booked, so the plan has to
+    avoid them.
+  - `requests`: the hackathon request from Lena Huber (UnternehmerTUM): Saturday, 60 people, 12 teams,
+    projector, screen and catering.
+- In the chat the agent knows the request is waiting. "A hackathon request just came in, can you plan it?"
+  calls `plan_event` and answers room by room with the reasons and the rooms it avoided. "Is Seminarraum 2
+  free that day?" calls `calendar` for that room. Scenario `calendar-plan-hackathon-fm` passes.
+- Scene 1 still finds the hackathon today in `F3-OPEN-S`. `calendar-hackathon-guest` passed 3 of 4 runs:
+  once the agent called `highlight_rooms` last and replied only "I've highlighted the room on your map".
+  Magnus, rehearse the exact wording.
+
+### Endpoints for the app (Maximilian)
+
+| Step | Call | Gives |
+|---|---|---|
+| 2.4–2.5 Connect | `GET /buildings/munich-urban-colab/calendar` | `rooms` {id: room, floor_id, seats, equipment}, `events` for 7 days (room_id, date, weekday, from/until or `when: "all day"`, status, organizer, about), `requests` |
+| 2.6 Nudge | the same `requests[0]` | title, from, weekday, date, start, end, people, teams, needs, message |
+| 2.7 Plan it | `POST /buildings/munich-urban-colab/calendar/plan` with `{"request_id": "req-hackathon"}` | the plan below, instantly |
+| 2.8 Book | `POST /buildings/munich-urban-colab/calendar/book` with the plan as the body | `booked`, `events`, `highlight`; from then on the calendar and the agent show the booking |
+
+Bookings live in memory until the API restarts, so restart it before each run-through and before the
+pitch, so the request is waiting again.
 
 **Magnus (A):** scene 1 as above.
 
@@ -83,27 +96,37 @@ from the entrance, and no clash with other events that day.
 end. If the live run breaks on stage, we play the recording. Also help Magnus with the stage mic and voice
 check.
 
-### Contract: `plan_event` result (Mousa writes, Maximilian renders)
+### Contract: the plan (the endpoint and the agent's `plan_event` tool return the same thing)
+
+The real result for the hackathon request, shortened:
 
 ```json
 {
-  "request": {"title": "Hackathon", "date": "2026-10-31", "people": 60, "teams": 12},
+  "request": {"title": "Industrial AI Hackathon", "date": "2026-10-31", "weekday": "Saturday",
+              "from": "09:00", "until": "21:00", "people": 60, "teams": 12, "needs": ["projector", "screen", "catering"]},
   "plan": [
-    {"role": "main", "room_id": "F1-ARENA", "room": "Arena (Auditorium)", "floor": "1. OG",
-     "why": "Free Sat, 80 seats, projector + 2 screens"},
-    {"role": "breakout", "room_id": "F1-SEM1", "room": "Seminarraum 1", "floor": "1. OG",
-     "why": "Free, screen, 25 m from the Arena"},
-    {"role": "kitchen", "room_id": "F1-TEEK", "room": "Teeküche", "floor": "1. OG", "why": "18 m from the Arena"},
-    {"role": "toilets", "room_id": "F1-WC1", "room": "WC", "floor": "1. OG", "why": "Same corridor"}
+    {"role": "main", "room_id": "F1-ARENA", "room": "Arena (Auditorium) (Floor 1 …)", "floor": "Floor 1 …",
+     "why": "Free then, 120 seats, projector, screen, microphones, video_call", "seats": 120},
+    {"role": "breakout", "room_id": "F1-SEM3", "why": "Free, 4 teams, projector, screen, whiteboard, 28 m from the main room", "teams": 4, "walk_m": 27.9},
+    {"role": "breakout", "room_id": "F1-SEM1", "why": "Free, 4 teams, …, 44 m from the main room", "teams": 4, "walk_m": 44.0},
+    {"role": "breakout", "room_id": "F1-CAD", "why": "Free, 4 teams, screen, 59 m from the main room", "teams": 4, "walk_m": 59.0},
+    {"role": "catering", "room_id": "F0-GAST", "why": "80 m from the main room, step-free", "walk_m": 80.0},
+    {"role": "kitchen", "room_id": "F1-TEEK", "why": "23 m from the main room, step-free", "walk_m": 23.0},
+    {"role": "toilets", "room_id": "F1-WC2", "why": "31 m from the main room, step-free", "walk_m": 31.0}
   ],
-  "checked": ["free on Sat", "seats ≥ 60", "screens", "breakouts ≤ 40 m", "kitchen + WC nearby", "step-free"],
-  "avoided": [{"room": "Seminarraum 2", "why": "Startup office hours 10:00–12:00"}],
-  "highlight": ["F1-ARENA", "F1-SEM1", "F1-TEEK", "F1-WC1"]
+  "checked": ["free on Saturday 09:00–21:00", "120 seats for 60 people plus 10%", "projector, screen in the main room",
+              "12 of 12 teams in breakouts within 60 m", "kitchen and toilets nearby",
+              "step-free from Eingangsbereich (Ground floor …), 55 m"],
+  "avoided": [{"room_id": "F0-FOYER", "why": "Open House: Munich Urban Colab 10:00–16:00"},
+              {"room_id": "F1-SEM2", "why": "Founder bootcamp 09:00–17:00"}],
+  "booked": false,
+  "highlight": ["F1-ARENA", "F1-SEM3", "F1-SEM1", "F1-CAD", "F0-GAST", "F1-TEEK", "F1-WC2"]
 }
 ```
 
-The room ids and values above are illustrative; the tool computes the real ones. `role` values: `main`,
-`breakout`, `kitchen`, `toilets`. `highlight` uses the same ids as the guest scene's `highlight`.
+`role` is one of `main`, `breakout`, `catering`, `kitchen`, `toilets`. Draw `main` strongest, the
+breakouts next, and services lightest; `avoided` rooms in a muted "booked" style. If nothing fits, `plan`
+is `[]` and `note` says why. `highlight` uses the same ids as the guest scene's `highlight`.
 
 ---
 
@@ -111,11 +134,11 @@ The room ids and values above are illustrative; the tool computes the real ones.
 
 | By | Who | Milestone |
 |---|---|---|
-| 11:35 | Mousa | Calendar file widened + fallback plan JSON committed. Maxi builds on these. |
-| 11:50 | Maximilian | 2.1–2.5 click through on `?demo=fm` with the fallback data |
+| 11:35 | Mousa | ✓ Calendar widened, endpoints live. Maxi builds on these. |
+| 11:50 | Maximilian | 2.1–2.5 click through on `?demo=fm` with `GET /calendar` |
 | 11:50 | Magnus | Scene 1 reception view done, rehearsed |
-| 12:00 | Mousa | `plan_event` live in the API, eval green |
-| 12:10 | Maximilian | 2.6–2.8 wired to the live tool, fallback in place |
+| 12:00 | Mousa | ✓ `plan_event` in the agent, scenario green |
+| 12:10 | Maximilian | 2.6–2.8 wired to `/calendar/plan` and `/calendar/book` |
 | 12:20 | All | Full run-through of both scenes on the stage laptop. Vadim records the backup. |
 | 13:00 | – | Code freeze |
 

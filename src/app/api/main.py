@@ -12,6 +12,10 @@
                                         (?location=<space id or room> = where the user is)
     POST /buildings/{id}/scan           "this is now here" from a barcode/RFID reader or another app
     GET  /buildings/{id}/changes        what moved, arrived, closed or opened (?since=&until= ISO times)
+    GET  /buildings/{id}/calendar       the room calendar (demo data): this week's events, each room's seats and
+                                        equipment, booking requests waiting for the facility manager
+    POST /buildings/{id}/calendar/plan  plan an event into free rooms (a request id, or people/day/...)
+    POST /buildings/{id}/calendar/book  book the rooms of a plan; the guide finds them at once
     POST /buildings/draft               Level 4: upload floor plans (multipart `plans`, `name`) -> a new
                                         building, chat about it to settle what the plans don't say
 
@@ -43,8 +47,9 @@ from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from starlette.responses import Response
 
 from app import observability
+from app.agents.building_guide import room_calendar
 from app.agents.building_guide.drafting import create_draft, get_draft, list_drafts
-from app.agents.building_guide.tools import Deps, _space_id, building_changes, report_item
+from app.agents.building_guide.tools import Deps, _label, _space_id, building_changes, report_item
 from app.building import load_building
 from app.building.state import BuildingState
 from app.building.view import Scene, scene
@@ -291,6 +296,69 @@ async def changes(building_id: str, since: str | None = None, until: str | None 
         return json.loads(building_changes(SimpleNamespace(deps=deps), since, until))  # type: ignore[arg-type]
     except ModelRetry as e:
         raise HTTPException(400, str(e)) from None
+
+
+@app.get("/buildings/{building_id}/calendar")
+async def building_calendar(building_id: str) -> dict[str, Any]:
+    """The building's room calendar, as the app shows it after "Connect calendar": every room's bookings for
+    the next seven days with seats and equipment, and the booking requests waiting to be planned."""
+    deps = Deps(live_state(building_id))
+    b, booked = deps.building, room_calendar.load_calendar(building_id)
+    if booked is None:
+        return {"connected": False}
+    week = json.loads(room_calendar.calendar(SimpleNamespace(deps=deps), day="week"))  # type: ignore[arg-type]
+    rooms = {
+        rid: {"room": _label(b, rid), "floor_id": b.spaces[rid].floor_id, "seats": r["capacity"],
+              "equipment": r.get("equipment", [])}
+        for rid, r in booked.get("resources", {}).items() if rid in b.spaces
+    }  # fmt: skip
+    return {
+        "connected": True, "calendar": booked.get("calendar"), "source": booked.get("source"),
+        "today": week["today"], "now": week["now"], "reception": booked.get("reception"), "rooms": rooms,
+        "events": week["events"], "requests": room_calendar.requests_for(b, booked, deps.state.now().date()),
+    }  # fmt: skip
+
+
+class PlanRequest(BaseModel):
+    request_id: str | None = None
+    """A waiting booking request (GET /calendar `requests`); or give the fields below."""
+    title: str | None = None
+    people: int | None = None
+    day: str | None = None
+    start: str = "09:00"
+    end: str = "18:00"
+    teams: int | None = None
+    needs: list[str] = []
+
+
+@app.post("/buildings/{building_id}/calendar/plan")
+async def plan_calendar_event(building_id: str, ask: PlanRequest) -> dict[str, Any]:
+    """The same plan the agent's `plan_event` tool makes, without a model call: instant, for the app."""
+    deps = Deps(live_state(building_id))
+    fields = ask.model_dump(exclude={"request_id"})
+    if ask.request_id:
+        booked = room_calendar.load_calendar(building_id) or {}
+        found = [r for r in booked.get("requests", []) if r["id"] == ask.request_id]
+        if not found:
+            raise HTTPException(404, f"No booking request {ask.request_id!r}")
+        r = found[0]
+        fields = {"title": r["title"], "people": r["people"], "day": r["day"], "start": r["start"],
+                  "end": r["end"], "teams": r.get("teams"), "needs": r.get("needs", [])}  # fmt: skip
+    if not fields.get("people") or not fields.get("day"):
+        raise HTTPException(400, "Give request_id, or people and day.")
+    try:
+        return json.loads(room_calendar.plan_event(SimpleNamespace(deps=deps), **fields))  # type: ignore[arg-type]
+    except ModelRetry as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/buildings/{building_id}/calendar/book")
+async def book_calendar_plan(building_id: str, plan: dict[str, Any]) -> dict[str, Any]:
+    """Book the rooms of a plan (the body is a /calendar/plan result). Kept in memory for this run."""
+    if not plan.get("plan") or "request" not in plan:
+        raise HTTPException(400, "The body must be a /calendar/plan result.")
+    events = room_calendar.book(live_state(building_id).building, plan)
+    return {"booked": len(events), "events": events, "highlight": [e["room"] for e in events]}
 
 
 def _time(text: str | None) -> datetime | None:

@@ -21,7 +21,7 @@ from app.models import model
 from app.settings import get_settings
 
 from .drafting import DRAFT_TOOLS, accept_guesses, draft_building, draft_of, fix_draft
-from .room_calendar import calendar, calendar_context
+from .room_calendar import calendar, calendar_context, plan_event
 from .tools import (
     TOOLS,
     Deps,
@@ -292,7 +292,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         deps_type=Deps,
         tools=[
             Tool(never_crash(t), sequential=t in CHANGES_STATE, prepare=PREPARE.get(t))
-            for t in (*TOOLS, *DRAFT_TOOLS, calendar)
+            for t in (*TOOLS, *DRAFT_TOOLS, calendar, plan_event)
         ],
         retries=4,
         capabilities=[Thinking(thinking), Caching()],  # type: ignore[arg-type]

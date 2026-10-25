@@ -1,7 +1,233 @@
 {
   "calendar": "Munich Urban Colab room calendar (demo data)",
+  "source": "Mock of the building's Outlook/Google room resources: no real calendar account is connected.",
   "reception": "F0-EING",
-  "note": "Mock bookings for the demo. Times are clock times on the day the app runs, so they always fall on today.",
+  "note": "Times are clock times. An event without `day` is today; `day` is a weekday (its next date, today included) or a number of days from today, so the demo week always starts today.",
+  "resources": {
+    "F0-FOYER": {
+      "capacity": 150,
+      "equipment": [
+        "projector",
+        "screen",
+        "microphones"
+      ]
+    },
+    "F0-ARENA": {
+      "capacity": 50,
+      "equipment": [
+        "projector",
+        "screen"
+      ]
+    },
+    "F0-PROJ1": {
+      "capacity": 50,
+      "equipment": [
+        "screen",
+        "whiteboard"
+      ]
+    },
+    "F0-PROJ2": {
+      "capacity": 50,
+      "equipment": [
+        "screen",
+        "whiteboard"
+      ]
+    },
+    "F0-GAST": {
+      "capacity": 70,
+      "equipment": [
+        "catering"
+      ]
+    },
+    "F1-ARENA": {
+      "capacity": 120,
+      "equipment": [
+        "projector",
+        "screen",
+        "microphones",
+        "video_call"
+      ]
+    },
+    "F1-SEM1": {
+      "capacity": 40,
+      "equipment": [
+        "projector",
+        "whiteboard"
+      ]
+    },
+    "F1-SEM2": {
+      "capacity": 40,
+      "equipment": [
+        "projector",
+        "whiteboard"
+      ]
+    },
+    "F1-SEM3": {
+      "capacity": 60,
+      "equipment": [
+        "projector",
+        "screen",
+        "whiteboard"
+      ]
+    },
+    "F1-CAD": {
+      "capacity": 20,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F1-ELAB": {
+      "capacity": 16,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F2-BESP-S1": {
+      "capacity": 50,
+      "equipment": [
+        "screen",
+        "whiteboard"
+      ]
+    },
+    "F2-BESP-S2": {
+      "capacity": 30,
+      "equipment": [
+        "screen",
+        "whiteboard"
+      ]
+    },
+    "F2-BESP-S3": {
+      "capacity": 16,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F2-BESP-A": {
+      "capacity": 10,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F2-BESP-B": {
+      "capacity": 10,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F2-BESP-C": {
+      "capacity": 10,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F2-BESP-D": {
+      "capacity": 12,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F2-TL1": {
+      "capacity": 20,
+      "equipment": [
+        "screen",
+        "whiteboard"
+      ]
+    },
+    "F2-TT1": {
+      "capacity": 6,
+      "equipment": [
+        "whiteboard"
+      ]
+    },
+    "F2-TT2": {
+      "capacity": 4,
+      "equipment": []
+    },
+    "F3-OPEN-S": {
+      "capacity": 120,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F3-BESP1": {
+      "capacity": 14,
+      "equipment": [
+        "screen",
+        "video_call"
+      ]
+    },
+    "F3-BESP2": {
+      "capacity": 8,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F3-BESP3": {
+      "capacity": 8,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F3-BESP4": {
+      "capacity": 8,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F3-BESP5": {
+      "capacity": 10,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F3-TT1": {
+      "capacity": 4,
+      "equipment": []
+    },
+    "F3-TT2": {
+      "capacity": 4,
+      "equipment": []
+    },
+    "F3-TT3": {
+      "capacity": 4,
+      "equipment": []
+    },
+    "F3-TT4": {
+      "capacity": 4,
+      "equipment": []
+    },
+    "F4-AKTIV": {
+      "capacity": 16,
+      "equipment": [
+        "whiteboard"
+      ]
+    },
+    "F4-BESP1": {
+      "capacity": 8,
+      "equipment": [
+        "screen",
+        "video_call"
+      ]
+    },
+    "F4-BESP2": {
+      "capacity": 8,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F4-BESP3": {
+      "capacity": 8,
+      "equipment": [
+        "screen"
+      ]
+    },
+    "F4-BESP4": {
+      "capacity": 8,
+      "equipment": [
+        "screen"
+      ]
+    }
+  },
   "events": [
     {
       "title": "Industrial Agents Hackathon: Talk to Your Building",
@@ -47,6 +273,232 @@
       "organizer": "MakerSpace",
       "description": "Safety briefing before using the laser cutter.",
       "public": true
+    },
+    {
+      "title": "Mobility Lab stand-up",
+      "room": "F2-BESP-S1",
+      "start": "09:30",
+      "end": "10:00",
+      "organizer": "Mobility Lab",
+      "description": "Daily team check-in.",
+      "public": false
+    },
+    {
+      "title": "Jury briefing",
+      "room": "F3-BESP1",
+      "start": "11:30",
+      "end": "12:30",
+      "organizer": "UnternehmerTUM",
+      "description": "The jury aligns on scoring.",
+      "public": false
+    },
+    {
+      "title": "Startup demo hour",
+      "room": "F1-ARENA",
+      "start": "13:30",
+      "end": "15:30",
+      "organizer": "Munich Urban Colab",
+      "description": "Resident startups show their latest builds.",
+      "public": true
+    },
+    {
+      "title": "Smart City round table",
+      "room": "F1-SEM3",
+      "day": "monday",
+      "start": "10:00",
+      "end": "12:00",
+      "organizer": "City of Munich",
+      "description": "Partners discuss the next pilot districts.",
+      "public": true
+    },
+    {
+      "title": "CAD for beginners",
+      "room": "F1-CAD",
+      "day": "monday",
+      "start": "14:00",
+      "end": "17:00",
+      "organizer": "MakerSpace",
+      "description": "Hands-on course, laptops provided.",
+      "public": true
+    },
+    {
+      "title": "Investor office hours",
+      "room": "F2-BESP-S1",
+      "day": "monday",
+      "start": "15:00",
+      "end": "18:00",
+      "organizer": "UnternehmerTUM",
+      "description": "Book a 20-minute slot at the reception.",
+      "public": false
+    },
+    {
+      "title": "Retail Living Lab demo day",
+      "room": "F1-LLEH",
+      "day": "tuesday",
+      "start": "10:00",
+      "end": "16:00",
+      "organizer": "Living Lab",
+      "description": "Prototype shop open for testing.",
+      "public": true
+    },
+    {
+      "title": "Team offsite: Mobility Lab",
+      "room": "F0-PROJ1",
+      "day": "tuesday",
+      "start": "09:00",
+      "end": "17:00",
+      "organizer": "Mobility Lab",
+      "description": "Full-day planning session.",
+      "public": false
+    },
+    {
+      "title": "Lunch & Learn: AI in facilities",
+      "room": "F0-ARENA",
+      "day": "tuesday",
+      "start": "12:00",
+      "end": "13:30",
+      "organizer": "Munich Urban Colab",
+      "description": "Talk with lunch in the Arena.",
+      "public": true
+    },
+    {
+      "title": "Board meeting",
+      "room": "F4-BESP1",
+      "day": "wednesday",
+      "start": "09:00",
+      "end": "11:00",
+      "organizer": "Munich Urban Colab",
+      "description": "Quarterly board meeting.",
+      "public": false
+    },
+    {
+      "title": "Design sprint",
+      "room": "F2-BESP-S2",
+      "day": "wednesday",
+      "start": "09:00",
+      "end": "17:00",
+      "organizer": "Synera",
+      "description": "Five-day sprint, day 3.",
+      "public": false
+    },
+    {
+      "title": "Community meetup",
+      "room": "F0-FOYER",
+      "day": "wednesday",
+      "start": "18:00",
+      "end": "21:00",
+      "organizer": "Munich Urban Colab",
+      "description": "Drinks and lightning talks. Open to all.",
+      "public": true
+    },
+    {
+      "title": "Electronics workshop",
+      "room": "F1-ELAB",
+      "day": "thursday",
+      "start": "13:00",
+      "end": "17:00",
+      "organizer": "MakerSpace",
+      "description": "Soldering and microcontrollers.",
+      "public": true
+    },
+    {
+      "title": "Startup pitch training",
+      "room": "F1-SEM1",
+      "day": "thursday",
+      "start": "10:00",
+      "end": "12:00",
+      "organizer": "UnternehmerTUM",
+      "description": "Practise your pitch with coaches.",
+      "public": true
+    },
+    {
+      "title": "Facility walk-through",
+      "room": "F2-TL1",
+      "day": "thursday",
+      "start": "15:00",
+      "end": "16:00",
+      "organizer": "Facility management",
+      "description": "Quarterly safety walk.",
+      "public": false
+    },
+    {
+      "title": "Demo Friday",
+      "room": "F1-ARENA",
+      "day": "friday",
+      "start": "16:00",
+      "end": "18:00",
+      "organizer": "Munich Urban Colab",
+      "description": "Teams show what they built this week.",
+      "public": true
+    },
+    {
+      "title": "Recruiting day",
+      "room": "F0-PROJ2",
+      "day": "friday",
+      "start": "10:00",
+      "end": "15:00",
+      "organizer": "UnternehmerTUM",
+      "description": "Startups meet students.",
+      "public": true
+    },
+    {
+      "title": "Open House: Munich Urban Colab",
+      "room": "F0-FOYER",
+      "day": "saturday",
+      "start": "10:00",
+      "end": "16:00",
+      "organizer": "Munich Urban Colab",
+      "description": "Tours for the neighbourhood, every 30 minutes.",
+      "public": true
+    },
+    {
+      "title": "Founder bootcamp",
+      "room": "F1-SEM2",
+      "day": "saturday",
+      "start": "09:00",
+      "end": "17:00",
+      "organizer": "UnternehmerTUM",
+      "description": "Weekend bootcamp for first-time founders.",
+      "public": true
+    },
+    {
+      "title": "Robotics meetup",
+      "room": "F0-PROJ1",
+      "day": "saturday",
+      "start": "13:00",
+      "end": "18:00",
+      "organizer": "Munich Robotics",
+      "description": "Community robotics evening.",
+      "public": true
+    },
+    {
+      "title": "Kids coding club",
+      "room": "F2-BESP-S1",
+      "day": "saturday",
+      "start": "10:00",
+      "end": "12:00",
+      "organizer": "MakerSpace",
+      "description": "Scratch and Lego robots for ages 8 to 12.",
+      "public": true
+    }
+  ],
+  "requests": [
+    {
+      "id": "req-hackathon",
+      "title": "Industrial AI Hackathon",
+      "from": "Lena Huber, UnternehmerTUM",
+      "received": "08:12",
+      "day": "saturday",
+      "start": "09:00",
+      "end": "21:00",
+      "people": 60,
+      "teams": 12,
+      "needs": [
+        "projector",
+        "screen",
+        "catering"
+      ],
+      "message": "Hi! We'd like to run a one-day hackathon at MUCL this Saturday: about 60 people in 12 teams. We need one room for the kickoff and the pitches with a projector, rooms where the teams can work with screens, and somewhere for lunch. Everything should be step-free. Can you suggest rooms?"
     }
   ]
 }

@@ -240,3 +240,16 @@ scenarios:
   - {turn: 1, tool: route}
   expect:
   - Finds the hackathon in the room calendar in the „Offener Bürobereich Süd“ on the third floor (F3), says it is on now, and gives walking directions there from the reception (Eingangsbereich / Empfang) without asking where the guest is.
+
+- name: calendar-plan-hackathon-fm
+  building: data/MUCL
+  persona: The facility manager, who has just seen the hackathon booking request come in and wants rooms suggested.
+  turns:
+  - A hackathon request just came in. Can you plan it?
+  - Is Seminarraum 2 free that day?
+  checks:
+  - {turn: 1, tool: plan_event, args: {people: 60, teams: 12}}
+  - {turn: 2, tool: calendar}
+  expect:
+  - Turn 1 plans the Industrial AI Hackathon on Saturday into free rooms (main room with enough seats and a projector, breakout rooms for the 12 teams nearby, catering, kitchen and toilets), gives a short reason per room, and says which rooms it avoided because they are booked that day, without asking for details the request already gives.
+  - Turn 2 says Seminarraum 2 is booked on Saturday for the Founder bootcamp (09:00–17:00), which is why the plan left it out.
