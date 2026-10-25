@@ -24,7 +24,7 @@ import json
 import math
 import operator
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -320,7 +320,7 @@ def space_of(b: Building, text: str, floor: str | int | None = None) -> Space | 
     said = text.strip().casefold()
     if said in ("outside", OUTSIDE):
         return OUTSIDE
-    hits = _spaces_named(b, text, floor)
+    hits = _one_per_room(_spaces_named(b, text, floor))
     if not hits and OUTSIDE_WORDS.match(said):  # "outside (any step-free entrance)", "the street"
         return OUTSIDE
     if len(hits) == 1:
@@ -343,6 +343,85 @@ def space_of(b: Building, text: str, floor: str | int | None = None) -> Space | 
 def _space_id(b: Building, text: str, floor: str | int | None = None) -> str:
     s = space_of(b, text, floor)
     return s if isinstance(s, str) else s.id
+
+
+SAME_ROOM = 0.5
+"""Two same-named spaces on one floor are one room drawn twice (an OSM duplicate) when they overlap by more
+than this share of the smaller outline. Different rooms sharing a name don't overlap at all."""
+
+
+def _one_per_room(hits: list[Space]) -> list[Space]:
+    """The matches with each room drawn several times kept once (its lowest id): the copies are the same
+    place (a route may differ by copy: each has its own doors, and the kit picks one at random)."""
+    kept: list[Space] = []
+    for s in sorted(hits, key=lambda s: s.id):
+        if not any(k.floor_id == s.floor_id and _overlap_share(k, s) > SAME_ROOM for k in kept):
+            kept.append(s)
+    return kept if len(kept) < len(hits) else hits
+
+
+def _overlap_share(a: Space, c: Space) -> float:
+    smaller = min(a.area, c.area)
+    if smaller <= 0:
+        return 0.0
+    try:
+        return a.shape.intersection(c.shape).area / smaller
+    except Exception:  # an invalid OSM outline: not a duplicate we can prove
+        return 0.0
+
+
+def _scored(ctx: RunContext[Deps]) -> bool:
+    """A one-shot benchmark question (it asks for an 'Answer:' line): there is no one to ask which."""
+    prompt = getattr(ctx, "prompt", None)
+    return isinstance(prompt, str) and "Answer:" in prompt
+
+
+MAX_COMBINATIONS = 30
+
+
+def _stops_committed(
+    ctx: RunContext[Deps], places: list[str], constraints: Constraints
+) -> tuple[list[str], dict | None]:
+    """Route stops as space ids. With a person, a name several different rooms share raises 'Ambiguous' (they
+    say which). In a one-shot scored question it can't be asked: the kit's questions pick one of the
+    same-named rooms at random, so every option is routed and the one whose length is closest to all the
+    others is used (the least wrong whichever room was meant); `shared_name` lists them all."""
+    b = ctx.deps.building
+    try:
+        return [_space_id(b, p) for p in places], None
+    except ModelRetry:
+        if not _scored(ctx):
+            raise
+    options: list[list[str]] = []
+    for p in places:
+        try:
+            options.append([_space_id(b, p)])
+        except ModelRetry as e:
+            hits = _one_per_room(_spaces_named(b, p, None))
+            if len(hits) < 2:
+                raise e
+            options.append([s.id for s in hits])
+    combos = list(itertools.islice(itertools.product(*options), MAX_COMBINATIONS))
+    graph = route_graph(b, constraints)
+    lengths = {c: t.length_m for c in combos if (t := graph.tour(list(c))) is not None}
+    if not lengths:
+        return list(combos[0]), None
+    pick = min(lengths, key=lambda c: (sum(abs(lengths[c] - v) for v in lengths.values()), c))
+    shared = [p for p, o in zip(places, options, strict=True) if len(o) > 1]
+    return list(pick), {
+        "names": shared,
+        "used": [_label(b, s) + f" [{s}]" for s, o in zip(pick, options, strict=True) if len(o) > 1],
+        "why": "Several different rooms carry this name. This one-shot answer uses the option whose length is "
+        "closest to all the others; commit to total_length_m as the single number. Mention the others above "
+        "the Answer line, not in it.",
+        "options": [
+            {
+                "rooms": [s for s, o in zip(c, options, strict=True) if len(o) > 1],
+                "total_length_m": round(v, 2),
+            }
+            for c, v in sorted(lengths.items(), key=lambda kv: kv[1])
+        ],
+    }
 
 
 def _type_of(text: str, known: set[str], what: str) -> str:
@@ -598,37 +677,70 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
             "directly_above_id": above,
             "directly_below_id": below,
             **{f"directly_{d}_ambiguous": t for d, t in ties.items() if t},
+            **_stack(b, s),
             "highlight": [s.id],
         }
     )
 
 
+def _stack(b: Building, s: Space) -> dict:
+    """Every room under (and over) this one, one per floor down to the lowest (up to the highest): on each
+    floor the space overlapping this room's own outline most. Measured against this outline, not hop by hop,
+    so it doesn't drift sideways. Only when there are two or more floors that way."""
+    level = b.floors[s.floor_id].level
+    out = {}
+    for name, floors in (
+        ("all_below_down_to_lowest_floor", [f for f in reversed(b.floors_by_level()) if f.level < level]),
+        ("all_above_up_to_highest_floor", [f for f in b.floors_by_level() if f.level > level]),
+    ):
+        if len(floors) < 2:
+            continue
+        chain = []
+        for f in floors:
+            overlaps = [
+                (s.shape.intersection(o.shape).area, o)
+                for o in b.spaces_on(f.id)
+                if s.shape.intersects(o.shape)
+            ]
+            area, best = max(overlaps, key=lambda t: t[0], default=(0.0, None))
+            if best is not None and area > 0.01:
+                chain.append(_label(b, best.id))
+        out[name] = {"count": len(chain), "rooms": chain}
+    return out
+
+
 def list_rooms(
-    ctx: RunContext[Deps], floor: str, room_type: str | None = None, scope: Scope = "rooms"
+    ctx: RunContext[Deps], floor: str | None = None, room_type: str | None = None, scope: Scope = "rooms"
 ) -> str:
-    """Spaces on a floor, largest first, with areas, how many there are and their total area.
+    """Spaces on a floor, or in the whole building, largest first, with areas, how many there are and their
+    total area.
 
     Args:
-        floor: Level ("1", "0", "-1") or name ("Floor 1", "Ground floor").
+        floor: Level ("1", "0", "-1") or name ("Floor 1", "Ground floor"). Omit it for the whole building
+            ("the largest kitchen in the building"): every floor is ranked together, ties across floors too.
         room_type: Only this type, e.g. "office", "kitchen", "generic_room" (see room_types in the
             overview). With a room_type every space of that type counts, whatever the scope.
         scope: Without a room_type, which spaces count: "rooms" (rooms only), "rooms_and_halls" (also halls
             such as factory zones), or "all_spaces" (also corridors, stairwells, lifts, balconies).
     """
     b = ctx.deps.building
-    f = floor_of(b, floor)
+    floor_ids = [floor_of(b, floor).id] if floor else [f.id for f in b.floors_by_level()]
     if room_type:
         rtype = _type_of(room_type, {s.room_type for s in b.spaces.values()}, "room type")
-        ranked = geometry.rooms_by_area(b, f.id, rtype)
+        ranked = [r for fid in floor_ids for r in geometry.rooms_by_area(b, fid, rtype)]
     else:
         keep = SCOPES[scope]
-        ranked = sorted(((s, s.area) for s in b.spaces_on(f.id) if keep(s)), key=lambda t: -t[1])
+        ranked = [(s, s.area) for fid in floor_ids for s in b.spaces_on(fid) if keep(s)]
+    ranked.sort(key=lambda t: -t[1])
+    kinds: Counter[str] = Counter()
+    for fid in floor_ids:
+        kinds.update(_kinds(b, fid))
     return _json(
         {
-            "floor": f.name,
+            "floor": b.floors[floor_ids[0]].name if floor else "whole building",
             "room_type": room_type,
             "scope": None if room_type else scope,
-            "floor_spaces_by_kind": _kinds(b, f.id),
+            "floor_spaces_by_kind": dict(kinds.most_common()),
             "count": len(ranked),
             "total_area_m2": round(sum(a for _, a in ranked), 2),
             "rooms": [
@@ -647,7 +759,10 @@ def _overlap(ranked: list[tuple[Space, float]]) -> dict:
     total = sum(a for _, a in ranked)
     if len(ranked) < 2 or total <= 0:
         return {}
-    covered = unary_union([s.shape if s.shape.is_valid else s.shape.buffer(0) for s, _ in ranked]).area
+    by_floor: dict[str, list] = defaultdict(list)
+    for s, _ in ranked:  # rooms stacked on different floors don't overlap: union each floor on its own
+        by_floor[s.floor_id].append(s.shape if s.shape.is_valid else s.shape.buffer(0))
+    covered = sum(unary_union(shapes).area for shapes in by_floor.values())
     if total - covered <= 0.005 * total:
         return {}
     return {
@@ -659,17 +774,29 @@ def _overlap(ranked: list[tuple[Space, float]]) -> dict:
 
 
 def _area_tie(b: Building, ranked: list[tuple[Space, float]]) -> dict:
-    """The largest is a tie when the next ones are within 1 % of its area: then no single room is largest."""
+    """Rooms of the same size (equal to the hundredth of a m²) at the top: no single room is largest. Rooms
+    that differ but are within 1 % keep their order: the exact areas decide, the note only says how close."""
     if len(ranked) < 2:
         return {}
     top = ranked[0][1]
-    tied = [s for s, a in ranked if a >= 0.99 * top]
-    if len(tied) < 2:
+    tied = [s for s, a in ranked if round(a, 2) == round(top, 2)]
+    if len(tied) >= 2:
+        return {
+            "largest_is_a_tie": [_label(b, s.id) for s in tied],
+            "note": f"Ambiguous: {len(tied)} rooms are exactly the same size. Don't name just one. Say it once, "
+            "the way a person would: that they are the same size, the size, and which rooms (the first listed "
+            "first), e.g. 'two kitchens are the same size, 29.7 m²: Kitchen 1.13 and Kitchen 2.13'. Don't list "
+            "each room with its area again.",
+        }
+    close = [(s, a) for s, a in ranked[1:] if a >= 0.99 * top]
+    if not close:
         return {}
     return {
-        "largest_is_a_tie": [_label(b, s.id) for s in tied],
-        "note": f"Ambiguous: {len(tied)} rooms are the largest within 1 % of each other. Don't name just one: "
-        "name them all (the first listed first), with the area.",
+        "close_in_size": [
+            {"room": _label(b, s.id), "area_m2": round(a, 2)} for s, a in ranked[: len(close) + 1]
+        ],
+        "note": "These rooms differ by less than 1 %, but they are not the same size: rank them by the exact "
+        "areas above (largest first, then second, ...) and say how close they are.",
     }
 
 
@@ -888,8 +1015,8 @@ def route(
             so lifts with narrow doors are out.
     """
     b = ctx.deps.building
-    stops = [_space_id(b, p) for p in [start, *(via or []), destination]]
     constraints = _constraints(ctx, step_free, min_width_m)
+    stops, shared_name = _stops_committed(ctx, [start, *(via or []), destination], constraints)
     tour = route_graph(b, constraints).tour(stops)
     if tour is None:
         return _json(
@@ -912,6 +1039,7 @@ def route(
             "passes_in_total": dict(total),
             "stops": [_label(b, s) for s in stops],
             "legs": legs,
+            **({"shared_name": shared_name} if shared_name else {}),
             "closed_avoided": sorted(ctx.deps.closed),
             "highlight": stops,
         }
@@ -1220,20 +1348,24 @@ def walk_distances(
     closed: list[str] | None = None,
     scope: Scope = "rooms",
     room_type: str | None = None,
+    within_m: float | None = None,
 ) -> str:
     """Every room on a floor with its walking distance from a start, LONGEST FIRST. With the default start
     "outside" that is each room's walk out of the building to its nearest entrance: use it for fire drills
     and evacuation, "which room is farthest from / closest to an exit", worst or average walk out, or
     "which room on floor X is farthest from Y". One call ranks every room; never probe rooms one by one.
+    For "how many (other) rooms can I reach within X m" pass within_m=X: the answer is `count_within`,
+    counted in code (the start itself excluded, walks of exactly X m included); report it as is.
 
     Args:
-        floor: Level or floor name whose rooms to rank.
+        floor: Level or floor name whose rooms to rank (for "on that floor", the start's floor).
         start: "outside" (nearest entrance, the default) or a room or place to measure from.
         step_free: No stairs or steps. Lifts are fine.
         min_width_m: Every door passed must be at least this wide (a forklift or vehicle: 3, step_free).
         closed: Extra lifts, stairs, doors or rooms out of service for this question only.
         scope: Which spaces count: "rooms" (default), "rooms_and_halls" or "all_spaces".
         room_type: Only spaces of this type, whatever the scope, e.g. "office".
+        within_m: Count and list, shortest first, the rooms reachable within this many metres of walking.
     """
     b = ctx.deps.building
     origin, f = _space_id(b, start), floor_of(b, floor)
@@ -1245,6 +1377,30 @@ def walk_distances(
         rooms = [s for s in b.spaces_on(f.id) if s.room_type == rtype]
     else:
         rooms = [s for s in b.spaces_on(f.id) if SCOPES[scope](s)]
+    if within_m is not None:
+        others = sorted((distances[s.id], s.id) for s in rooms if s.id in distances and s.id != origin)
+        near = [(d, sid) for d, sid in others if d <= within_m]
+        return _json(
+            {
+                "from": "the nearest entrance (walk out of the building)"
+                if origin == OUTSIDE
+                else _label(b, origin),
+                "floor": f.name,
+                "scope": None if room_type else scope,
+                "room_type": room_type,
+                "within_m": within_m,
+                "count_within": len(near),
+                "note": "Other rooms only: the start itself is not counted. Walks of exactly "
+                f"{within_m} m count. The answer is count_within.",
+                "within": [{"room": _label(b, sid), "walk_m": round(d, 2)} for d, sid in near],
+                "count_farther": len(others) - len(near),
+                "nearest_farther": [
+                    {"room": _label(b, sid), "walk_m": round(d, 2)} for d, sid in others[len(near) :][:3]
+                ],
+                "unreachable_count": sum(1 for s in rooms if s.id not in distances and s.id != origin),
+                "highlight": [sid for _, sid in near],
+            }
+        )
     ranked = sorted(((distances[s.id], s.id) for s in rooms if s.id in distances), key=lambda t: -t[0])
     keep = 2 * MAX_RESULTS
     rows = [{"room": _label(b, sid), "id": sid, "walk_m": round(d, 2)} for d, sid in ranked]

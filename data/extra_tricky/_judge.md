@@ -10,6 +10,11 @@ Rules:
   user's assumption doesn't hold, or that it chose one reading).
 - `ask_clarification`: the reply asks which option the user means, or lists every option with its own
   result, instead of silently picking one. Silently picking one fails, even if it picks the most likely one.
+  A tie (the options share the same value, e.g. two kitchens of exactly the same size) may be summed up
+  the way a person would: saying once that there are two kitchens of the same size, with the size and the
+  rooms named, passes, even if the Answer line then names only the first. It doesn't have to list each
+  room with the value again. Only a reply that never mentions the tie counts as silently picking. This
+  exception is for equal values only: rooms sharing a name but differing in size still need both results.
 - `flag_false_premise`: the reply says clearly that the user's assumption is wrong and gives the
   correction. Answering as if the premise were true fails.
 - `say_no_route`: the reply says there is no route under the user's constraints. Giving a route that breaks

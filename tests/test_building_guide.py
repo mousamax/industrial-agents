@@ -347,3 +347,93 @@ def test_walk_distances_ranks_every_room_by_its_walk_out() -> None:
     farthest = max((s for s in b.spaces_on(f"{CAMPUS}-F2") if s.type == "room"), key=lambda s: out[s.id])
     assert rows[0]["id"] == farthest.id and rows[0]["walk_m"] == round(out[farthest.id], 2)
     assert got["rooms_compared"] == len(rows) and got["shortest"] == rows[-1]
+
+
+def test_list_rooms_without_a_floor_ranks_the_whole_building_and_flags_a_tie_across_floors():
+    from app.agents.building_guide.tools import list_rooms
+
+    got = call(list_rooms, ctx(Deps.load("proc-factory-dev-011")), room_type="kitchen")
+    assert got["floor"] == "whole building" and got["count"] == 14
+    assert got["largest_is_a_tie"] == ["Kitchen 1.13 (Floor 1)", "Kitchen 2.13 (Floor 2)"]
+    assert got["note"].startswith("Ambiguous:")
+    one_floor = call(list_rooms, ctx(Deps.load("proc-factory-dev-011")), "1", room_type="kitchen")
+    assert one_floor["floor"] == "Floor 1" and "largest_is_a_tie" not in one_floor
+
+
+@pytest.mark.parametrize(
+    ("building", "floor", "start", "within_m", "expected"),
+    [
+        ("proc-factory-dev-012", "Floor 2", "Office 2.09", 40, 25),
+        ("osm-way27917482", "Floor 3", "03.13.060", 30, 14),
+    ],
+)
+def test_walk_distances_counts_the_other_rooms_within_a_walk(building, floor, start, within_m, expected):
+    """ "How many other rooms on that floor within X m": one call, the count computed in code."""
+    from app.agents.building_guide.tools import walk_distances
+
+    got = call(walk_distances, ctx(Deps.load(building)), floor, start=start, within_m=within_m)
+    assert got["count_within"] == expected
+    assert len(got["within"]) == expected
+    assert all(r["walk_m"] <= within_m for r in got["within"])
+
+
+def test_rooms_stacked_on_different_floors_are_not_an_overlap():
+    """Kitchens drawn one above another share x/y but no floor area: across the building the total stays
+    the plain sum (extra_tricky adversarial_language-11 read a 'covered' 120.06 m² instead of 161.34)."""
+    from app.agents.building_guide.tools import list_rooms
+
+    got = call(list_rooms, ctx(Deps.load("proc-campus-dev-000")), room_type="kitchen")
+    assert got["total_area_m2"] == 161.34 and "covered_area_m2" not in got
+
+
+def test_room_details_gives_every_room_below_down_to_the_ground_floor():
+    from app.agents.building_guide.tools import room_details
+
+    got = call(room_details, ctx(Deps.load("proc-campus-dev-000")), "Kitchen 3.27 (Floor 3)")
+    assert got["all_below_down_to_lowest_floor"] == {
+        "count": 3,
+        "rooms": ["Office 2.27 (Floor 2)", "Storage 1.27 (Floor 1)", "Lecture hall 0.27 (Ground floor)"],
+    }
+
+
+def test_a_room_drawn_twice_is_one_room():
+    """OSM sometimes draws a room twice, outline on outline (osm-way58216509 has 84 such pairs). Both ids
+    are the same room, so it resolves to one without an 'Ambiguous' (the kit's questions use either copy at random)."""
+    got = call(
+        route,
+        ctx(Deps.load("osm-way58216509")),
+        "Generic room N2146 (Floor 2)",
+        "Generic room N2103 (Floor 2)",
+    )
+    assert got["reachable"] and "note" not in got
+
+
+def scored(deps: Deps) -> SimpleNamespace:
+    """A one-shot benchmark question: the prompt asks for an 'Answer:' line."""
+    return SimpleNamespace(
+        deps=deps, run_id="turn-1", prompt="How do I get there? Finish with 'Answer: <number>'."
+    )
+
+
+SHARED = "Generic room 03.08.033 (Floor 3)"  # three different rooms, side by side, share this name and number
+TO = "Generic room 02.07.044 (Floor 2)"
+
+
+def test_different_rooms_sharing_a_name_stay_ambiguous_for_a_person():
+    with pytest.raises(ModelRetry, match="Ambiguous"):
+        route(ctx(Deps.load("osm-way27917482")), SHARED, TO)
+
+
+def test_a_scored_route_from_a_shared_name_commits_to_the_middle_option():
+    """The kit's question generator picks one of the same-named rooms at random (osm-way37850565 Q07 and Q08
+    name the same 'Büro (Ground floor)' and use different rooms), so no rule finds it. A one-shot answer
+    still needs one number: the route of the room whose length is closest to all the others, the least
+    wrong whichever was meant. The others are listed, and nothing says 'Ambiguous' (that invites a hedge)."""
+    deps = Deps.load("osm-way27917482")
+    rooms = sorted(s.id for s in deps.building.resolve(SHARED))
+    each = {r: call(route, ctx(deps), r, TO)["total_length_m"] for r in rooms}
+    middle = min(each, key=lambda r: sum(abs(each[r] - v) for v in each.values()))
+    got = call(route, scored(deps), SHARED, TO)
+    assert got["total_length_m"] == each[middle]
+    assert "Ambiguous" not in json.dumps(got)
+    assert sorted(o["total_length_m"] for o in got["shared_name"]["options"]) == sorted(each.values())

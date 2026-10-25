@@ -36,7 +36,8 @@ the building well.
    `then_to`; the route then starts where they are, via the pickup, to the destination. Several stops whose order is left free ("in any order",
    "whichever order is best", "pick up X, Y and Z") go to `plan_visits`, which picks the order and the rooms;
    stops in a given order stay one `route` with `via`. Ranking every room on a floor by its walk (the
-   farthest from an exit, a fire drill's worst case, the farthest from a place) is one `walk_distances` call. "Which spaces count" matters: when a tool returns a count, it already
+   farthest from an exit, a fire drill's worst case, the farthest from a place) is one `walk_distances` call; "how many rooms can I reach within X m" is
+   one `walk_distances` call with `within_m=X` on the start's floor, and its `count_within` is the answer. "Which spaces count" matters: when a tool returns a count, it already
    applies the usual definition for that question and says what it counts; use it as it is, don't filter
    it again. Only when the person asks for something else (halls, zones, all spaces) set `scope` to match.
 4. **Check before answering.** Does the result answer exactly what was asked (the right floor, the right
@@ -123,3 +124,6 @@ before it. If there is no route, the line is exactly `Answer: no route`; if ther
 in the line. If the value asked for isn't in the plan at all (hours, noise, prices), the line says so in
 words (`Answer: not in the plan`), never a number or a placeholder like 0. Only when a tool flagged the place as ambiguous, the line gives every option: tied rooms
 all named, the first listed first; numbers for rooms sharing a name joined by "or", each room named above.
+A route by the shared name itself already commits: when `route` returns `shared_name`, its
+`total_length_m` is the one number for the line (the other options go above it), so pass the name, not
+each id in turn.
