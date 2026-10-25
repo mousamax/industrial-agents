@@ -1,19 +1,24 @@
 """Sunday benchmark: one command from Synera's input to answers.json, no manual steps (challenge PDF).
 
-    uv run run_benchmark <building_dir> <questions.json> <answers.json>      # same as the line below
-    uv run python -m app.agents.building_guide.sunday <building_dir> <questions.json> <answers.json>
+    uv run run_benchmark <data_dir> <answers.json>                           # Synera's format, see below
+    uv run run_benchmark <building_dir> <questions.json> <answers.json>      # one building, own questions
+    uv run python -m app.agents.building_guide.sunday ...                    # same as run_benchmark
     ... --check                 # then check every route the way Synera scores it (invalid = 0 points)
     ... --csv answers.csv       # also write the kit's CSV (question_id, full reply)
+    ... --details records.json  # also write the structured records below (ids, route, length)
 
 Rehearsal on a kit building with known answers: scripts/synera/sunday_rehearsal.py.
 
-Input: a building folder in the kit format (anywhere on disk, not only in synera-kit/data) and
-questions.json with one entry per question: {"id", "text", "constraints"?} (a list, or {"questions": [...]}).
-Output: answers.json, one record per question id with the located item or room id, the route as an
-ordered list of node ids, and the route length in metres, plus the full reply.
+Input, in the kit's format (Synera: the secret building comes "in the same format" as data/test):
+- a data folder like synera-kit/data/test: building folders, questions in a top-level questions.csv /
+  questions.jsonl (with building_id) or in each building's questions.jsonl;
+- or one building folder (building.json, or site.json for several) holding its questions.jsonl;
+- or a building folder plus a questions file: .json ({"id", "text", "constraints"?}, a list or
+  {"questions": [...]}), .jsonl or .csv (the kit's id/question_id and question/text columns).
+Output: answers.json as Synera asked for it: a list of {"question_id", "answer"}, in input order, where
+answer is the agent's full reply (the scorer reads its last 'Answer:' line).
 
-Synera hasn't published the schema yet (PDF: "a schema and an example answer file are in the data folder
-(TODO)"). Until then a record is:
+Behind each answer is a structured record (written with --details, checked by --check):
 
     {"id": "...", "reply": "<full reply>", "answer": "<text after the last 'Answer:'>",
      "item_id": "<asset id>" | null, "space_id": "<space id>" | null, "count": int | null,
@@ -312,23 +317,104 @@ def agent_answerer(
 
 
 def load_questions(path: Path) -> list[dict[str, Any]]:
-    """questions.json as a list of questions: a plain list, or {"questions": [...]}."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    questions = data["questions"] if isinstance(data, dict) else data
-    return [q | {"id": str(q["id"])} for q in questions]
+    """A questions file as a list of questions with a string "id": .json (a list or {"questions": [...]}),
+    .jsonl (one question per line) or .csv (the kit's question_id/question columns)."""
+    path = Path(path)
+    text = path.read_text(encoding="utf-8-sig")
+    if path.suffix == ".csv":
+        import csv
+        import io
+
+        questions: list[dict[str, Any]] = list(csv.DictReader(io.StringIO(text)))
+    else:
+        try:
+            data = json.loads(text)
+            questions = data["questions"] if isinstance(data, dict) else data
+        except json.JSONDecodeError:  # JSON Lines, whatever the extension
+            questions = [json.loads(line) for line in text.splitlines() if line.strip()]
+    return [q | {"id": str(q.get("id") or q["question_id"])} for q in questions]
+
+
+QUESTION_FILES = ("questions.jsonl", "questions.json", "questions.csv")
+"""The scored questions' file names in the kit (questions_basic.jsonl is the warm-up set, not scored)."""
+
+
+def _is_building(folder: Path) -> bool:
+    return (folder / "building.json").exists() or (folder / "site.json").exists()
+
+
+def _questions_file(folder: Path) -> Path | None:
+    return next((folder / n for n in QUESTION_FILES if (folder / n).exists()), None)
+
+
+def plan_questions(source: Path, questions_path: Path | None = None) -> list[dict[str, Any]]:
+    """Every question to answer, in order, each with the "building_dir" it is about. `source` is a kit data
+    folder (building folders plus questions), one building folder, or a building folder used with
+    `questions_path`. A question's building_id picks its folder under a data folder."""
+    source = Path(source)
+    if not source.is_dir():
+        raise FileNotFoundError(f"{source} is not a folder")
+    buildings = (
+        {}
+        if _is_building(source)
+        else {p.name: p for p in sorted(source.iterdir()) if p.is_dir() and _is_building(p)}
+    )
+    if not _is_building(source) and not buildings:
+        raise FileNotFoundError(
+            f"{source} holds no building (building.json or site.json) and no building folders"
+        )
+
+    def placed(questions: list[dict[str, Any]], default: Path | None) -> list[dict[str, Any]]:
+        out = []
+        for q in questions:
+            where = buildings.get(str(q.get("building_id") or "")) or default
+            if where is None and len(buildings) == 1:
+                where = next(iter(buildings.values()))
+            if where is None:
+                raise ValueError(
+                    f"question {q['id']}: no building folder for building_id {q.get('building_id')!r}"
+                )
+            out.append(q | {"building_dir": str(where)})
+        return out
+
+    if questions_path is not None:
+        return placed(load_questions(questions_path), source if _is_building(source) else None)
+    top = _questions_file(source)
+    if top is not None:
+        return placed(load_questions(top), source if _is_building(source) else None)
+    questions = []
+    for folder in buildings.values():
+        if (found := _questions_file(folder)) is not None:
+            questions += placed(load_questions(found), folder)
+    if not questions:
+        raise FileNotFoundError(f"no {' / '.join(QUESTION_FILES)} in {source} or its building folders")
+    return questions
+
+
+def submission(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """answers.json as Synera asked for it: [{"question_id", "answer": the full reply}], in input order."""
+    return [{"question_id": r["id"], "answer": r.get("reply") or ""} for r in records]
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def run_benchmark(
     building_dir: Path,
-    questions_path: Path,
+    questions_path: Path | None,
     answers_path: Path,
     answerer: Answerer | None = None,
     concurrency: int = 8,
+    details_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Answer every question in questions_path about the building in building_dir and write answers_path.
-    One record per question id, in input order; a question that errors still gets a record (fields null,
-    "error" set) so one failure never loses the file."""
-    building, questions = Path(building_dir), load_questions(questions_path)
+    """Answer every question (plan_questions: a kit data folder, a building folder, or a building folder plus
+    questions_path) and write answers_path in Synera's format (submission). Returns the structured records,
+    one per question id, in input order; a question that errors still gets one (fields null, "error" set,
+    an empty answer) so one failure never loses the file."""
+    questions = plan_questions(building_dir, questions_path)
 
     def failed(question: dict[str, Any], e: Exception) -> dict[str, Any]:
         return empty_record(question["id"]) | {"error": f"{type(e).__name__}: {e}"}
@@ -341,10 +427,16 @@ def run_benchmark(
 
         async def one(question: dict[str, Any]) -> dict[str, Any]:
             async with gate:
-                try:
-                    return to_record(question, *await agent_answer(building, question))
-                except Exception as e:  # one failure never loses the file
-                    return failed(question, e)
+                for attempt in range(3):  # an API hiccup (overload, timeout) shouldn't cost the question
+                    try:
+                        return to_record(
+                            question, *await agent_answer(Path(question["building_dir"]), question)
+                        )
+                    except Exception as e:  # one failure never loses the file
+                        if attempt == 2:
+                            return failed(question, e)
+                        await asyncio.sleep(5 * (attempt + 1))
+                raise AssertionError("unreachable")
 
         async def every() -> list[dict[str, Any]]:
             return list(await asyncio.gather(*(one(q) for q in questions)))
@@ -354,12 +446,12 @@ def run_benchmark(
         records = []
         for question in questions:
             try:
-                records.append(to_record(question, *answerer(building, question)))
+                records.append(to_record(question, *answerer(Path(question["building_dir"]), question)))
             except Exception as e:  # one failure never loses the file
                 records.append(failed(question, e))
-    answers_path = Path(answers_path)
-    answers_path.parent.mkdir(parents=True, exist_ok=True)
-    answers_path.write_text(json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_json(answers_path, submission(records))
+    if details_path is not None:
+        _write_json(details_path, records)
     return records
 
 
@@ -368,7 +460,7 @@ def check_records(
 ) -> dict[str, list[str]]:
     """Problems that would cost points, per question id (empty when none): a crash, no Answer line, a route
     Synera would score 0 (routing.validate_route under the question's step-free and closure constraints;
-    a tour's stops may be production bays), or a route whose fields don't agree."""
+    a tour's stops may be no-through spaces), or a route whose fields don't agree."""
     from app.building.routing import Constraints, validate_route
 
     by_id = {q["id"]: q for q in questions}
@@ -383,7 +475,7 @@ def check_records(
             found.append("reachable but no route or length")
         if r.get("route"):
             question = by_id.get(r["id"], {"id": r["id"]})
-            deps = deps_for(building_dir, question)
+            deps = deps_for(Path(question.get("building_dir") or building_dir), question)
             try:
                 replay_edits(deps, r.get("edits"))
             except (KeyError, TypeError, ValueError) as e:
@@ -426,9 +518,14 @@ def write_csv(records: list[dict[str, Any]], path: Path) -> None:
 
 
 def main(
-    building_dir: Annotated[Path, typer.Argument(help="The building folder (building.json, plans, ...)")],
-    questions: Annotated[Path, typer.Argument(help="questions.json from Synera")],
-    answers: Annotated[Path, typer.Argument(help="Where to write answers.json")],
+    paths: Annotated[
+        list[Path],
+        typer.Argument(
+            help="<data_dir> <answers.json> (the kit's format: building folders plus questions), or "
+            "<building_dir> <questions file> <answers.json>",
+            show_default=False,
+        ),
+    ],
     concurrency: Annotated[int, typer.Option(help="Questions in flight")] = 8,
     check: Annotated[
         bool, typer.Option(help="Check every answer the way Synera scores it; exit 1 on problems")
@@ -436,17 +533,27 @@ def main(
     csv_path: Annotated[
         Path | None, typer.Option("--csv", help="Also write the kit's CSV (question_id, answer)")
     ] = None,
+    details: Annotated[
+        Path | None, typer.Option(help="Also write the structured records (ids, route, length) here")
+    ] = None,
 ) -> None:
-    records = run_benchmark(building_dir, questions, answers, agent_answerer, concurrency)
+    if len(paths) not in (2, 3):
+        raise typer.BadParameter(
+            "give <data_dir> <answers.json> or <building_dir> <questions> <answers.json>"
+        )
+    source, questions, answers = (paths[0], None, paths[1]) if len(paths) == 2 else paths
+    planned = plan_questions(source, questions)
+    typer.echo(f"{len(planned)} questions on {len({q['building_dir'] for q in planned})} building(s)")
+    records = run_benchmark(source, questions, answers, agent_answerer, concurrency, details)
     errors = sum("error" in r for r in records)
     if errors:
-        typer.echo(f"{errors} question(s) errored (see their 'error' field)")
+        typer.echo(f"{errors} question(s) errored: " + ", ".join(r["id"] for r in records if "error" in r))
     typer.echo(f"{len(records)} answers -> {answers}")
     if csv_path:
         write_csv(records, csv_path)
         typer.echo(f"CSV -> {csv_path}")
     if check:
-        problems = check_records(building_dir, load_questions(questions), records)
+        problems = check_records(source, planned, records)
         for qid, found in problems.items():
             typer.echo(f"  {qid}: " + "; ".join(found))
         typer.echo(f"check: {len(records) - len(problems)}/{len(records)} answers without problems")
@@ -455,7 +562,7 @@ def main(
 
 
 def cli() -> None:
-    """`uv run run_benchmark <building_dir> <questions.json> <answers.json>` (pyproject [project.scripts])."""
+    """`uv run run_benchmark <data_dir> <answers.json>` (pyproject [project.scripts])."""
     typer.run(main)
 
 

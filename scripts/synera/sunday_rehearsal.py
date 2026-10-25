@@ -112,18 +112,19 @@ def main(
     command = [
         sys.executable, "-m", "app.agents.building_guide.sunday",
         str(out / "building"), str(out / "questions.json"), str(out / "answers.json"),
-        "--check", "--csv", str(out / "answers.csv"), "--concurrency", str(concurrency),
+        "--check", "--csv", str(out / "answers.csv"), "--details", str(out / "records.json"),
+        "--concurrency", str(concurrency),
     ]  # fmt: skip
     typer.echo(f"{len(questions)} questions on {building} -> {out.relative_to(ROOT)}")
     started = time.monotonic()
     run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     seconds = time.monotonic() - started
     typer.echo(run.stdout.rstrip())
-    if not (out / "answers.json").exists():
+    if not (out / "records.json").exists():
         typer.echo(run.stderr[-3000:])
         raise typer.Exit(2)
 
-    records = {r["id"]: r for r in json.loads((out / "answers.json").read_text(encoding="utf-8"))}
+    records = {r["id"]: r for r in json.loads((out / "records.json").read_text(encoding="utf-8"))}
     rows: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0, 0])  # reply ok, fields ok, fields checked, n
     misses = []
     for q in questions:

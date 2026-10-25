@@ -1,8 +1,8 @@
 # BENCHMARK.md
 
-How to run our agent (Track 01, "Talk to Your Building") on a new building and its questions. One command,
+How to run our agent (Track 01, "Talk to Your Building") on new buildings and their questions. One command,
 no manual steps between input and output. `SUBMISSION/answers.json` next to this file is its output on the
-Sunday building.
+kit's test set (`synera-kit/data/test`, 145 questions).
 
 ## Setup (once)
 
@@ -14,17 +14,23 @@ uv sync
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env     # the only variable needed; or export it in the shell
 ```
 
-Everything else in `.env.example` (Langfuse tracing, OpenRouter) is optional and can stay unset. The
-`synera-kit` submodule is only needed for the test-set and dev commands further down.
+Everything else in `.env.example` (Langfuse tracing, OpenRouter) is optional and can stay unset.
 
 ## The benchmark command
 
-Run from the repo root. The building folder can be anywhere on disk.
+Run from the repo root. The data folder can be anywhere on disk.
 
 ```bash
-uv run run_benchmark <building_dir> <questions.json> <answers.json>
-# e.g. uv run run_benchmark ~/sunday/building ~/sunday/questions.json SUBMISSION/answers.json --check
+uv run run_benchmark <data_dir> <answers.json>
+# the secret building:  uv run run_benchmark ~/secret SUBMISSION/answers.json
+# how answers.json here was made:  uv run run_benchmark synera-kit/data/test SUBMISSION/answers.json
 ```
+
+`<data_dir>` is a folder in the kit's format, like `synera-kit/data/test`: one folder per building
+(`building.json`, `equipment.csv`, floor plans) and the questions, either in a top-level `questions.csv` /
+`questions.jsonl` (with `building_id`) or in each building's `questions.jsonl`. A single building folder
+holding its `questions.jsonl` works too. A separate questions file can be given in the middle:
+`uv run run_benchmark <building_dir> <questions.json|.jsonl|.csv> <answers.json>`.
 
 `run_benchmark` is an alias of `uv run python -m app.agents.building_guide.sunday` (same arguments).
 Options:
@@ -32,25 +38,29 @@ Options:
 - `--check`: afterwards checks every answer the way routes are scored (a crash, no answer, a route that
   skips a real door/stair/lift or breaks a step-free or closure constraint) and exits 1 if any has a
   problem. It doesn't change answers.json.
-- `--concurrency 8` (default): questions answered in parallel.
+- `--concurrency 8` (default): questions answered in parallel. A failed API request is retried twice.
 - `--csv <path>`: also writes the kit's CSV format (question_id, full reply).
+- `--details <path>`: also writes the structured records behind the answers (see below).
 
 Re-running on the same input rewrites answers.json. Routes, lengths, ids and counts are computed by code;
 the model only picks the tool and its arguments, so they come out the same on a re-run unless the model
 reads a question differently.
 
-## Input
-
-- `<building_dir>`: one building in the kit's format (`building.json`, `equipment.csv`, floor plans).
-  A folder with a `site.json` and several buildings also works (see the end).
-- `<questions.json>`: a list, or `{"questions": [...]}`, of `{"id", "text", "constraints"?}`. Known
-  constraints: `"step_free": true`; a closed lift, stair, door or room by id or name under `"closed"`
-  (also `closures`, `closed_elements`, `closed_element_id(s)`); `"start"`: where the person is.
-  Other constraint keys are passed to the agent as text.
-
 ## Output: answers.json
 
-A JSON list, one record per question id, in input order:
+What Synera asked for: a JSON list of `{question_id, answer}`, one per question, in input order. `answer`
+is the agent's full reply; its last line starting with `Answer:` is the answer the kit's scorer reads.
+
+```json
+[{"question_id": "osm-way363805324-H01", "answer": "… Generic room 1.02 is the largest …\nAnswer: Generic room 1.02, 162.33 m²"}]
+```
+
+A question whose answering crashed still gets its entry, with an empty answer, so one failure never loses
+the file.
+
+## Structured records (--details)
+
+Behind each answer, for checking and for the app: one record per question.
 
 ```json
 {"id": "Q1", "reply": "<full reply>", "answer": "<text after the last 'Answer:'>",
@@ -71,8 +81,14 @@ A JSON list, one record per question id, in input order:
 | `error` | Only present if answering that question crashed; every other field is then null |
 
 Fields that don't apply to a question are null. The structured fields are copied from the agent's tool
-results, not parsed from its prose. A field missing from the brief's schema? Tell us and we change
-`empty_record`/`to_record` in `src/app/agents/building_guide/sunday.py`, the one place the schema lives.
+results, not parsed from its prose. The schema lives in `empty_record`/`to_record`
+in `src/app/agents/building_guide/sunday.py`.
+
+## Constraints in a questions.json
+
+`{"id", "text", "constraints"?}` entries may carry `"step_free": true`; a closed lift, stair, door or room by
+id or name under `"closed"` (also `closures`, `closed_elements`, `closed_element_id(s)`); `"start"`: where
+the person is. Other constraint keys are passed to the agent as text.
 
 ## Test set (145 questions, CSV)
 
@@ -100,7 +116,7 @@ uv run pytest tests/building/test_sunday.py -q                # no model: the ru
 
 ## Several buildings (Level 3)
 
-Put a `site.json` next to them and give the site folder as `<building_dir>`: every route then works across
+Put a `site.json` next to them and give the site folder as the building folder: every route then works across
 buildings, joined only by the walkways listed (there is no free way round the outside).
 
 ```json

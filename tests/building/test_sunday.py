@@ -84,10 +84,19 @@ def answers(tmp_path_factory) -> dict[str, dict[str, Any]]:
         for q in GOLDEN
     ]
     (tmp / "questions.json").write_text(json.dumps(questions), encoding="utf-8")
-    call(run_benchmark, building, tmp / "questions.json", tmp / "answers.json", oracle)
-    records = json.loads((tmp / "answers.json").read_text(encoding="utf-8"))
-    records = records["answers"] if isinstance(records, dict) else records
+    returned = call(
+        run_benchmark,
+        building,
+        tmp / "questions.json",
+        tmp / "answers.json",
+        oracle,
+        details_path=tmp / "d.json",
+    )
+    records = json.loads((tmp / "d.json").read_text(encoding="utf-8"))
+    assert records == json.loads(json.dumps(returned))
     assert [r["id"] for r in records] == [q["id"] for q in GOLDEN]  # one per question, in order
+    submitted = json.loads((tmp / "answers.json").read_text(encoding="utf-8"))
+    assert submitted == [{"question_id": r["id"], "answer": r["reply"]} for r in records]
     return {r["id"]: r for r in records}
 
 
@@ -293,3 +302,89 @@ def test_sunday_find_question_drops_the_courtesy_route_from_outside():
     asked = to_record({"id": q["id"], "text": f"How do I get to the {name}?"}, "Answer: x", calls)
     assert asked["route"][0] == "outside" and asked["route"][-1] == a["space_id"], asked
     assert asked["length_m"] is not None, asked
+
+
+def test_answers_json_is_synera_format(answers, tmp_path):
+    """Synera (Discord, Sunday): "a list of dictionaries with keys {question_id, answer}"; the answer is the
+    full reply, whose last 'Answer:' line the scorer reads."""
+    from app.agents.building_guide.sunday import submission
+
+    rows = submission(list(answers.values()))
+    assert all(set(r) == {"question_id", "answer"} for r in rows), rows[0]
+    assert all(isinstance(r["answer"], str) and "Answer:" in r["answer"] for r in rows), rows
+    errored = submission([{"id": "x", "reply": "", "error": "boom"}])
+    assert errored == [{"question_id": "x", "answer": ""}]
+
+
+def test_kit_test_folder_is_read_as_synera_sends_it():
+    """The secret building comes in data/test's format: building folders plus questions.csv (and each
+    building's questions.jsonl). Every test question is found once, in the kit's order, with its folder."""
+    import csv
+
+    from app.agents.building_guide.sunday import plan_questions, question_text
+
+    test = DATA / "test"
+    if not (test / "questions.csv").exists():
+        pytest.skip("not applicable: no synera-kit/data/test")
+    with (test / "questions.csv").open(encoding="utf-8", newline="") as f:
+        ids = [row["question_id"] for row in csv.DictReader(f)]
+    planned = plan_questions(test)
+    assert [q["id"] for q in planned] == ids
+    assert all(Path(q["building_dir"]).name == q["building_id"] for q in planned)
+    assert all(question_text(q).startswith(q["question"]) for q in planned)
+
+
+def test_building_folders_with_their_own_questions_jsonl(tmp_path):
+    """No top-level questions file: each building folder's questions.jsonl (JSON Lines, not one JSON
+    document) is read; one building folder on its own works too."""
+    from app.agents.building_guide.sunday import plan_questions
+
+    data = tmp_path / "secret"
+    for name in ("b1", "b2"):
+        (data / name).mkdir(parents=True)
+        (data / name / "building.json").write_text("{}", encoding="utf-8")
+        lines = [{"id": f"{name}-H0{i}", "building_id": name, "question": f"q{i}"} for i in (1, 2)]
+        (data / name / "questions.jsonl").write_text("\n".join(map(json.dumps, lines)), encoding="utf-8")
+    planned = plan_questions(data)
+    assert [q["id"] for q in planned] == ["b1-H01", "b1-H02", "b2-H01", "b2-H02"]
+    assert [Path(q["building_dir"]).name for q in planned] == ["b1", "b1", "b2", "b2"]
+    assert [q["id"] for q in plan_questions(data / "b2")] == ["b2-H01", "b2-H02"]
+
+
+def test_cli_takes_the_kit_folder_and_writes_answers_json(tmp_path, monkeypatch):
+    """`run_benchmark <data_dir> <answers.json>`: the two-argument form Synera will run on the secret
+    building (the agent swapped for a stub, no model)."""
+    from typer.testing import CliRunner
+
+    import app.agents.building_guide.sunday as sunday
+
+    data = tmp_path / "secret"
+    shutil.copytree(
+        building_dir(BUILDING_ID), data / BUILDING_ID, ignore=shutil.ignore_patterns("questions*")
+    )
+    rows = [
+        {"question_id": f"{BUILDING_ID}-H0{i}", "building_id": BUILDING_ID, "question": "Where?"}
+        for i in (1, 2)
+    ]
+    (data / "questions.jsonl").write_text("\n".join(map(json.dumps, rows)), encoding="utf-8")
+
+    async def stub(building: Path, question: dict[str, Any]):
+        assert building == data / BUILDING_ID
+        return f"Looked.\nAnswer: {question['id']}", [], []
+
+    monkeypatch.setattr(sunday, "agent_answer", stub)
+    monkeypatch.setattr("app.observability.setup", lambda: None)
+    out = tmp_path / "SUBMISSION" / "answers.json"
+    result = CliRunner().invoke(typer_app(sunday.main), [str(data), str(out), "--check"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(out.read_text(encoding="utf-8")) == [
+        {"question_id": r["question_id"], "answer": f"Looked.\nAnswer: {r['question_id']}"} for r in rows
+    ]
+
+
+def typer_app(fn):
+    import typer
+
+    app = typer.Typer()
+    app.command()(fn)
+    return app
