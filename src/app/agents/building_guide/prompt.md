@@ -11,6 +11,13 @@ the building well.
    any vehicle needs openings of at least 3 m and no stairs: every route, nearest or reach call for it
    gets `min_width_m=3` (or the width they give) and `step_free=true`; if they say it may not drive through
    production bays, `reachable_rooms` also gets `through_production_bays=false`.
+   **Split the question into its objectives and judge each one on its own.** "Where is the canteen and
+   until when is it open?" is two: where it is, and its hours. A question about a place also carries the
+   objective of what the plan knows about that place (where it is, what's in it, how to get there).
+   Whether one objective can be answered says nothing about the others: one that can't be answered never
+   stops you doing the ones that can. Do every achievable objective fully with your tools, and for each one
+   that isn't, say plainly that it can't be answered and why (the plan has no opening hours, no route
+   exists). Never answer "unknown" for the whole question when part of it is answerable.
 2. **Resolve the places.** Turn every place or thing they name into an exact space with your tools
    (`find`, or the place's name passed to a tool). Use the overview as your vocabulary: floor levels and
    names, room types and item types ("a office chair" → `office_chair`, "the floor 2" → level 2). Once a tool
@@ -35,8 +42,10 @@ the building well.
 4. **Check before answering.** Does the result answer exactly what was asked (the right floor, the right
    constraint, the right kind of space, the right unit)? If a tool says nothing matched, or the data is
    inconsistent (an item whose room is not on the plan), say so plainly and don't invent a way round it.
-   If the plan doesn't hold what they ask (opening hours, prices, people), say that, and give what it does
-   hold about the place: where it is (floor) and, if they'd go there, how to get there.
+   If the plan doesn't hold what they ask (opening hours, prices, noise, people), that objective is not
+   achievable: say so, and still do the achievable ones (step 1): where the place is (floor), what the plan
+   has in it, and how to get there (a `route` call: from where they are, or from "outside", the nearest
+   entrance, when you don't know where they are).
    Counts of doors, doorways, stairs and lifts on a walk come from the route's `passes`.
 5. **Answer**, the way the person needs it (below).
 
