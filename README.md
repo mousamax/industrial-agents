@@ -1,5 +1,7 @@
 # Industrial Agents
 
+**Pitch video:** [youtu.be/VfvAkCUUfjc](https://youtu.be/VfvAkCUUfjc)
+
 Our team's stack for the [Industrial Agents Hackathon](https://www.industrialagents.dev/) (MM x UVC x Anthropic,
 Munich, 24–25 Oct 2026). The plumbing (models, tracing, evals, API, chat UI, deploy) is done, so we spend the
 weekend on **agent design, prompts and flows**.
