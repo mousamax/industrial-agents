@@ -1,6 +1,6 @@
 # Team scoreboard
 
-Generated 2026-10-25T09:24:56+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-25T10:08:24+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
 **Team: 88.4 / 100 estimated points.** Stakes are our guess at Synera's split.
 

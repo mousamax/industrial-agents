@@ -1,0 +1,295 @@
+<title>Navi Tech Video Script</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a shooting script on plan paper. One column of timed shots; each shot pairs what the screen shows with what is said. */
+:root {
+  --paper: #eef1f4;
+  --sheet: #f8fafb;
+  --ink: #16202b;
+  --muted: #5a6875;
+  --rule: #cfd7df;
+  --accent: #d9590f;      /* safety orange: the thing to look at */
+  --accent-soft: #fbe6d8;
+  --code-bg: #e3e9ee;
+  --ok: #2f7a4b;
+  --block: #b3261e;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #10161c; --sheet: #161e26; --ink: #e4e9ee; --muted: #93a1ae; --rule: #2a3540;
+    --accent: #f08a45; --accent-soft: #3a2416; --code-bg: #1f2932; --ok: #6cc28c; --block: #f2867e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #10161c; --sheet: #161e26; --ink: #e4e9ee; --muted: #93a1ae; --rule: #2a3540;
+  --accent: #f08a45; --accent-soft: #3a2416; --code-bg: #1f2932; --ok: #6cc28c; --block: #f2867e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 15px/1.55 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+  background-image:
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: -1px -1px;
+}
+.sheet {
+  max-width: 920px; margin: 0 auto; background: var(--sheet);
+  border: 1px solid var(--rule); padding: clamp(20px, 4vw, 44px);
+  display: flex; flex-direction: column; gap: 36px;
+}
+header { display: flex; flex-direction: column; gap: 10px; }
+.eyebrow { font: 500 12px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 800 clamp(30px, 5vw, 44px)/1.05 var(--f-display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font: 700 20px/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 600 13px/1.3 var(--f-mono); margin: 0; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font: 400 13px/1.4 var(--f-mono); color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 500; }
+
+/* timeline bar, drawn to scale: 60 s = 100% */
+.bar { display: flex; height: 34px; border: 1px solid var(--rule); font: 500 11px/1 var(--f-mono); }
+.bar div { display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--rule); overflow: hidden; white-space: nowrap; padding-inline: 4px; }
+.bar div:last-child { border-right: 0; }
+.bar .feat { background: var(--accent-soft); color: var(--ink); }
+.ticks { display: flex; justify-content: space-between; font: 400 11px/1 var(--f-mono); color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+section { display: flex; flex-direction: column; gap: 14px; }
+.scene-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; border-bottom: 2px solid var(--ink); padding-bottom: 8px; }
+.tc { font: 500 13px/1 var(--f-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.why { color: var(--muted); font-size: 14px; }
+
+.shots { display: flex; flex-direction: column; }
+.shot { display: grid; grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--rule); }
+.shot:last-child { border-bottom: 0; }
+.shot .t { font: 500 13px/1.5 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.label { font: 500 10.5px/1 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.say { font-size: 15px; }
+.say .who { font: 600 12px/1 var(--f-mono); letter-spacing: .05em; text-transform: uppercase; margin-right: 6px; }
+.say .who.user { color: var(--muted); }
+.say .who.navi { color: var(--accent); }
+.vo { font-style: italic; }
+code, .call {
+  font: 400 12.5px/1.5 var(--f-mono); background: var(--code-bg); padding: 1px 5px; overflow-wrap: anywhere;
+}
+.calls { display: flex; flex-direction: column; gap: 4px; }
+.calls .call { display: block; padding: 4px 8px; }
+.res-ok { color: var(--ok); }
+.res-block { color: var(--block); }
+.caption { border-left: 3px solid var(--accent); padding: 2px 0 2px 10px; font: 600 14px/1.4 var(--f-display); }
+
+.facts { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.facts th, .facts td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.facts th { font: 500 11px/1.2 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+
+.vo-block { background: var(--code-bg); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.vo-block p { font-size: 15.5px; }
+.vo-block .stamp { font: 500 12px/1 var(--f-mono); color: var(--accent); margin-right: 8px; font-variant-numeric: tabular-nums; }
+.row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+button {
+  font: 500 13px/1 var(--f-mono); color: var(--ink); background: var(--sheet);
+  border: 1px solid var(--ink); padding: 9px 14px; cursor: pointer;
+}
+button:hover { background: var(--accent-soft); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#copied { font: 400 12px/1 var(--f-mono); color: var(--ok); }
+
+ul.check { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 72ch; }
+
+@media (max-width: 640px) {
+  .shot { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .bar { font-size: 9.5px; }
+}
+</style>
+
+<div class="sheet">
+  <header>
+    <span class="eyebrow">Synera track · Submission · 1-minute video</span>
+    <h1>Navi: tech video script</h1>
+    <p class="lede">Two features beyond the brief, told as one visitor's morning at MUCL. Every line Navi says and every number below comes from a real run of the <code>building_guide</code> agent on <code>data/MUCL</code> (25 Oct). Navi's spoken replies are trimmed for time; the full replies are longer.</p>
+    <div class="meta">
+      <span>Length <b>60 s</b></span>
+      <span>Voice-over <b>~135 words</b></span>
+      <span>Setting <b>Munich Urban Colab</b></span>
+      <span>Features <b>accessible re-routing with a plan edit · optimal errand tour</b></span>
+    </div>
+  </header>
+
+  <div>
+    <div class="bar" role="img" aria-label="Timeline: hook 0 to 6 seconds, wheelchair scene 6 to 32, errand scene 32 to 54, close 54 to 60">
+      <div style="width:10%">Hook</div>
+      <div class="feat" style="width:43.33%">1 · The door that's too narrow</div>
+      <div class="feat" style="width:36.67%">2 · Five stops, best order</div>
+      <div style="width:10%">Close</div>
+    </div>
+    <div class="ticks"><span>0:00</span><span>0:15</span><span>0:30</span><span>0:45</span><span>1:00</span></div>
+  </div>
+
+  <!-- HOOK -->
+  <section>
+    <div class="scene-head"><span class="tc">0:00–0:06</span><h2>Hook</h2></div>
+    <div class="shots">
+      <div class="shot">
+        <span class="t">0:00</span>
+        <div class="col"><span class="label">Screen</span><p>The app's 3D MUCL model, all five floors, slow orbit. The lift shaft and stairwells are see-through.</p></div>
+        <div class="col"><span class="label">Voice-over</span><p class="say vo">This is MUCL, as a graph: 183 spaces, doors, stairs and one lift. Claude is the voice. The routes come from code.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCENE 1 -->
+  <section>
+    <div class="scene-head"><span class="tc">0:06–0:32</span><h2>1 · The door that's too narrow</h2><span class="why">Find, route, react and edit in one exchange; it asks before it changes the plan</span></div>
+    <div class="shots">
+      <div class="shot">
+        <span class="t">0:06</span>
+        <div class="col"><span class="label">Screen</span><p>Voice call in the app, mic waveform. The transcript types out.</p></div>
+        <div class="col"><span class="label">Dialogue</span><p class="say"><span class="who user">Visitor</span>“I'm at the entrance, I use a wheelchair, it needs 75 centimetres. Where's the hackathon?”</p></div>
+      </div>
+      <div class="shot">
+        <span class="t">0:11</span>
+        <div class="col"><span class="label">Screen · tool calls tick in</span>
+          <div class="calls">
+            <span class="call">calendar("hackathon") <span class="res-ok">→ Offener Bürobereich Süd, F3</span></span>
+            <span class="call">route(step_free, min_width_m=0.75) <span class="res-block">→ no route</span></span>
+          </div>
+          <p>The route draws as far as the Floor 3 corridor and stops at the door, which flashes orange.</p>
+        </div>
+        <div class="col"><span class="label">Dialogue</span><p class="say"><span class="who navi">Navi</span>“It's on floor 3, but I can't get you in. The only step-free door is 60 centimetres wide. I can take you as far as the corridor.”</p></div>
+      </div>
+      <div class="shot">
+        <span class="t">0:19</span>
+        <div class="col"><span class="label">Screen</span><p>The facility manager's voice cuts in (or the same visitor, playing the role).</p></div>
+        <div class="col"><span class="label">Dialogue</span><p class="say"><span class="who user">Facility mgr</span>“Widen that door to 90.”</p><p class="say"><span class="who navi">Navi</span>“I'll replace it with a 0.9 m door in the same spot. Go ahead?”</p><p class="say"><span class="who user">Facility mgr</span>“Yes.”</p></div>
+      </div>
+      <div class="shot">
+        <span class="t">0:26</span>
+        <div class="col"><span class="label">Screen · tool calls</span>
+          <div class="calls">
+            <span class="call">remove_door + add_door(width_m=0.9) <span class="res-ok">→ done</span></span>
+            <span class="call">route(…) <span class="res-ok">→ 72 m, by lift</span></span>
+          </div>
+          <p>The door redraws wider. The x-ray route draws in through the lift to the room.</p>
+          <p class="caption">Proposes, waits for a yes, then edits. Undo is one word away.</p>
+        </div>
+        <div class="col"><span class="label">Dialogue</span><p class="say"><span class="who navi">Navi</span>“Done. Lift to floor 3, turn right, past the fire extinguisher, through the new door.”</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCENE 2 -->
+  <section>
+    <div class="scene-head"><span class="tc">0:32–0:54</span><h2>2 · Five stops, best order</h2><span class="why">The brief's “multi-stop tours”, solved exactly, with the room choice left to Navi</span></div>
+    <div class="shots">
+      <div class="shot">
+        <span class="t">0:32</span>
+        <div class="col"><span class="label">Screen</span><p>Same call, now in the hackathon room. The four stops appear as pins on their floors.</p></div>
+        <div class="col"><span class="label">Dialogue</span><p class="say"><span class="who user">Visitor</span>“Before the pitches I need the MakerSpace, the coworking offices on floor 4, any kitchen that's stocked, and the stage in the Arena. Then back here. Quickest order?”</p></div>
+      </div>
+      <div class="shot">
+        <span class="t">0:40</span>
+        <div class="col"><span class="label">Screen · tool call</span>
+          <div class="calls">
+            <span class="call">plan_visits(rooms=[MakerSpace, Coworking Nord F4, Arena], room_types=[kitchen], return_to_start) <span class="res-ok">→ exact</span></span>
+          </div>
+          <p>The tour draws leg by leg: F3 → F4 → F1 Arena → F1 Teeküche → F0 MakerSpace → F3.</p>
+        </div>
+        <div class="col"><span class="label">Dialogue</span><p class="say"><span class="who navi">Navi</span>“Coworking first, then the Arena, the tea kitchen next door, the MakerSpace, and back. 325 metres.”</p></div>
+      </div>
+      <div class="shot">
+        <span class="t">0:48</span>
+        <div class="col"><span class="label">Screen</span><p>Side-by-side counter: <b>naive order 359 m</b> vs <b>Navi 325 m</b>. The Teeküche pin pulses.</p>
+          <p class="caption">Every order and every choice of kitchen tried. Proven shortest.</p></div>
+        <div class="col"><span class="label">Voice-over</span><p class="say vo">It tried every order and every kitchen. It picked the one on floor 1, on the way, and proved no shorter tour exists.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSE -->
+  <section>
+    <div class="scene-head"><span class="tc">0:54–1:00</span><h2>Close</h2></div>
+    <div class="shots">
+      <div class="shot">
+        <span class="t">0:54</span>
+        <div class="col"><span class="label">Screen</span><p>Title card over the building: <b>Navi: talk to your building.</b> Small line: team name, Synera track.</p></div>
+        <div class="col"><span class="label">Voice-over</span><p class="say vo">Any building, from its plans. Navi: talk to your building.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VOICE-OVER BLOCK -->
+  <section>
+    <div class="row"><h3>Full spoken track</h3><span><button type="button" id="copy">Copy spoken track</button> <span id="copied" aria-live="polite"></span></span></div>
+    <div class="vo-block" id="track">
+      <p><span class="stamp">0:00</span>This is MUCL, as a graph: 183 spaces, doors, stairs and one lift. Claude is the voice. The routes come from code.</p>
+      <p><span class="stamp">0:06</span>Visitor: “I'm at the entrance, I use a wheelchair, it needs 75 centimetres. Where's the hackathon?”</p>
+      <p><span class="stamp">0:11</span>Navi: “It's on floor 3, but I can't get you in. The only step-free door is 60 centimetres wide. I can take you as far as the corridor.”</p>
+      <p><span class="stamp">0:19</span>Facility manager: “Widen that door to 90.” Navi: “I'll replace it with a 0.9 m door in the same spot. Go ahead?” “Yes.”</p>
+      <p><span class="stamp">0:26</span>Navi: “Done. Lift to floor 3, turn right, past the fire extinguisher, through the new door.”</p>
+      <p><span class="stamp">0:32</span>Visitor: “Before the pitches I need the MakerSpace, the coworking offices on floor 4, any kitchen that's stocked, and the stage in the Arena. Then back here. Quickest order?”</p>
+      <p><span class="stamp">0:40</span>Navi: “Coworking first, then the Arena, the tea kitchen next door, the MakerSpace, and back. 325 metres.”</p>
+      <p><span class="stamp">0:48</span>It tried every order and every kitchen. It picked the one on floor 1, on the way, and proved no shorter tour exists.</p>
+      <p><span class="stamp">0:54</span>Any building, from its plans. Navi: talk to your building.</p>
+    </div>
+  </section>
+
+  <!-- FACTS -->
+  <section>
+    <h3>Numbers on screen, and where they come from</h3>
+    <div class="table-wrap">
+      <table class="facts">
+        <thead><tr><th>Shown</th><th>Value</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>Hackathon room</td><td>Offener Bürobereich Süd, F3</td><td><code>calendar</code> → <code>data/calendars/munich-urban-colab.json</code></td></tr>
+          <tr><td>Blocking door</td><td>0.6 m, Flur 3. OG ↔ Offener Bürobereich Süd (O149)</td><td>Demo setup: O149 set to a 0.6 m door (see checklist)</td></tr>
+          <tr><td>How far without the edit</td><td>about 49 m, to the F3 corridor</td><td>agent run, step-free, min width 0.75 m</td></tr>
+          <tr><td>Route after widening</td><td>about 72 m, by lift</td><td>agent run after <code>remove_door</code> + <code>add_door(0.9)</code></td></tr>
+          <tr><td>Errand tour</td><td>324.6 m, exact</td><td><code>plan_visits</code>, start and end F3-OPEN-S</td></tr>
+          <tr><td>Naive order</td><td>359.3 m (34.7 m, about 10%, longer)</td><td><code>greedy_total_m</code> in the same result</td></tr>
+          <tr><td>Kitchen chosen</td><td>Teeküche, F1</td><td>one of 5 kitchens; picked by <code>plan_visits</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- CHECKLIST -->
+  <section>
+    <h3>Before recording</h3>
+    <ul class="check">
+      <li><b>Narrow the door again.</b> O149 in <code>data/MUCL/building.json</code> is back to a 2.0 m opening. Scene 1 needs it as a 0.6 m door (<code>"kind": "door"</code>, <code>"width_m": 0.6</code>), committed so the app loads it.</li>
+      <li><b>Say “entrance”, not “reception”.</b> The plan has no room called reception, and Navi says so on camera.</li>
+      <li><b>Say the 75 cm.</b> Navi doesn't assume a wheelchair width; once said, it remembers it for the rest of the call.</li>
+      <li><b>Record in the voice call.</b> Only there do plan edits wait for a yes. In the text chat the door is changed at once.</li>
+      <li><b>Ask for the saving if it isn't on screen.</b> Navi doesn't mention the 34.7 m by itself. Either show the counter in the edit, or add “how much does that save?”.</li>
+      <li><b>Say “the Arena auditorium”.</b> There are two Arenas (F0 seminar room, F1 auditorium); the F1 one gives the numbers above.</li>
+      <li><b>Trim Navi's replies in the edit.</b> The real replies run 4–6 sentences; keep the lines above and speed up the rest of the text on screen.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+document.getElementById("copy").addEventListener("click", () => {
+  const text = [...document.querySelectorAll("#track p")].map(p => p.innerText).join("\n");
+  const done = msg => { document.getElementById("copied").textContent = msg; };
+  try {
+    navigator.clipboard.writeText(text).then(() => done("Copied"), () => {
+      const r = document.createRange(); r.selectNodeContents(document.getElementById("track"));
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r); done("Selected: press Cmd+C");
+    });
+  } catch (e) { done("Select the text above to copy"); }
+});
+</script>

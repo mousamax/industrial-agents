@@ -24,6 +24,8 @@ export interface Surroundings {
 
 const SOURCES: Record<string, () => Promise<{ default: unknown }>> = {
   'munich-urban-colab': () => import('../../data/surroundings/munich-urban-colab.json'),
+  // The wheelchair demo copy (data/MUCL_wheelchair_demo) stands on the same spot
+  'munich-urban-colab-wheelchair-demo': () => import('../../data/surroundings/munich-urban-colab.json'),
 }
 
 const AREAS = new Set<SurroundingKind>(['green', 'parking', 'building']) // water is drawn as a line

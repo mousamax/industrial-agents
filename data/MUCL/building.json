@@ -9101,12 +9101,12 @@
         "F3-OPEN-S",
         "F3-CORR"
       ],
-      "kind": "opening",
+      "kind": "door",
       "position": [
         37.22,
         12.4
       ],
-      "width_m": 2.0,
+      "width_m": 0.6,
       "step_free": true,
       "synthetic": false
     },
