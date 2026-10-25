@@ -31,9 +31,42 @@ import type { PastTurn, ViewProps } from './AgentWorkspace'
 
 const GLASS = 'bg-white/92 backdrop-blur-xl shadow-[0_2px_6px_rgb(43_38_64/0.05),0_22px_52px_rgb(43_38_64/0.14)]'
 
-function greeting(): string {
-  const h = new Date().getHours()
-  return h < 12 ? 'Good morning.' : h < 18 ? 'Good afternoon.' : 'Good evening.'
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/** The building's suggestions, typed into the placeholder one letter at a time, held, erased, then the next.
+ *  It holds still on the whole suggestion while `paused` (the field is focused or has text), and shows the
+ *  first one without moving when the person prefers reduced motion. */
+function useTypewriter(phrases: string[], paused: boolean): string {
+  const [i, setI] = useState(0)
+  const [n, setN] = useState(0)
+  const [erasing, setErasing] = useState(false)
+  const reduced = useMemo(prefersReducedMotion, [])
+  const key = phrases.join('\n')
+  useEffect(() => {
+    setI(0)
+    setN(0)
+    setErasing(false)
+  }, [key])
+  const phrase = phrases[i % Math.max(phrases.length, 1)] ?? ''
+  useEffect(() => {
+    if (paused || reduced || !phrase) return
+    const full = n >= phrase.length
+    const delay = erasing ? 28 : full ? 1800 : 55 + Math.random() * 45
+    const t = window.setTimeout(() => {
+      if (!erasing && !full) setN(n + 1)
+      else if (!erasing) setErasing(true)
+      else if (n > 0) setN(n - 1)
+      else {
+        setErasing(false)
+        setI((v) => (v + 1) % phrases.length)
+      }
+    }, delay)
+    return () => window.clearTimeout(t)
+  }, [paused, reduced, phrase, n, erasing, phrases.length])
+  if (reduced || paused) return phrase
+  return phrase.slice(0, n)
 }
 
 function StepGlyph({ icon, className }: { icon: StepIcon; className?: string }) {
@@ -281,7 +314,6 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
     onReset,
     onCopyTranscript,
     onSubmit,
-    onRunScenario,
     onPickOption,
     onScanDoor,
     onStartVoice,
@@ -331,26 +363,27 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
   const mapFloor = useApp((s) => s.floorId)
   const activeFloor = (isWalk && curStep?.floorId ? curStep.floorId : floor) ?? result?.focusFloor ?? mapFloor ?? ''
 
+  // What the landing placeholder types out: this building's prepared questions, then what its own plan can
+  // answer, never a prepared prompt about another building's rooms. Only a hint: typing or talking is the way in.
   const suggestions = useMemo(() => {
     const here = starterList.filter((s) => !props.buildingId || s.buildingId === props.buildingId)
-    const prepared = here.map((s) => ({
-      key: s.id,
-      label: s.chip,
-      run: () => onRunScenario(s),
-    }))
-    // Then what this building's own plan can answer, never a prepared prompt about another building's rooms.
+    const prepared = drafted ? [] : here.map((s) => s.chip)
     const extra = buildingSuggestions(activeIndex, drafted)
-      .filter((x) => !prepared.some((p) => p.label === x.label))
-      .map((x) => ({ key: x.label, label: x.label, run: () => onSubmit(x.text) }))
-    return [...(drafted ? [] : prepared), ...extra].slice(0, 4)
-  }, [starterList, props.buildingId, activeIndex, drafted, onRunScenario, onSubmit])
+      .map((x) => x.label)
+      .filter((label) => !prepared.includes(label))
+    return [...prepared, ...extra].slice(0, 4)
+  }, [starterList, props.buildingId, activeIndex, drafted])
+
+  // On landing the mic glows until the person does anything (focus, type, talk).
+  const [focused, setFocused] = useState(false)
+  const [touched, setTouched] = useState(false)
+  const typed = useTypewriter(suggestions, focused || !!input || !isHome)
 
   const blocks = useMemo(
     () => (result && shaped && result.kind !== 'route' ? replyBlocks(result.understood, shaped.headline) : []),
     [result, shaped],
   )
 
-  const here = memory.find((m) => m.spaceId)
   const showPanel = isWorking || isAsk || isResult
   const panelPos = phone
     ? 'absolute inset-x-2 bottom-[calc(88px+env(safe-area-inset-bottom))] max-h-[58dvh]'
@@ -374,7 +407,14 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
     <div
       className={clsx(
         'flex w-full items-center gap-3 rounded-full pr-2 pl-2.5',
-        inPanel ? 'h-14 bg-map-bg' : clsx('h-16', GLASS),
+        inPanel
+          ? 'h-14 bg-map-bg'
+          : isHome && !isListening
+            ? clsx(
+                'h-[72px] border-2 border-ink/20 pl-2 transition-[border-color,box-shadow] focus-within:border-sun focus-within:shadow-[0_0_0_4px_rgb(255_138_61/0.25),0_22px_52px_rgb(43_38_64/0.14)]',
+                GLASS,
+              )
+            : clsx('h-16', GLASS),
       )}
     >
       {isListening ? (
@@ -403,6 +443,52 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
             <Check className="size-5" aria-hidden />
           </button>
         </>
+      ) : isHome ? (
+        // Landing: the big mic is the first thing to reach for; the field types out what you could ask.
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setTouched(true)
+              onStartVoice()
+            }}
+            aria-label="Tap to talk to the building guide"
+            className={clsx(
+              'grid size-14 shrink-0 place-items-center rounded-full bg-sun text-ink shadow-[0_6px_18px_rgb(255_138_61/0.35)] transition-transform hover:brightness-105 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ink active:scale-95',
+              !touched && 'anim-mic',
+            )}
+          >
+            <Mic className="size-7" strokeWidth={2.25} aria-hidden />
+          </button>
+          <input
+            id="assistant-ask"
+            aria-label="Ask about this building"
+            value={input}
+            onChange={(e) => {
+              setTouched(true)
+              setInput(e.target.value)
+            }}
+            onFocus={() => {
+              setFocused(true)
+              setTouched(true)
+            }}
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && onSubmit()}
+            placeholder={typed || (phone ? 'Ask me anything' : 'Ask me anything about this building')}
+            autoComplete="off"
+            className="h-full min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-ink-soft sm:text-[18px]"
+          />
+          {input.trim() && (
+            <button
+              type="button"
+              onClick={() => onSubmit()}
+              aria-label="Send"
+              className="grid size-12 shrink-0 place-items-center rounded-full bg-ink text-white"
+            >
+              <ArrowUp className="size-5" aria-hidden />
+            </button>
+          )}
+        </>
       ) : (
         <>
           <Orb size={inPanel ? 36 : 44} mode={isWorking ? 'work' : 'rest'} />
@@ -414,9 +500,7 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && onSubmit()}
-            placeholder={
-              isHome ? (phone ? 'Ask me anything' : 'Ask me anything about this building') : 'Ask a follow-up'
-            }
+            placeholder="Ask a follow-up"
             autoComplete="off"
             className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-ink-soft/80"
           />
@@ -771,35 +855,13 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
       {/* The guide bar: the only way in. On wide screens it moves into the conversation once there is one. */}
       {!isWalk && (phone || !showPanel) && (
         <div className="absolute bottom-[calc(12px+env(safe-area-inset-bottom))] left-1/2 z-30 flex w-[min(680px,calc(100%-16px))] -translate-x-1/2 flex-col items-center gap-3">
-          {isHome && (
-            <>
-              <div className="anim-rise rounded-[24px] rounded-bl-[8px] bg-white/94 px-5 py-4 text-center shadow-[0_12px_32px_rgb(43_38_64/0.12)] backdrop-blur-xl [animation-delay:.5s]">
-                <p className="font-display text-[20px] leading-[1.15] font-bold sm:text-[26px]">
-                  {greeting()} {here ? `You’re at ${here.text.replace(/^At /, '')}.` : `Welcome to ${buildingName}.`}
-                </p>
-                <p className="mt-1 text-[16px] text-ink-soft">What can I help you find?</p>
-              </div>
-              <div
-                className={clsx(
-                  'flex gap-2',
-                  phone
-                    ? '-mx-2 w-[calc(100%+16px)] overflow-x-auto px-2 pb-1 [scrollbar-width:none]'
-                    : 'flex-wrap justify-center',
-                )}
-              >
-                {suggestions.map((s, i) => (
-                  <button
-                    key={s.key}
-                    type="button"
-                    onClick={s.run}
-                    style={{ animationDelay: `${0.65 + i * 0.08}s` }}
-                    className="anim-rise h-11 shrink-0 rounded-full bg-white/90 px-4 text-[15px] font-semibold whitespace-nowrap shadow-[0_4px_14px_rgb(43_38_64/0.08)] backdrop-blur hover:bg-white"
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </>
+          {isHome && !isListening && (
+            <p
+              aria-hidden
+              className="anim-rise flex items-center gap-2 self-start rounded-full bg-white/92 px-3 py-1.5 text-[14px] font-semibold text-ink shadow-[0_4px_14px_rgb(43_38_64/0.1)] backdrop-blur [animation-delay:.4s]"
+            >
+              <Mic className="size-4 text-sun" aria-hidden /> Tap to talk, or type a question
+            </p>
           )}
 
           {composer(false)}

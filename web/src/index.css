@@ -50,8 +50,11 @@
 .anim-spring { animation: spring-up .45s cubic-bezier(.34, 1.56, .64, 1) both; }
 .anim-arrive { transform-origin: 50% 100%; animation: arrive-tilt 1s cubic-bezier(.22, 1.2, .36, 1) both; }
 .anim-ripple { animation: ripple-out 1.8s ease-out infinite; }
+/* The landing mic: a soft glow that says "tap me and talk", until the person does anything. */
+@keyframes mic-glow { 0%, 100% { box-shadow: 0 6px 18px rgb(255 138 61 / .35), 0 0 0 0 rgb(255 138 61 / .45) } 50% { box-shadow: 0 6px 18px rgb(255 138 61 / .35), 0 0 0 12px rgb(255 138 61 / 0) } }
+.anim-mic { animation: mic-glow 2s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .anim-breathe, .anim-listen, .anim-rise, .anim-spring, .anim-arrive, .anim-ripple { animation: none; }
+  .anim-breathe, .anim-listen, .anim-rise, .anim-spring, .anim-arrive, .anim-ripple, .anim-mic { animation: none; }
 }
 
 html, body, #root { height: 100%; }
