@@ -173,13 +173,14 @@ async def play(agent, scenario: dict) -> dict:
 
 async def _play(agent, scenario: dict, tmp: Path) -> dict:
     deps = drafted(scenario, tmp) if "plans" in scenario else Deps.load(scenario["building"])
+    deps.detail = "walk"  # scenarios play people chatting in the app, not the benchmark
     turns: list[dict] = []
     recorded = record(deps, scenario.get("setup", []))
     chats: dict[str, tuple[Deps, list]] = {"": (deps, [])}  # one chat per colleague, one shared building
     with observability.entrypoint("building_guide", kind="eval", tags=["synera-scenario", scenario["name"]]):
         for turn in scenario["turns"]:
             who, text = (turn["who"], turn["say"]) if isinstance(turn, dict) else ("", turn)
-            own, history = chats.setdefault(who, (Deps(deps.state, who=who), []))
+            own, history = chats.setdefault(who, (Deps(deps.state, who=who, detail="walk"), []))
             try:
                 result = await agent.run(text, deps=own, message_history=history)
                 chats[who] = (own, result.all_messages())

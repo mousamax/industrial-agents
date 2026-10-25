@@ -1,0 +1,301 @@
+{
+ "building": {
+  "id": "hallway-obstacles",
+  "name": "Obstacle hallway",
+  "source": "procedural",
+  "split": "local",
+  "license": "CC0-1.0",
+  "attribution": "Test building for sub-room directions: a 1.6 m corridor with obstacles on alternating walls",
+  "units": "m",
+  "source_ref": {}
+ },
+ "floors": [
+  {
+   "id": "hallway-obstacles-F0",
+   "level": 0,
+   "name": "Ground floor",
+   "elevation_m": 0.0,
+   "height_m": 3.0
+  }
+ ],
+ "spaces": [
+  {
+   "id": "hallway-obstacles-F0-S001",
+   "floor_id": "hallway-obstacles-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office 0.01",
+   "ref": "0.01",
+   "polygon": [
+    [
+     0,
+     0
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     6,
+     6
+    ],
+    [
+     0,
+     6
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "hallway-obstacles-F0-S002",
+   "floor_id": "hallway-obstacles-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "Corridor 0.02",
+   "ref": "0.02",
+   "polygon": [
+    [
+     6,
+     2.2
+    ],
+    [
+     36,
+     2.2
+    ],
+    [
+     36,
+     3.8
+    ],
+    [
+     6,
+     3.8
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "hallway-obstacles-F0-S003",
+   "floor_id": "hallway-obstacles-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office 0.03",
+   "ref": "0.03",
+   "polygon": [
+    [
+     36,
+     0
+    ],
+    [
+     42,
+     0
+    ],
+    [
+     42,
+     6
+    ],
+    [
+     36,
+     6
+    ]
+   ],
+   "synthetic": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "hallway-obstacles-F0-O0001",
+   "floor_id": "hallway-obstacles-F0",
+   "space_ids": [
+    "hallway-obstacles-F0-S001",
+    "outside"
+   ],
+   "kind": "entrance",
+   "position": [
+    0,
+    3
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "hallway-obstacles-F0-O0002",
+   "floor_id": "hallway-obstacles-F0",
+   "space_ids": [
+    "hallway-obstacles-F0-S001",
+    "hallway-obstacles-F0-S002"
+   ],
+   "kind": "door",
+   "position": [
+    6,
+    3
+   ],
+   "width_m": 0.9,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "hallway-obstacles-F0-O0003",
+   "floor_id": "hallway-obstacles-F0",
+   "space_ids": [
+    "hallway-obstacles-F0-S002",
+    "hallway-obstacles-F0-S003"
+   ],
+   "kind": "door",
+   "position": [
+    36,
+    3
+   ],
+   "width_m": 0.9,
+   "step_free": true,
+   "synthetic": false
+  }
+ ],
+ "vertical_connectors": [],
+ "assets": [
+  {
+   "id": "hallway-obstacles-A00001",
+   "name": "Fridge 0.02",
+   "category": "equipment",
+   "type": "fridge",
+   "space_id": "hallway-obstacles-F0-S002",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    11.0,
+    3.4
+   ],
+   "footprint": {
+    "width_m": 0.8,
+    "depth_m": 0.8,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00002",
+   "name": "Package 0.02",
+   "category": "equipment",
+   "type": "package",
+   "space_id": "hallway-obstacles-F0-S002",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    16.0,
+    2.6
+   ],
+   "footprint": {
+    "width_m": 1.2,
+    "depth_m": 0.8,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00003",
+   "name": "Monitor 0.02",
+   "category": "equipment",
+   "type": "monitor",
+   "space_id": "hallway-obstacles-F0-S002",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    21.0,
+    3.4
+   ],
+   "footprint": {
+    "width_m": 1.0,
+    "depth_m": 0.8,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00004",
+   "name": "Armchair 0.02",
+   "category": "furniture",
+   "type": "armchair",
+   "space_id": "hallway-obstacles-F0-S002",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    25.5,
+    2.6
+   ],
+   "footprint": {
+    "width_m": 0.8,
+    "depth_m": 0.8,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00005",
+   "name": "Trash can 0.02",
+   "category": "furniture",
+   "type": "trash_can",
+   "space_id": "hallway-obstacles-F0-S002",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    30.0,
+    3.4
+   ],
+   "footprint": {
+    "width_m": 0.6,
+    "depth_m": 0.8,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00006",
+   "name": "Desk 0.01-A",
+   "category": "furniture",
+   "type": "desk",
+   "space_id": "hallway-obstacles-F0-S001",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    2.0,
+    5.0
+   ],
+   "footprint": {
+    "width_m": 1.6,
+    "depth_m": 0.8,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00007",
+   "name": "Printer 0.03",
+   "category": "equipment",
+   "type": "printer",
+   "space_id": "hallway-obstacles-F0-S003",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    40.0,
+    4.5
+   ],
+   "footprint": {
+    "width_m": 0.6,
+    "depth_m": 0.5,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "hallway-obstacles-A00008",
+   "name": "Coffee machine 0.03",
+   "category": "equipment",
+   "type": "coffee_machine",
+   "space_id": "hallway-obstacles-F0-S003",
+   "floor_id": "hallway-obstacles-F0",
+   "position": [
+    40.5,
+    1.0
+   ],
+   "footprint": {
+    "width_m": 0.4,
+    "depth_m": 0.4,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  }
+ ]
+}

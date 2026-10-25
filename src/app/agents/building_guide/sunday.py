@@ -68,11 +68,11 @@ def empty_record(question_id: str) -> dict[str, Any]:
     }
 
 
-def _results(tool_calls: list[ToolCall], tool: str) -> list[dict[str, Any]]:
-    """The parsed JSON results of every call to `tool`, in order (failed or non-JSON results skipped)."""
+def _results(tool_calls: list[ToolCall], *tools: str) -> list[dict[str, Any]]:
+    """The parsed JSON results of every call to one of `tools`, in call order (failed or non-JSON skipped)."""
     out = []
     for c in tool_calls:
-        if c.get("tool") != tool or c.get("result") is None:
+        if c.get("tool") not in tools or c.get("result") is None:
             continue
         result = c["result"]
         try:
@@ -132,7 +132,9 @@ def to_record(question: dict[str, Any], reply: str, tool_calls: list[ToolCall]) 
     counts = [c for c in _results(tool_calls, "count_items") if "count" in c]
     if counts:
         record["count"] = counts[-1]["count"]
-    routes = [r for r in _results(tool_calls, "route") if "reachable" in r]
+    # walk_directions only exists in chats (Deps.detail="walk"), but its legs carry the same space_path and
+    # length: if a run ever has it, a route answered with it still fills the record.
+    routes = [r for r in _results(tool_calls, "route", "walk_directions") if "reachable" in r]
     if routes:
         last = routes[-1]
         record["reachable"] = bool(last["reachable"])

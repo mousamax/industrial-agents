@@ -34,6 +34,8 @@ from .tools import (
     overview,
     set_closed,
     undo_last_change,
+    walk_directions,
+    walk_mode_only,
 )
 
 
@@ -141,6 +143,8 @@ NUMERIC = re.compile(
     r"number|percent|metres|meters|minutes|m²|m2|\bper\b|\bdb\b|count|area|length|distance|°c"
 )
 NOT_NUMERIC = re.compile(r"room|name|floor|space|time|type|door|route")
+NOT_IN_PLAN = re.compile(r"not in the plan|not recorded|isn't recorded|no \w+ data")
+"""How a reply says the value asked for isn't in the building data at all (prompt: 'Answer: not in the plan')."""
 NO_ROUTE_SAID = re.compile(
     r"\bno\b[\w\s-]{0,25}\b(?:route|path)\b|unreachable|not reachable|can(?:no|')t reach"
 )
@@ -188,6 +192,8 @@ def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) ->
             f"When there is no route, the line is exactly 'Answer: no route' (no other words, no numbers), "
             f"got {line!r}. Put the reason above it."
         )
+    if not numbers and NOT_IN_PLAN.search(line.casefold()):
+        return reply  # the value isn't in the plan at all (hours, noise): said in words, not a made-up number
     room_answer = "<room name or number>" in prompt
     wants_number = "<number>" in prompt or "<area>" in prompt or _one_number(placeholders)
     if wants_number and not room_answer and len(numbers) != 1:
@@ -215,6 +221,10 @@ CHANGES_STATE = {set_closed, add_door, move_item, undo_last_change, draft_buildi
 The model often emits set_closed and route in one turn; run in parallel, the route ignored the closure."""
 
 
+PREPARE = {walk_directions: walk_mode_only}
+"""Tools offered only in some conversations: walk_directions only where Deps.detail is "walk"."""
+
+
 def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[Deps, str]:
     """The agent with a given model and thinking depth (the benchmark runner compares configurations)."""
     built = Agent(
@@ -222,7 +232,10 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         name="building_guide",
         instructions=load_prompt(__file__),
         deps_type=Deps,
-        tools=[Tool(never_crash(t), sequential=t in CHANGES_STATE) for t in (*TOOLS, *DRAFT_TOOLS, calendar)],
+        tools=[
+            Tool(never_crash(t), sequential=t in CHANGES_STATE, prepare=PREPARE.get(t))
+            for t in (*TOOLS, *DRAFT_TOOLS, calendar)
+        ],
         retries=4,
         capabilities=[Thinking(thinking), Caching()],  # type: ignore[arg-type]
         defer_model_check=True,
@@ -245,6 +258,6 @@ card = AgentCard(
     description="Talk to a building: find, route, closures, what-ifs and plan facts (areas, walls, 3D).",
     agent=agent,
     input_type=Question,
-    deps=lambda: Deps.load(get_settings().default_building),
+    deps=lambda: Deps.load(get_settings().default_building, detail="walk"),  # ia chat / ui: a person
     deps_from_input=lambda q: Deps.load(q.building, here=q.location),
 )

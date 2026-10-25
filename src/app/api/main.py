@@ -323,7 +323,9 @@ async def building_chat(
     chat_id = str((await request.json()).get("id") or "default")  # Starlette caches the body for dispatch
     key = (building_id, chat_id)
     if key not in _sessions:
-        _sessions[key] = Deps(live_state(building_id), who=f"chat {chat_id[:8]}")
+        _sessions[key] = Deps(
+            live_state(building_id), who=f"chat {chat_id[:8]}", detail="walk"
+        )  # app and voice
     if who:
         _sessions[key].who = who
     if location:

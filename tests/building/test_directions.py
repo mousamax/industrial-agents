@@ -293,12 +293,43 @@ def _first_route_question():
 
 
 def test_directions_route_tool_legs_carry_the_walk():
+    """In a conversation with a person (detail="walk") route legs carry the drawn walk; in the default
+    room-level mode (benchmarks, the Sunday run) they don't."""
     q = _first_route_question()
     a = q["answer"]
-    out = json.loads(route(_ctx(q["building_id"]), a["from_space_id"], a["to_space_id"]))
+    walk_ctx = _ctx(q["building_id"])
+    walk_ctx.deps.detail = "walk"
+    out = json.loads(route(walk_ctx, a["from_space_id"], a["to_space_id"]))
     for leg in out["legs"]:
         assert all(isinstance(s, str) for s in leg["steps"])
         assert leg["path"] and all(seg["floor_id"] and len(seg["points"]) >= 1 for seg in leg["path"])
+    rooms = json.loads(route(_ctx(q["building_id"]), a["from_space_id"], a["to_space_id"]))
+    assert all("path" not in leg for leg in rooms["legs"])
+
+
+def test_directions_tool_only_offered_in_walk_mode():
+    """walk_directions is hidden from the model unless the conversation is detail="walk"."""
+    import asyncio
+
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from app.agents.building_guide.agent import agent
+    from app.agents.building_guide.tools import Deps
+
+    offered: list[set[str]] = []
+
+    def model(messages, info: AgentInfo) -> ModelResponse:
+        offered.append({t.name for t in info.function_tools})
+        return ModelResponse(parts=[TextPart("ok")])
+
+    q = _first_route_question()
+    for detail in ("rooms", "walk"):
+        with agent.override(model=FunctionModel(model)):
+            asyncio.run(agent.run("hi", deps=Deps.load(q["building_id"], detail=detail)))
+    rooms, walk = offered
+    assert "route" in rooms and "walk_directions" not in rooms
+    assert "walk_directions" in walk
 
 
 def test_directions_walk_directions_legs_have_steps_and_path():

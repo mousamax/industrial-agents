@@ -177,3 +177,17 @@ def test_sunday_csv_has_every_full_reply(answers, tmp_path):
     with (tmp_path / "answers.csv").open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
     assert [(r["question_id"], r["answer"]) for r in rows] == [(r["id"], r["reply"]) for r in records]
+
+
+def test_sunday_route_from_walk_directions_still_fills_the_record():
+    """Safety net: a route answered with walk_directions (chats only) still gives route and length."""
+    from app.agents.building_guide.sunday import to_record
+    from app.agents.building_guide.tools import walk_directions
+
+    q = next(q for q in GOLDEN if q["kind"] == "route" and q["answer"].get("reachable") is not False)
+    a = q["answer"]
+    deps = Deps.load(building_dir(BUILDING_ID), detail="walk")
+    result = walk_directions(SimpleNamespace(deps=deps, run_id="1"), a["from_space_id"], a["to_space_id"])
+    r = to_record({"id": q["id"]}, "Answer: 1", [{"tool": "walk_directions", "args": {}, "result": result}])
+    assert r["reachable"] and route_length_ok(r["length_m"], a["optimal_length_m"]), r
+    assert (r["route"][0], r["route"][-1]) == (a["from_space_id"], a["to_space_id"]), r

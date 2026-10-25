@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired, CallDeferred, ModelRetry, RunContext
+from pydantic_ai.tools import ToolDefinition
 from shapely.ops import unary_union
 
 from app.building import geometry, queries
@@ -42,6 +43,9 @@ from .graph import route_graph
 
 MAX_RESULTS = 15
 MIN_GAIN_M = 1.0
+
+
+Detail = Literal["rooms", "walk"]
 
 
 class Deps:
@@ -57,6 +61,7 @@ class Deps:
         pending: dict[str, Any] | None = None,
         here: str | None = None,
         who: str = "",
+        detail: Detail = "rooms",
     ) -> None:
         self.state: BuildingState = state
         """Shared by every colleague in the app (one per building); one per question in the benchmark."""
@@ -67,6 +72,11 @@ class Deps:
         `start` a benchmark line carries). The agent gets it as context; it never overrides what they say."""
         self.who: str = who
         """Who this conversation is with (a chat id or name): stamped on the changes they report."""
+        self.detail: Detail = detail
+        """How fine directions may be. "rooms" (the default: benchmarks, the Sunday run, evals, anything
+        that doesn't say) gives routes room by room, with no walk_directions tool and no in-room `path`.
+        "walk" (set by the interactive channels: the app chat, voice, `ia chat`, tricky-user scenarios)
+        adds walk_directions and the drawn walk round obstacles."""
 
     @property
     def building(self) -> Building:
@@ -78,8 +88,8 @@ class Deps:
         return self.state.closed()
 
     @classmethod
-    def load(cls, reference: str | Path, here: str | None = None) -> Deps:
-        deps = cls(state=BuildingState(load_building(reference)))
+    def load(cls, reference: str | Path, here: str | None = None, detail: Detail = "rooms") -> Deps:
+        deps = cls(state=BuildingState(load_building(reference)), detail=detail)
         if here:
             deps.here = _space_id(deps.building, here)  # an id, or a name the person would use
         return deps
@@ -752,15 +762,15 @@ def _passes(b: Building, elements: list[str]) -> dict[str, int]:
     return {"doorways": 0, **counts}
 
 
-def _route_result(b: Building, route: Route) -> dict:
+def _route_result(b: Building, route: Route, walk: bool = False) -> dict:
+    """One leg for the agent; `walk` (interactive channels) adds the drawn walk round walls and obstacles."""
     return {
         "length_m": round(route.length_m, 2),
         "passes": _passes(b, route.element_path),
         "steps": _steps(b, route),
         "space_path": route.space_path,
         "element_path": list(dict.fromkeys(route.element_path)),
-        "path": walk_path(b, route),  # the walk for the map: [{floor_id, points}], round walls and obstacles
-    }
+    } | ({"path": walk_path(b, route)} if walk else {})  # the walk for the map: [{floor_id, points}]
 
 
 class _BaysPassable(RouteGraph):
@@ -838,6 +848,12 @@ def _not_connected(b: Building, stops: list[str]) -> str:
     return "not connected: no door, stairs or lift joins these places on the plan, under any rule"
 
 
+LENGTH_INCLUDES = (
+    "everything: walking, every lift ride (15 m waiting plus 1 m per metre of height) and every flight of "
+    "stairs (2 m per metre climbed). Don't add lift or stair costs again."
+)
+
+
 def route(
     ctx: RunContext[Deps],
     start: str,
@@ -884,7 +900,7 @@ def route(
                 "blocked_by": _why_no_route(b, constraints, stops),
             }
         )
-    legs = [_route_result(b, leg) for leg in tour.legs]
+    legs = [_route_result(b, leg, ctx.deps.detail == "walk") for leg in tour.legs]
     total: Counter[str] = Counter()
     for leg in legs:
         total.update(leg["passes"])
@@ -892,6 +908,7 @@ def route(
         {
             "reachable": True,
             "total_length_m": round(tour.length_m, 2),
+            "length_includes": LENGTH_INCLUDES,
             "passes_in_total": dict(total),
             "stops": [_label(b, s) for s in stops],
             "legs": legs,
@@ -918,6 +935,12 @@ def _directions_leg(b: Building, route: Route) -> dict:
     }
 
 
+async def walk_mode_only(ctx: RunContext[Deps], tool_def: ToolDefinition) -> ToolDefinition | None:
+    """Tool `prepare` hook: the tool exists only in conversations with detail="walk" (people being guided),
+    never in benchmark or Sunday runs, where answers stay room by room."""
+    return tool_def if ctx.deps.detail == "walk" else None
+
+
 def walk_directions(
     ctx: RunContext[Deps],
     start: str,
@@ -926,10 +949,11 @@ def walk_directions(
     step_free: bool = False,
     min_width_m: float | None = None,
 ) -> str:
-    """Turn-by-turn walking directions a person can follow without looking at a screen: where to turn
-    left or right, what they walk past, and what stands in the way ("go around the printer, keeping it on
-    your left"). Use it when the person wants to be guided ("how exactly", "keep it short", on a headset)
-    after or instead of route. Same arguments as route; closures they reported are avoided.
+    """The walk inside the rooms of a route: where to turn left or right, what they walk past, and what
+    stands in the way ("go around the printer, keeping it on your left"), plus the drawn path for the map.
+    Call it together with route whenever someone asks how to get somewhere, unless they clearly know the
+    building. Its steps are raw material: tell them as a short walk built on turns and landmarks, not read
+    out one by one. Same arguments as route; closures they reported are avoided.
 
     Args:
         start: Where the person is: room name/number, id, item name, or "outside" (from any entrance).
@@ -957,6 +981,7 @@ def walk_directions(
         {
             "reachable": True,
             "total_length_m": round(tour.length_m, 2),
+            "length_includes": LENGTH_INCLUDES,
             "legs": legs,
             "highlight": stops,
         }
@@ -1095,6 +1120,7 @@ def plan_visits(
         {
             "reachable": True,
             "total_length_m": round(tour.length_m, 2),
+            "length_includes": LENGTH_INCLUDES,
             "exact": plan.exact,
             "order": [_label(b, s) for s in stops],
             "stops": [
@@ -1115,7 +1141,7 @@ def plan_visits(
                 if plan.pruned_groups
                 else {}
             ),
-            "legs": [_route_result(b, leg) for leg in tour.legs],
+            "legs": [_route_result(b, leg, ctx.deps.detail == "walk") for leg in tour.legs],
             "closed_avoided": sorted(ctx.deps.closed),
             "highlight": stops,
         }

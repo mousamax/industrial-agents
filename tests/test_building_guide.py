@@ -197,6 +197,25 @@ async def test_the_answer_line_holds_only_what_is_asked(question, bad, good):
     assert result.output == good
 
 
+async def test_a_value_the_plan_does_not_hold_is_said_in_words_without_a_retry():
+    """'Answer: <dB>' for noise the plan doesn't record: 'not in the plan' is the honest line. A retry asking
+    for a number made Haiku rewrite the reply and drop the room details and directions it had found."""
+    reply = (
+        "Seminar room 2.11 is on Floor 2, 12 chairs. The plan has no noise data.\n\nAnswer: not in the plan"
+    )
+    calls = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append(1)
+        return ModelResponse(parts=[TextPart(reply)])
+
+    agent = make_agent()
+    question = "How loud is Seminar room 2.11, in decibels? Finish with a line 'Answer: <dB>'."
+    with agent.override(model=FunctionModel(model)):
+        result = await agent.run(question, deps=Deps.load(FACTORY))
+    assert result.output == reply and len(calls) == 1
+
+
 async def test_no_answer_line_unless_asked():
     def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         return ModelResponse(
