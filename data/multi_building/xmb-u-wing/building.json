@@ -1,0 +1,1442 @@
+{
+ "building": {
+  "id": "xmb-u-wing",
+  "name": "Institut U-Bau",
+  "source": "procedural",
+  "source_ref": {
+   "generator": "hand-designed",
+   "script": "data/multi_building/_build.py"
+  },
+  "license": "CC0-1.0",
+  "attribution": "Hand-designed test plan for the Synera track (CC0)",
+  "split": "dev",
+  "units": "m"
+ },
+ "floors": [
+  {
+   "id": "xmb-u-wing-F0",
+   "level": 0,
+   "name": "Ground floor",
+   "elevation_m": 0.0,
+   "height_m": 3.5
+  },
+  {
+   "id": "xmb-u-wing-F1",
+   "level": 1,
+   "name": "First floor",
+   "elevation_m": 3.5,
+   "height_m": 3.5
+  }
+ ],
+ "spaces": [
+  {
+   "id": "xmb-u-wing-F0-S001",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "West corridor 0",
+   "ref": "WC0",
+   "polygon": [
+    [
+     9,
+     12
+    ],
+    [
+     12,
+     12
+    ],
+    [
+     12,
+     50
+    ],
+    [
+     9,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S002",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "East corridor 0",
+   "ref": "EC0",
+   "polygon": [
+    [
+     40,
+     12
+    ],
+    [
+     43,
+     12
+    ],
+    [
+     43,
+     50
+    ],
+    [
+     40,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S003",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "seminar_room",
+   "name": "Seminar room W0.1",
+   "ref": "W0.1",
+   "polygon": [
+    [
+     0,
+     41
+    ],
+    [
+     9,
+     41
+    ],
+    [
+     9,
+     50
+    ],
+    [
+     0,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S004",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase W",
+   "ref": "STW0",
+   "polygon": [
+    [
+     0,
+     35
+    ],
+    [
+     9,
+     35
+    ],
+    [
+     9,
+     41
+    ],
+    [
+     0,
+     41
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S005",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office W0.3",
+   "ref": "W0.3",
+   "polygon": [
+    [
+     0,
+     12
+    ],
+    [
+     9,
+     12
+    ],
+    [
+     9,
+     35
+    ],
+    [
+     0,
+     35
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S006",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "seminar_room",
+   "name": "Seminar room E0.1",
+   "ref": "E0.1",
+   "polygon": [
+    [
+     43,
+     41
+    ],
+    [
+     52,
+     41
+    ],
+    [
+     52,
+     50
+    ],
+    [
+     43,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S007",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase E",
+   "ref": "STE0",
+   "polygon": [
+    [
+     43,
+     35
+    ],
+    [
+     52,
+     35
+    ],
+    [
+     52,
+     41
+    ],
+    [
+     43,
+     41
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S008",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office E0.3",
+   "ref": "E0.3",
+   "polygon": [
+    [
+     43,
+     12
+    ],
+    [
+     52,
+     12
+    ],
+    [
+     52,
+     35
+    ],
+    [
+     43,
+     35
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S009",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office S0.1",
+   "ref": "S0.1",
+   "polygon": [
+    [
+     0,
+     0
+    ],
+    [
+     9,
+     0
+    ],
+    [
+     9,
+     12
+    ],
+    [
+     0,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S010",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "kitchen",
+   "name": "Kitchen S0.2",
+   "ref": "S0.2",
+   "polygon": [
+    [
+     9,
+     0
+    ],
+    [
+     26,
+     0
+    ],
+    [
+     26,
+     9
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S011",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "lift",
+   "room_type": "lift",
+   "name": "Lift",
+   "ref": "LIFT0",
+   "polygon": [
+    [
+     26,
+     0
+    ],
+    [
+     30,
+     0
+    ],
+    [
+     30,
+     9
+    ],
+    [
+     26,
+     9
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S012",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "lab",
+   "name": "Lab S0.4",
+   "ref": "S0.4",
+   "polygon": [
+    [
+     30,
+     0
+    ],
+    [
+     43,
+     0
+    ],
+    [
+     43,
+     9
+    ],
+    [
+     30,
+     9
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S013",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office S0.5",
+   "ref": "S0.5",
+   "polygon": [
+    [
+     43,
+     0
+    ],
+    [
+     52,
+     0
+    ],
+    [
+     52,
+     12
+    ],
+    [
+     43,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S014",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "South corridor 0 west",
+   "ref": "SCW0",
+   "polygon": [
+    [
+     9,
+     9
+    ],
+    [
+     26,
+     9
+    ],
+    [
+     26,
+     12
+    ],
+    [
+     9,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S015",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "South corridor 0 east",
+   "ref": "SCE0",
+   "polygon": [
+    [
+     26,
+     9
+    ],
+    [
+     43,
+     9
+    ],
+    [
+     43,
+     12
+    ],
+    [
+     26,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S001",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "West corridor 1",
+   "ref": "WC1",
+   "polygon": [
+    [
+     9,
+     12
+    ],
+    [
+     12,
+     12
+    ],
+    [
+     12,
+     50
+    ],
+    [
+     9,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S002",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "East corridor 1",
+   "ref": "EC1",
+   "polygon": [
+    [
+     40,
+     12
+    ],
+    [
+     43,
+     12
+    ],
+    [
+     43,
+     50
+    ],
+    [
+     40,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S003",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "seminar_room",
+   "name": "Seminar room W1.1",
+   "ref": "W1.1",
+   "polygon": [
+    [
+     0,
+     41
+    ],
+    [
+     9,
+     41
+    ],
+    [
+     9,
+     50
+    ],
+    [
+     0,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S004",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase W",
+   "ref": "STW1",
+   "polygon": [
+    [
+     0,
+     35
+    ],
+    [
+     9,
+     35
+    ],
+    [
+     9,
+     41
+    ],
+    [
+     0,
+     41
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S005",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office W1.3",
+   "ref": "W1.3",
+   "polygon": [
+    [
+     0,
+     12
+    ],
+    [
+     9,
+     12
+    ],
+    [
+     9,
+     35
+    ],
+    [
+     0,
+     35
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S006",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "seminar_room",
+   "name": "Seminar room E1.1",
+   "ref": "E1.1",
+   "polygon": [
+    [
+     43,
+     41
+    ],
+    [
+     52,
+     41
+    ],
+    [
+     52,
+     50
+    ],
+    [
+     43,
+     50
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S007",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase E",
+   "ref": "STE1",
+   "polygon": [
+    [
+     43,
+     35
+    ],
+    [
+     52,
+     35
+    ],
+    [
+     52,
+     41
+    ],
+    [
+     43,
+     41
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S008",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office E1.3",
+   "ref": "E1.3",
+   "polygon": [
+    [
+     43,
+     12
+    ],
+    [
+     52,
+     12
+    ],
+    [
+     52,
+     35
+    ],
+    [
+     43,
+     35
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S009",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office S1.1",
+   "ref": "S1.1",
+   "polygon": [
+    [
+     0,
+     0
+    ],
+    [
+     9,
+     0
+    ],
+    [
+     9,
+     12
+    ],
+    [
+     0,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S010",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "library",
+   "name": "Library S1.2",
+   "ref": "S1.2",
+   "polygon": [
+    [
+     9,
+     0
+    ],
+    [
+     26,
+     0
+    ],
+    [
+     26,
+     9
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S011",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "lift",
+   "room_type": "lift",
+   "name": "Lift",
+   "ref": "LIFT1",
+   "polygon": [
+    [
+     26,
+     0
+    ],
+    [
+     30,
+     0
+    ],
+    [
+     30,
+     9
+    ],
+    [
+     26,
+     9
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S012",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "lab",
+   "name": "Lab S1.4",
+   "ref": "S1.4",
+   "polygon": [
+    [
+     30,
+     0
+    ],
+    [
+     43,
+     0
+    ],
+    [
+     43,
+     9
+    ],
+    [
+     30,
+     9
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S013",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office S1.5",
+   "ref": "S1.5",
+   "polygon": [
+    [
+     43,
+     0
+    ],
+    [
+     52,
+     0
+    ],
+    [
+     52,
+     12
+    ],
+    [
+     43,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-S014",
+   "floor_id": "xmb-u-wing-F1",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "South corridor 1",
+   "ref": "SC1",
+   "polygon": [
+    [
+     9,
+     9
+    ],
+    [
+     43,
+     9
+    ],
+    [
+     43,
+     12
+    ],
+    [
+     9,
+     12
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-S016",
+   "floor_id": "xmb-u-wing-F0",
+   "type": "outdoor",
+   "room_type": "courtyard",
+   "name": "Courtyard",
+   "ref": "COURT",
+   "polygon": [
+    [
+     12,
+     12
+    ],
+    [
+     40,
+     12
+    ],
+    [
+     40,
+     50
+    ],
+    [
+     12,
+     50
+    ]
+   ],
+   "synthetic": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "xmb-u-wing-F0-O0001",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S014",
+    "xmb-u-wing-F0-S015"
+   ],
+   "kind": "door",
+   "position": [
+    26,
+    10.5
+   ],
+   "width_m": 0.9,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0002",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "xmb-u-wing-F0-S014"
+   ],
+   "kind": "opening",
+   "position": [
+    10.5,
+    12
+   ],
+   "width_m": 3.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0003",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S002",
+    "xmb-u-wing-F0-S015"
+   ],
+   "kind": "opening",
+   "position": [
+    41.5,
+    12
+   ],
+   "width_m": 3.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0004",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "xmb-u-wing-F0-S003"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    45
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0005",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "xmb-u-wing-F0-S004"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    38
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0006",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "xmb-u-wing-F0-S005"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    24
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0007",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S002",
+    "xmb-u-wing-F0-S006"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    45
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0008",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S002",
+    "xmb-u-wing-F0-S007"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    38
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0009",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S002",
+    "xmb-u-wing-F0-S008"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    24
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0010",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S014",
+    "xmb-u-wing-F0-S009"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    10.5
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0011",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S014",
+    "xmb-u-wing-F0-S010"
+   ],
+   "kind": "door",
+   "position": [
+    17,
+    9
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0012",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S015",
+    "xmb-u-wing-F0-S011"
+   ],
+   "kind": "door",
+   "position": [
+    28,
+    9
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0013",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S015",
+    "xmb-u-wing-F0-S012"
+   ],
+   "kind": "door",
+   "position": [
+    36,
+    9
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0014",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S015",
+    "xmb-u-wing-F0-S013"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    10.5
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0001",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S001",
+    "xmb-u-wing-F1-S014"
+   ],
+   "kind": "opening",
+   "position": [
+    10.5,
+    12
+   ],
+   "width_m": 3.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0002",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S002",
+    "xmb-u-wing-F1-S014"
+   ],
+   "kind": "opening",
+   "position": [
+    41.5,
+    12
+   ],
+   "width_m": 3.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0003",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S001",
+    "xmb-u-wing-F1-S003"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    45
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0004",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S001",
+    "xmb-u-wing-F1-S004"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    38
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0005",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S001",
+    "xmb-u-wing-F1-S005"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    24
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0006",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S002",
+    "xmb-u-wing-F1-S006"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    45
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0007",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S002",
+    "xmb-u-wing-F1-S007"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    38
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0008",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S002",
+    "xmb-u-wing-F1-S008"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    24
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0009",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S014",
+    "xmb-u-wing-F1-S009"
+   ],
+   "kind": "door",
+   "position": [
+    9,
+    10.5
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0010",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S014",
+    "xmb-u-wing-F1-S010"
+   ],
+   "kind": "door",
+   "position": [
+    17,
+    9
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0011",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S014",
+    "xmb-u-wing-F1-S011"
+   ],
+   "kind": "door",
+   "position": [
+    28,
+    9
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0012",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S014",
+    "xmb-u-wing-F1-S012"
+   ],
+   "kind": "door",
+   "position": [
+    36,
+    9
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F1-O0013",
+   "floor_id": "xmb-u-wing-F1",
+   "space_ids": [
+    "xmb-u-wing-F1-S014",
+    "xmb-u-wing-F1-S013"
+   ],
+   "kind": "door",
+   "position": [
+    43,
+    10.5
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0015",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "xmb-u-wing-F0-S016"
+   ],
+   "kind": "door",
+   "position": [
+    12,
+    45
+   ],
+   "width_m": 1.0,
+   "step_free": false,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0016",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "xmb-u-wing-F0-S016"
+   ],
+   "kind": "door",
+   "position": [
+    12,
+    20
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0017",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S002",
+    "xmb-u-wing-F0-S016"
+   ],
+   "kind": "door",
+   "position": [
+    40,
+    45
+   ],
+   "width_m": 1.8,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0018",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S001",
+    "outside"
+   ],
+   "kind": "entrance",
+   "position": [
+    10.5,
+    50
+   ],
+   "width_m": 1.8,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-F0-O0019",
+   "floor_id": "xmb-u-wing-F0",
+   "space_ids": [
+    "xmb-u-wing-F0-S016",
+    "outside"
+   ],
+   "kind": "entrance",
+   "position": [
+    26,
+    50
+   ],
+   "width_m": 4.0,
+   "step_free": true,
+   "synthetic": false
+  }
+ ],
+ "vertical_connectors": [
+  {
+   "id": "xmb-u-wing-V01",
+   "kind": "stairs",
+   "name": "Staircase W",
+   "floor_ids": [
+    "xmb-u-wing-F0",
+    "xmb-u-wing-F1"
+   ],
+   "space_ids": [
+    "xmb-u-wing-F0-S004",
+    "xmb-u-wing-F1-S004"
+   ],
+   "step_free": false,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-V02",
+   "kind": "stairs",
+   "name": "Staircase E",
+   "floor_ids": [
+    "xmb-u-wing-F0",
+    "xmb-u-wing-F1"
+   ],
+   "space_ids": [
+    "xmb-u-wing-F0-S007",
+    "xmb-u-wing-F1-S007"
+   ],
+   "step_free": false,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-u-wing-V03",
+   "kind": "lift",
+   "name": "Lift",
+   "floor_ids": [
+    "xmb-u-wing-F0",
+    "xmb-u-wing-F1"
+   ],
+   "space_ids": [
+    "xmb-u-wing-F0-S011",
+    "xmb-u-wing-F1-S011"
+   ],
+   "step_free": true,
+   "synthetic": false
+  }
+ ],
+ "assets": [
+  {
+   "id": "xmb-u-wing-A00001",
+   "name": "Coffee machine S0.2",
+   "category": "equipment",
+   "type": "coffee_machine",
+   "space_id": "xmb-u-wing-F0-S010",
+   "floor_id": "xmb-u-wing-F0",
+   "position": [
+    12,
+    3
+   ],
+   "footprint": {
+    "width_m": 0.6,
+    "depth_m": 0.6,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "xmb-u-wing-A00002",
+   "name": "Printer E1.3",
+   "category": "equipment",
+   "type": "printer",
+   "space_id": "xmb-u-wing-F1-S008",
+   "floor_id": "xmb-u-wing-F1",
+   "position": [
+    50,
+    20
+   ],
+   "footprint": {
+    "width_m": 0.6,
+    "depth_m": 0.6,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  }
+ ]
+}

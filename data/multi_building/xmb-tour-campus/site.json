@@ -1,0 +1,41 @@
+{
+ "site": {
+  "id": "xmb-tour-campus",
+  "name": "Tour campus: Hörsaalzentrum 024, Produktion West 29, Laborgebäude 025",
+  "note": "Hand-designed Level 3 test site for multi-stop tours (data/multi_building/README.md)."
+ },
+ "buildings": [
+  "proc-campus-dev-000",
+  "proc-factory-dev-005",
+  "proc-campus-dev-001"
+ ],
+ "walkways": [
+  {
+   "id": "xmb-tour-campus-W1",
+   "name": "Covered walkway",
+   "from": "proc-campus-dev-000-F0-O0028",
+   "to": "proc-factory-dev-005-F0-O0063",
+   "length_m": 120.0,
+   "step_free": true,
+   "width_m": 2.5
+  },
+  {
+   "id": "xmb-tour-campus-W2",
+   "name": "Factory road",
+   "from": "proc-factory-dev-005-F0-O0021",
+   "to": "proc-campus-dev-001-F0-O0022",
+   "length_m": 90.0,
+   "step_free": true,
+   "width_m": 6.0
+  },
+  {
+   "id": "xmb-tour-campus-W3",
+   "name": "Garden path",
+   "from": "proc-campus-dev-000-F0-O0029",
+   "to": "proc-campus-dev-001-F0-O0023",
+   "length_m": 140.0,
+   "step_free": true,
+   "width_m": 1.5
+  }
+ ]
+}

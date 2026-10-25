@@ -1,0 +1,1333 @@
+{
+ "building": {
+  "id": "xmb-bridge-works",
+  "name": "Werk Nord (Halle A + Halle B)",
+  "source": "procedural",
+  "source_ref": {
+   "generator": "hand-designed",
+   "script": "data/multi_building/_build.py"
+  },
+  "license": "CC0-1.0",
+  "attribution": "Hand-designed test plan for the Synera track (CC0)",
+  "split": "dev",
+  "units": "m"
+ },
+ "floors": [
+  {
+   "id": "xmb-bridge-works-F0",
+   "level": 0,
+   "name": "Ground floor",
+   "elevation_m": 0.0,
+   "height_m": 4.5
+  },
+  {
+   "id": "xmb-bridge-works-F1",
+   "level": 1,
+   "name": "First floor",
+   "elevation_m": 4.5,
+   "height_m": 4.5
+  }
+ ],
+ "spaces": [
+  {
+   "id": "xmb-bridge-works-F0-S001",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "hall",
+   "room_type": "warehouse_zone",
+   "name": "Goods hall A",
+   "ref": "A-G0",
+   "polygon": [
+    [
+     0,
+     0
+    ],
+    [
+     40,
+     0
+    ],
+    [
+     40,
+     20
+    ],
+    [
+     0,
+     20
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S002",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "Corridor A0",
+   "ref": "A-C0",
+   "polygon": [
+    [
+     0,
+     20
+    ],
+    [
+     40,
+     20
+    ],
+    [
+     40,
+     23
+    ],
+    [
+     0,
+     23
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S003",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office A0.1",
+   "ref": "A0.1",
+   "polygon": [
+    [
+     0,
+     23
+    ],
+    [
+     10,
+     23
+    ],
+    [
+     10,
+     30
+    ],
+    [
+     0,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S004",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase A",
+   "ref": "A-ST0",
+   "polygon": [
+    [
+     10,
+     23
+    ],
+    [
+     14,
+     23
+    ],
+    [
+     14,
+     30
+    ],
+    [
+     10,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S005",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "lift",
+   "room_type": "lift",
+   "name": "Freight lift A",
+   "ref": "A-L0",
+   "polygon": [
+    [
+     14,
+     23
+    ],
+    [
+     20,
+     23
+    ],
+    [
+     20,
+     30
+    ],
+    [
+     14,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S006",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "room",
+   "room_type": "lab",
+   "name": "Lab A0.4",
+   "ref": "A0.4",
+   "polygon": [
+    [
+     20,
+     23
+    ],
+    [
+     40,
+     23
+    ],
+    [
+     40,
+     30
+    ],
+    [
+     20,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S001",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "hall",
+   "room_type": "storage",
+   "name": "Mezzanine store A1",
+   "ref": "A-G1",
+   "polygon": [
+    [
+     0,
+     0
+    ],
+    [
+     40,
+     0
+    ],
+    [
+     40,
+     20
+    ],
+    [
+     0,
+     20
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S002",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "Corridor A1",
+   "ref": "A-C1",
+   "polygon": [
+    [
+     0,
+     20
+    ],
+    [
+     40,
+     20
+    ],
+    [
+     40,
+     23
+    ],
+    [
+     0,
+     23
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S003",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office A1.1",
+   "ref": "A1.1",
+   "polygon": [
+    [
+     0,
+     23
+    ],
+    [
+     10,
+     23
+    ],
+    [
+     10,
+     30
+    ],
+    [
+     0,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S004",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase A",
+   "ref": "A-ST1",
+   "polygon": [
+    [
+     10,
+     23
+    ],
+    [
+     14,
+     23
+    ],
+    [
+     14,
+     30
+    ],
+    [
+     10,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S005",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "lift",
+   "room_type": "lift",
+   "name": "Freight lift A",
+   "ref": "A-L1",
+   "polygon": [
+    [
+     14,
+     23
+    ],
+    [
+     20,
+     23
+    ],
+    [
+     20,
+     30
+    ],
+    [
+     14,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S006",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "room",
+   "room_type": "meeting_room",
+   "name": "Meeting room A1.4",
+   "ref": "A1.4",
+   "polygon": [
+    [
+     20,
+     23
+    ],
+    [
+     40,
+     23
+    ],
+    [
+     40,
+     30
+    ],
+    [
+     20,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S007",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "hall",
+   "room_type": "warehouse_zone",
+   "name": "Goods hall B",
+   "ref": "B-G0",
+   "polygon": [
+    [
+     60,
+     0
+    ],
+    [
+     100,
+     0
+    ],
+    [
+     100,
+     20
+    ],
+    [
+     60,
+     20
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S008",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "Corridor B0",
+   "ref": "B-C0",
+   "polygon": [
+    [
+     60,
+     20
+    ],
+    [
+     100,
+     20
+    ],
+    [
+     100,
+     23
+    ],
+    [
+     60,
+     23
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S009",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase B",
+   "ref": "B-ST0",
+   "polygon": [
+    [
+     60,
+     23
+    ],
+    [
+     64,
+     23
+    ],
+    [
+     64,
+     30
+    ],
+    [
+     60,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S010",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "room",
+   "room_type": "lab",
+   "name": "Lab B0.4",
+   "ref": "B0.4",
+   "polygon": [
+    [
+     64,
+     23
+    ],
+    [
+     80,
+     23
+    ],
+    [
+     80,
+     30
+    ],
+    [
+     64,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S011",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "lift",
+   "room_type": "lift",
+   "name": "Freight lift B",
+   "ref": "B-L0",
+   "polygon": [
+    [
+     80,
+     23
+    ],
+    [
+     86,
+     23
+    ],
+    [
+     86,
+     30
+    ],
+    [
+     80,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S012",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office B0.1",
+   "ref": "B0.1",
+   "polygon": [
+    [
+     86,
+     23
+    ],
+    [
+     100,
+     23
+    ],
+    [
+     100,
+     30
+    ],
+    [
+     86,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S007",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "hall",
+   "room_type": "storage",
+   "name": "Mezzanine store B1",
+   "ref": "B-G1",
+   "polygon": [
+    [
+     60,
+     0
+    ],
+    [
+     100,
+     0
+    ],
+    [
+     100,
+     20
+    ],
+    [
+     60,
+     20
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S008",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "corridor",
+   "room_type": "corridor",
+   "name": "Corridor B1",
+   "ref": "B-C1",
+   "polygon": [
+    [
+     60,
+     20
+    ],
+    [
+     100,
+     20
+    ],
+    [
+     100,
+     23
+    ],
+    [
+     60,
+     23
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S009",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "stair",
+   "room_type": "stair",
+   "name": "Staircase B",
+   "ref": "B-ST1",
+   "polygon": [
+    [
+     60,
+     23
+    ],
+    [
+     64,
+     23
+    ],
+    [
+     64,
+     30
+    ],
+    [
+     60,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S010",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "room",
+   "room_type": "meeting_room",
+   "name": "Meeting room B1.4",
+   "ref": "B1.4",
+   "polygon": [
+    [
+     64,
+     23
+    ],
+    [
+     80,
+     23
+    ],
+    [
+     80,
+     30
+    ],
+    [
+     64,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S011",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "lift",
+   "room_type": "lift",
+   "name": "Freight lift B",
+   "ref": "B-L1",
+   "polygon": [
+    [
+     80,
+     23
+    ],
+    [
+     86,
+     23
+    ],
+    [
+     86,
+     30
+    ],
+    [
+     80,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S012",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "room",
+   "room_type": "office",
+   "name": "Office B1.1",
+   "ref": "B1.1",
+   "polygon": [
+    [
+     86,
+     23
+    ],
+    [
+     100,
+     23
+    ],
+    [
+     100,
+     30
+    ],
+    [
+     86,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-S013",
+   "floor_id": "xmb-bridge-works-F0",
+   "type": "outdoor",
+   "room_type": "yard",
+   "name": "Yard",
+   "ref": "YARD",
+   "polygon": [
+    [
+     40,
+     0
+    ],
+    [
+     60,
+     0
+    ],
+    [
+     60,
+     30
+    ],
+    [
+     40,
+     30
+    ]
+   ],
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-S013",
+   "floor_id": "xmb-bridge-works-F1",
+   "type": "corridor",
+   "room_type": "bridge",
+   "name": "Bridge A-B",
+   "ref": "BRIDGE",
+   "polygon": [
+    [
+     40,
+     20
+    ],
+    [
+     60,
+     20
+    ],
+    [
+     60,
+     23
+    ],
+    [
+     40,
+     23
+    ]
+   ],
+   "synthetic": false
+  }
+ ],
+ "openings": [
+  {
+   "id": "xmb-bridge-works-F0-O0001",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S002",
+    "xmb-bridge-works-F0-S003"
+   ],
+   "kind": "door",
+   "position": [
+    5.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0002",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S002",
+    "xmb-bridge-works-F0-S004"
+   ],
+   "kind": "door",
+   "position": [
+    12.0,
+    23
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0003",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S002",
+    "xmb-bridge-works-F0-S005"
+   ],
+   "kind": "door",
+   "position": [
+    17.0,
+    23
+   ],
+   "width_m": 3.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0004",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S002",
+    "xmb-bridge-works-F0-S006"
+   ],
+   "kind": "door",
+   "position": [
+    30.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0005",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S001",
+    "xmb-bridge-works-F0-S002"
+   ],
+   "kind": "opening",
+   "position": [
+    17.0,
+    20
+   ],
+   "width_m": 4.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0006",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S001",
+    "xmb-bridge-works-F0-S002"
+   ],
+   "kind": "door",
+   "position": [
+    5,
+    20
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0001",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S002",
+    "xmb-bridge-works-F1-S003"
+   ],
+   "kind": "door",
+   "position": [
+    5.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0002",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S002",
+    "xmb-bridge-works-F1-S004"
+   ],
+   "kind": "door",
+   "position": [
+    12.0,
+    23
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0003",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S002",
+    "xmb-bridge-works-F1-S005"
+   ],
+   "kind": "door",
+   "position": [
+    17.0,
+    23
+   ],
+   "width_m": 3.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0004",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S002",
+    "xmb-bridge-works-F1-S006"
+   ],
+   "kind": "door",
+   "position": [
+    30.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0005",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S001",
+    "xmb-bridge-works-F1-S002"
+   ],
+   "kind": "opening",
+   "position": [
+    17.0,
+    20
+   ],
+   "width_m": 4.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0007",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S001",
+    "outside"
+   ],
+   "kind": "entrance",
+   "position": [
+    0,
+    10
+   ],
+   "width_m": 4.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0008",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S008",
+    "xmb-bridge-works-F0-S012"
+   ],
+   "kind": "door",
+   "position": [
+    93.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0009",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S008",
+    "xmb-bridge-works-F0-S009"
+   ],
+   "kind": "door",
+   "position": [
+    62.0,
+    23
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0010",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S008",
+    "xmb-bridge-works-F0-S011"
+   ],
+   "kind": "door",
+   "position": [
+    83.0,
+    23
+   ],
+   "width_m": 3.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0011",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S008",
+    "xmb-bridge-works-F0-S010"
+   ],
+   "kind": "door",
+   "position": [
+    72.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0012",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S007",
+    "xmb-bridge-works-F0-S008"
+   ],
+   "kind": "opening",
+   "position": [
+    83.0,
+    20
+   ],
+   "width_m": 4.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0013",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S007",
+    "xmb-bridge-works-F0-S008"
+   ],
+   "kind": "door",
+   "position": [
+    95,
+    20
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0006",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S008",
+    "xmb-bridge-works-F1-S012"
+   ],
+   "kind": "door",
+   "position": [
+    93.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0007",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S008",
+    "xmb-bridge-works-F1-S009"
+   ],
+   "kind": "door",
+   "position": [
+    62.0,
+    23
+   ],
+   "width_m": 1.2,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0008",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S008",
+    "xmb-bridge-works-F1-S011"
+   ],
+   "kind": "door",
+   "position": [
+    83.0,
+    23
+   ],
+   "width_m": 3.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0009",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S008",
+    "xmb-bridge-works-F1-S010"
+   ],
+   "kind": "door",
+   "position": [
+    72.0,
+    23
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0010",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S007",
+    "xmb-bridge-works-F1-S008"
+   ],
+   "kind": "opening",
+   "position": [
+    83.0,
+    20
+   ],
+   "width_m": 4.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0014",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S007",
+    "outside"
+   ],
+   "kind": "entrance",
+   "position": [
+    100,
+    10
+   ],
+   "width_m": 4.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0015",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S001",
+    "xmb-bridge-works-F0-S013"
+   ],
+   "kind": "opening",
+   "position": [
+    40,
+    3
+   ],
+   "width_m": 4.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0016",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S007",
+    "xmb-bridge-works-F0-S013"
+   ],
+   "kind": "opening",
+   "position": [
+    60,
+    3
+   ],
+   "width_m": 4.5,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0017",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S002",
+    "xmb-bridge-works-F0-S013"
+   ],
+   "kind": "door",
+   "position": [
+    40,
+    21.5
+   ],
+   "width_m": 1.0,
+   "step_free": false,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0018",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S008",
+    "xmb-bridge-works-F0-S013"
+   ],
+   "kind": "door",
+   "position": [
+    60,
+    21.5
+   ],
+   "width_m": 1.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F0-O0019",
+   "floor_id": "xmb-bridge-works-F0",
+   "space_ids": [
+    "xmb-bridge-works-F0-S013",
+    "outside"
+   ],
+   "kind": "entrance",
+   "position": [
+    50,
+    30
+   ],
+   "width_m": 6.0,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0011",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S002",
+    "xmb-bridge-works-F1-S013"
+   ],
+   "kind": "door",
+   "position": [
+    40,
+    21.5
+   ],
+   "width_m": 1.4,
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-F1-O0012",
+   "floor_id": "xmb-bridge-works-F1",
+   "space_ids": [
+    "xmb-bridge-works-F1-S008",
+    "xmb-bridge-works-F1-S013"
+   ],
+   "kind": "door",
+   "position": [
+    60,
+    21.5
+   ],
+   "width_m": 1.4,
+   "step_free": true,
+   "synthetic": false
+  }
+ ],
+ "vertical_connectors": [
+  {
+   "id": "xmb-bridge-works-V01",
+   "kind": "stairs",
+   "name": "Staircase A",
+   "floor_ids": [
+    "xmb-bridge-works-F0",
+    "xmb-bridge-works-F1"
+   ],
+   "space_ids": [
+    "xmb-bridge-works-F0-S004",
+    "xmb-bridge-works-F1-S004"
+   ],
+   "step_free": false,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-V02",
+   "kind": "lift",
+   "name": "Freight lift A",
+   "floor_ids": [
+    "xmb-bridge-works-F0",
+    "xmb-bridge-works-F1"
+   ],
+   "space_ids": [
+    "xmb-bridge-works-F0-S005",
+    "xmb-bridge-works-F1-S005"
+   ],
+   "step_free": true,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-V03",
+   "kind": "stairs",
+   "name": "Staircase B",
+   "floor_ids": [
+    "xmb-bridge-works-F0",
+    "xmb-bridge-works-F1"
+   ],
+   "space_ids": [
+    "xmb-bridge-works-F0-S009",
+    "xmb-bridge-works-F1-S009"
+   ],
+   "step_free": false,
+   "synthetic": false
+  },
+  {
+   "id": "xmb-bridge-works-V04",
+   "kind": "lift",
+   "name": "Freight lift B",
+   "floor_ids": [
+    "xmb-bridge-works-F0",
+    "xmb-bridge-works-F1"
+   ],
+   "space_ids": [
+    "xmb-bridge-works-F0-S011",
+    "xmb-bridge-works-F1-S011"
+   ],
+   "step_free": true,
+   "synthetic": false
+  }
+ ],
+ "assets": [
+  {
+   "id": "xmb-bridge-works-A00001",
+   "name": "Coffee machine B0.4",
+   "category": "equipment",
+   "type": "coffee_machine",
+   "space_id": "xmb-bridge-works-F0-S010",
+   "floor_id": "xmb-bridge-works-F0",
+   "position": [
+    62,
+    28
+   ],
+   "footprint": {
+    "width_m": 0.6,
+    "depth_m": 0.6,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  },
+  {
+   "id": "xmb-bridge-works-A00002",
+   "name": "Projector A1.4",
+   "category": "equipment",
+   "type": "projector",
+   "space_id": "xmb-bridge-works-F1-S006",
+   "floor_id": "xmb-bridge-works-F1",
+   "position": [
+    30,
+    27
+   ],
+   "footprint": {
+    "width_m": 0.6,
+    "depth_m": 0.6,
+    "rotation_deg": 0.0
+   },
+   "source": "generated"
+  }
+ ]
+}
