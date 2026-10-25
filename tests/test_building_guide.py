@@ -73,6 +73,31 @@ def test_edits_need_a_yes_in_a_later_turn():
     assert not deps.state.edits
 
 
+def test_several_edits_proposed_together_need_one_yes():
+    deps = Deps.load(CAMPUS)
+    pairs = [
+        ("Seminar room 2.06", "Kitchen 2.07"),
+        ("Office 2.03", "Lab 2.02"),
+        ("Office 2.12", "Seminar room 2.13"),
+    ]
+    for pair in pairs:
+        assert call(add_door, ctx(deps, "turn-1"), *pair)["status"].startswith("proposed")
+    assert not deps.state.edits
+    for pair in pairs:  # one "yes" in the next turn applies every door, in any order
+        assert call(add_door, ctx(deps, "turn-2"), *pair, confirmed=True)["status"] == "done"
+    assert len(deps.state.edits) == 3 and deps.pending is None
+    with pytest.raises(ModelRetry):  # each proposal applies once
+        add_door(ctx(deps, "turn-3"), *pairs[0], confirmed=True)
+
+
+def test_a_new_proposal_in_a_later_turn_replaces_the_old_batch():
+    deps = Deps.load(CAMPUS)
+    call(add_door, ctx(deps, "turn-1"), "Seminar room 2.06", "Kitchen 2.07")
+    call(add_door, ctx(deps, "turn-2"), "Office 2.03", "Lab 2.02")
+    with pytest.raises(ModelRetry):  # the person moved on: the first one was never confirmed
+        add_door(ctx(deps, "turn-3"), "Seminar room 2.06", "Kitchen 2.07", confirmed=True)
+
+
 def test_confirming_without_a_proposal_is_refused():
     deps = Deps.load(CAMPUS)
     with pytest.raises(ModelRetry):

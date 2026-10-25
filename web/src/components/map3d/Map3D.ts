@@ -105,7 +105,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   let selection: { kind: 'space' | 'asset'; id: string } | null = null
   let route: ShowRoute | null = null
   let link: Link3D | null = null
-  let ghostDoor: GhostDoor3D | null = null
+  let ghostDoors: GhostDoor3D[] = []
   let diag = 100 // building extent (m), for the far plane
   let surroundingFeatures: SurroundingFeature[] | null = null
   let surroundings: SurroundingsMesh | null = null
@@ -118,13 +118,20 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   let routeMesh: { mesh: THREE.Mesh | null; k: number } | null = null
   let linkMesh: { group: THREE.Group; k: number } | null = null
   let linkDirty = true
-  const doorMesh = new THREE.Mesh(doorGeo, doorMat)
-  doorMesh.add(new THREE.Mesh(doorGeo, doorXrayMat))
-  doorMesh.children[0].renderOrder = 11
-  doorMesh.renderOrder = 4
-  doorMesh.visible = false
-  doorMesh.frustumCulled = false
-  root.add(doorMesh)
+  const doorMeshes: THREE.Mesh[] = [] // one per new door, made on first use and reused
+  function doorMeshAt(i: number): THREE.Mesh {
+    while (doorMeshes.length <= i) {
+      const m = new THREE.Mesh(doorGeo, doorMat)
+      m.add(new THREE.Mesh(doorGeo, doorXrayMat))
+      m.children[0].renderOrder = 11
+      m.renderOrder = 4
+      m.visible = false
+      m.frustumCulled = false
+      root.add(m)
+      doorMeshes.push(m)
+    }
+    return doorMeshes[i]
+  }
   let marksDirty = true
   let routeDirty = true
   let touched: AssetSlot[] = [] // asset instances currently tinted / lifted
@@ -373,21 +380,26 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     linkMesh = { group, k: view.k }
   }
 
-  /** The door panel: as wide as the door, a bit taller and thicker than the wall it cuts, rising with the walls. */
+  /** The door panels: as wide as the door, a bit taller and thicker than the wall it cuts, rising with the walls. */
   function layoutDoor() {
-    doorMesh.visible = !!(index && ghostDoor && ghostDoor.floorId === floorId)
-    if (!ghostDoor || !doorMesh.visible) return
+    const shown = index ? ghostDoors.filter((d) => d.floorId === floorId) : []
+    doorMeshes.forEach((m, i) => (m.visible = i < shown.length))
+    if (!shown.length) return
     const rise = Math.max(0.02, smoothstep(0, WALL_RISE_DEG, view.pitchDeg))
     const thick = Math.max(0.3, 6 / Math.max(view.k, 1e-6)) // at least ~6 px across when zoomed out
-    const [x, y] = ghostDoor.pos
-    doorMesh.position.set(x, selectedY() + 0.01, -y)
-    // Wall along scene y (vertical in 2D) runs along world Z; along scene x it runs along world X.
-    doorMesh.scale.set(
-      ghostDoor.vertical ? thick : ghostDoor.widthM,
-      settings.wallHeightM * rise + 0.05,
-      ghostDoor.vertical ? ghostDoor.widthM : thick,
-    )
-    doorMat.opacity = ghostDoor.applied ? 0.95 : 0.6
+    shown.forEach((door, i) => {
+      const mesh = doorMeshAt(i)
+      mesh.visible = true
+      const [x, y] = door.pos
+      mesh.position.set(x, selectedY() + 0.01, -y)
+      // Wall along scene y (vertical in 2D) runs along world Z; along scene x it runs along world X.
+      mesh.scale.set(
+        door.vertical ? thick : door.widthM,
+        settings.wallHeightM * rise + 0.05,
+        door.vertical ? door.widthM : thick,
+      )
+    })
+    doorMat.opacity = shown.every((d) => d.applied) ? 0.95 : 0.6
   }
 
   const drift = (k0: number) => Math.abs(Math.log(view.k / k0)) > 0.18
@@ -521,8 +533,8 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       linkDirty = true
       requestRender()
     },
-    setGhostDoor(door) {
-      ghostDoor = door ? { ...door, pos: [door.pos[0], door.pos[1]] } : null
+    setGhostDoors(doors) {
+      ghostDoors = doors.map((d) => ({ ...d, pos: [d.pos[0], d.pos[1]] }))
       requestRender()
     },
     setSurroundings(features) {

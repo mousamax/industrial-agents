@@ -23,6 +23,7 @@ export interface VoiceTools {
   walk_step: (p: { direction: string }) => string
   apply_change: (p: { decision: string }) => Promise<string> | string
   show_floor: (p: { floor: string }) => string
+  show_on_screen: (p: { what: string }) => string
   start_over: () => string
 }
 
@@ -131,6 +132,7 @@ export function useLiveVoice(tools: VoiceTools) {
   useConversationClientTool('walk_step', run('walk_step'))
   useConversationClientTool('apply_change', run('apply_change'))
   useConversationClientTool('show_floor', run('show_floor'))
+  useConversationClientTool('show_on_screen', run('show_on_screen'))
   useConversationClientTool('start_over', run('start_over'))
 
   const start = useCallback(

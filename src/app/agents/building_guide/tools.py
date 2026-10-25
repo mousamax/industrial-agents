@@ -66,7 +66,7 @@ class Deps:
         self.state: BuildingState = state
         """Shared by every colleague in the app (one per building); one per question in the benchmark."""
         self.pending: dict[str, Any] | None = pending
-        """An edit proposed to the person and waiting for their yes: {"edit": Edit, "run_id": str}."""
+        """Edits proposed to the person in one turn, waiting for one yes for all: {"edits": [Edit], "run_id": str}."""
         self.here: str | None = here
         """Space id where the person is, when the app knows it (a QR code at a door, a tap on the map, or the
         `start` a benchmark line carries). The agent gets it as context; it never overrides what they say."""
@@ -1572,19 +1572,26 @@ def calculate(ctx: RunContext[Deps], expression: str) -> str:
 
 
 def _propose_or_apply(ctx: RunContext[Deps], edit: Edit, preview: dict, confirmed: bool) -> str:
-    """Real edits happen in two turns: propose (nothing changes) -> the person says yes -> apply."""
+    """Real edits happen in two turns: propose (nothing changes) -> the person says yes -> apply. Everything
+    proposed in one turn is one batch: a single yes applies all of it, without asking again per change."""
     d = ctx.deps
     if not confirmed:
-        d.pending = {"edit": edit, "run_id": ctx.run_id}
+        if not d.pending or d.pending["run_id"] != ctx.run_id:  # a new turn starts a new batch
+            d.pending = {"edits": [], "run_id": ctx.run_id}
+        if edit not in d.pending["edits"]:
+            d.pending["edits"].append(edit)
+        n = len(d.pending["edits"])
         return _json(
             preview
             | {
                 "status": "proposed: nothing changed yet",
-                "next": "Say what you understood and what it changes, then ask the person to confirm. Only after "
-                "they say yes, call this tool again with the same arguments and confirmed=true.",
+                "proposed_this_turn": n,
+                "next": "Propose every change they asked for now, one call each. Then say in one reply what you "
+                "understood and what it changes, and ask once to confirm them all. After their yes, call this "
+                "tool again for each with the same arguments and confirmed=true, all in that turn.",
             }
         )
-    if not d.pending or d.pending["edit"] != edit:
+    if not d.pending or edit not in d.pending["edits"]:
         raise ModelRetry("Propose this change first (confirmed=false) and get the person's yes.")
     if d.pending["run_id"] == ctx.run_id:
         raise ModelRetry("The person hasn't answered yet: ask them, and apply it after they say yes.")
@@ -1592,8 +1599,15 @@ def _propose_or_apply(ctx: RunContext[Deps], edit: Edit, preview: dict, confirme
         message = d.state.apply(edit, by=d.who)
     except ValueError as e:
         raise ModelRetry(str(e)) from None
-    d.pending = None
-    return _json(preview | {"status": "done", "change": message, "undo": "undo_last_change reverts it"})
+    d.pending["edits"].remove(edit)
+    left = len(d.pending["edits"])
+    if not left:
+        d.pending = None
+    return _json(
+        preview
+        | {"status": "done", "change": message, "undo": "undo_last_change reverts it"}
+        | ({"confirmed_still_to_apply": left} if left else {})
+    )
 
 
 def set_closed(ctx: RunContext[Deps], element: str, closed: bool = True) -> str:

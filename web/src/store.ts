@@ -60,8 +60,8 @@ interface AppState {
   closedIds: string[]
   /** Rooms affected by a closure or change (amber fill/stroke on map). */
   affectedIds: string[]
-  /** Proposed or newly added door on a shared wall. */
-  ghostDoor: GhostDoorState | null
+  /** Proposed or newly added doors on shared walls (several when the agent adds a batch). */
+  ghostDoors: GhostDoorState[]
   /** Active user position during Walk Mode. */
   walkMarker: WalkMarkerState | null
   /** Custom camera fit insets for the active screen layout (Phone Result sheet, Walk mode banners, Desktop). */
@@ -92,7 +92,7 @@ interface AppState {
   setMapOverlays: (o: {
     closedIds?: string[]
     affectedIds?: string[]
-    ghostDoor?: GhostDoorState | null
+    ghostDoors?: GhostDoorState[]
     walkMarker?: WalkMarkerState | null
   }) => void
   setMapInsets: (insets: MapInsets | null) => void
@@ -142,7 +142,7 @@ export const useApp = create<AppState>((set, get) => ({
   stepFree: false,
   closedIds: [],
   affectedIds: [],
-  ghostDoor: null,
+  ghostDoors: [],
   walkMarker: null,
   mapInsets: null,
   view3d: null,
@@ -174,7 +174,7 @@ export const useApp = create<AppState>((set, get) => ({
         routeState: { route: null, unreachable: null },
         closedIds: [],
         affectedIds: [],
-        ghostDoor: null,
+        ghostDoors: [],
         walkMarker: null,
         view3d: null,
         loading: false,
@@ -229,7 +229,7 @@ export const useApp = create<AppState>((set, get) => ({
     set((s) => ({
       closedIds: o.closedIds !== undefined ? o.closedIds : s.closedIds,
       affectedIds: o.affectedIds !== undefined ? o.affectedIds : s.affectedIds,
-      ghostDoor: o.ghostDoor !== undefined ? o.ghostDoor : s.ghostDoor,
+      ghostDoors: o.ghostDoors !== undefined ? o.ghostDoors : s.ghostDoors,
       walkMarker: o.walkMarker !== undefined ? o.walkMarker : s.walkMarker,
     })),
 
@@ -277,7 +277,7 @@ export const useApp = create<AppState>((set, get) => ({
       routeState: { route: null, unreachable: null },
       closedIds: [],
       affectedIds: [],
-      ghostDoor: null,
+      ghostDoors: [],
       walkMarker: null,
       view3d: null,
     }),

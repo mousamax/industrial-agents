@@ -92,8 +92,8 @@ export interface Map3DEngine {
   setRoute(route: ShowRoute | null): void
   /** Light up both rooms on their own floors and join them, seen through the floors in between. */
   setLink(link: Link3D | null): void
-  /** Draw a new door as a panel in its wall (fainter while only proposed); null removes it. */
-  setGhostDoor(door: GhostDoor3D | null): void
+  /** Draw new doors as panels in their walls (fainter while only proposed); [] removes them. */
+  setGhostDoors(doors: GhostDoor3D[]): void
   /** Streets, green and neighbouring buildings on the ground around the building; null removes them. */
   setSurroundings(features: SurroundingFeature[] | null): void
   /** What is under a container point (CSS px). Assets win over spaces. */

@@ -83,6 +83,7 @@ TOOLS: list[dict[str, Any]] = [
     _client_tool(
         "apply_change",
         "Confirm or undo the change to the building that is previewed on screen (a new door, a closure). "
+        "When several changes are previewed (three new doors), one confirm applies them all. "
         "Only confirm after the person clearly said yes. Returns what the guide recorded.",
         {"decision": "One of: confirm, undo."},
         response_timeout_secs=110,
@@ -92,6 +93,16 @@ TOOLS: list[dict[str, Any]] = [
         "show_floor",
         "Switch the map on screen to a floor the person asks to see.",
         {"floor": "The floor as the person said it: 'ground floor', 'level 2', 'basement'."},
+    ),
+    _client_tool(
+        "show_on_screen",
+        "Bring an earlier answer from this call back onto the screen: a route, proposed doors, a closure. Use it "
+        "when the person wants to see it again, or before you ask them to confirm a change that is no longer "
+        "shown. Returns what is on screen now; if nothing matches, the list of what was shown in this call. "
+        "Something new is not here: ask the guide, and its answer appears on screen by itself.",
+        {
+            "what": "What to show, in the person's words: 'the doors', 'the route to the canteen', 'the last route'."
+        },
     ),
     _client_tool("start_over", "Clear the screen for a new topic, when the person asks to start over."),
 ]

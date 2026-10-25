@@ -153,14 +153,13 @@ export function extractLiveTurn(
     return { trace, prose: cleanBody || undefined }
   }
 
-  // 1. Check if `add_door` or `what_if(add_door_between=...)` was called by the backend agent
-  const doorTool =
-    [...toolRecords].reverse().find((t) => t.name === 'add_door') ??
-    [...toolRecords].reverse().find((t) => t.name === 'what_if' && Array.isArray(t.input.add_door_between))
-  if (doorTool) {
-    const highlightIds = Array.isArray(doorTool.data.highlight)
-      ? doorTool.data.highlight.filter((x): x is string => typeof x === 'string' && index.spaceById.has(x))
-      : []
+  // 1. Check if `add_door` (one or a batch) or `what_if(add_door_between=...)` was called by the backend agent
+  const pairKey = (t: { input: Rec }) => `${String(t.input.first)}|${String(t.input.second)}|${String(t.input.width_m)}`
+  const addDoors = toolRecords.filter((t) => t.name === 'add_door' && typeof t.data.status === 'string')
+  const latestPerDoor = [...new Map(addDoors.map((t) => [pairKey(t), t])).values()] // a confirm repeats the proposal
+  const whatIfDoor = [...toolRecords].reverse().find((t) => t.name === 'what_if' && Array.isArray(t.input.add_door_between))
+  const doorTools = latestPerDoor.length ? latestPerDoor : whatIfDoor ? [whatIfDoor] : []
+  if (doorTools.length) {
     const resolveRoomInput = (raw: unknown) => {
       if (typeof raw !== 'string') return undefined
       const q = raw.trim().toLowerCase()
@@ -171,39 +170,49 @@ export function extractLiveTurn(
         )
       )
     }
-    const pairInput = Array.isArray(doorTool.input.add_door_between)
-      ? doorTool.input.add_door_between
-      : [doorTool.input.first, doorTool.input.second]
-    const spaceA =
-      resolveRoomInput(pairInput[0]) ?? (highlightIds[0] ? index.spaceById.get(highlightIds[0]) : undefined)
-    const spaceB =
-      resolveRoomInput(pairInput[1]) ?? (highlightIds[1] ? index.spaceById.get(highlightIds[1]) : undefined)
-    const wall = spaceA && spaceB ? sharedWall(index, spaceA.id, spaceB.id) : null
-    const doorBetween = Array.isArray(doorTool.data.door_between)
-      ? doorTool.data.door_between.filter((x): x is string => typeof x === 'string')
-      : [spaceA ? spaceLabel(spaceA) : 'Room A', spaceB ? spaceLabel(spaceB) : 'Room B']
-    const widthM =
-      typeof doorTool.data.width_m === 'number'
-        ? doorTool.data.width_m
-        : typeof doorTool.input.width_m === 'number'
-          ? doorTool.input.width_m
-          : 0.9
-    const effectRec = isRec(doorTool.data.effect_on_walks_out_on_that_floor)
-      ? doorTool.data.effect_on_walks_out_on_that_floor
-      : doorTool.data
+    const doors = doorTools.map((doorTool) => {
+      const highlightIds = Array.isArray(doorTool.data.highlight)
+        ? doorTool.data.highlight.filter((x): x is string => typeof x === 'string' && index.spaceById.has(x))
+        : []
+      const pairInput = Array.isArray(doorTool.input.add_door_between)
+        ? doorTool.input.add_door_between
+        : [doorTool.input.first, doorTool.input.second]
+      const spaceA =
+        resolveRoomInput(pairInput[0]) ?? (highlightIds[0] ? index.spaceById.get(highlightIds[0]) : undefined)
+      const spaceB =
+        resolveRoomInput(pairInput[1]) ?? (highlightIds[1] ? index.spaceById.get(highlightIds[1]) : undefined)
+      const wall = spaceA && spaceB ? sharedWall(index, spaceA.id, spaceB.id) : null
+      const between = Array.isArray(doorTool.data.door_between)
+        ? doorTool.data.door_between.filter((x): x is string => typeof x === 'string')
+        : [spaceA ? spaceLabel(spaceA) : 'Room A', spaceB ? spaceLabel(spaceB) : 'Room B']
+      const widthM =
+        typeof doorTool.data.width_m === 'number'
+          ? doorTool.data.width_m
+          : typeof doorTool.input.width_m === 'number'
+            ? doorTool.input.width_m
+            : 0.9
+      return { tool: doorTool, spaceA, spaceB, wall, between, widthM, highlightIds }
+    })
+    const n = doors.length
+    const first = doors[0]
+    const doorBetween = first.between
+    const widthM = first.widthM
+    const effectRec = isRec(first.tool.data.effect_on_walks_out_on_that_floor)
+      ? first.tool.data.effect_on_walks_out_on_that_floor
+      : first.tool.data
     const shorterList = Array.isArray(effectRec.shorter) ? effectRec.shorter.filter(isRec) : []
     const shorterCount =
       typeof effectRec.shorter_by_more_than_1_m === 'number'
         ? effectRec.shorter_by_more_than_1_m
         : shorterList.length
     const stats: { n: string; label: string }[] = []
-    if (shorterList.length > 0 && typeof shorterList[0].saves_m === 'number') {
+    if (n === 1 && shorterList.length > 0 && typeof shorterList[0].saves_m === 'number') {
       stats.push({
         n: `−${shorterList[0].saves_m} m`,
         label: `walk out from ${String(shorterList[0].room ?? doorBetween[0])}`,
       })
     }
-    if (shorterCount > 0) {
+    if (n === 1 && shorterCount > 0) {
       stats.push({
         n: String(shorterCount),
         label: shorterCount === 1 ? 'room gets a shorter exit walk' : 'rooms get a shorter exit walk',
@@ -211,17 +220,26 @@ export function extractLiveTurn(
     }
     // Also check if the agent ran a `route` tool in the same turn to compare before/after distance
     const routeTool = toolRecords.find((t) => isRouteTool(t.name) && typeof t.data.total_length_m === 'number')
-    if (stats.length === 0 && routeTool && typeof routeTool.data.total_length_m === 'number') {
+    if (n === 1 && stats.length === 0 && routeTool && typeof routeTool.data.total_length_m === 'number') {
       stats.push({
         n: `${fmtM(routeTool.data.total_length_m)}`,
         label: `${doorBetween[0]} ↔ ${doorBetween[1]}`,
       })
     }
 
-    const focusFloor = spaceA?.floor_id ?? spaceB?.floor_id ?? index.floors[0]?.id ?? ''
-    const isDone = doorTool.data.status === 'done'
-    const isProposed = typeof doorTool.data.status === 'string' && doorTool.data.status.startsWith('proposed')
-    const doorFocusIds = [spaceA?.id, spaceB?.id].filter((x): x is string => Boolean(x))
+    const focusFloor = first.spaceA?.floor_id ?? first.spaceB?.floor_id ?? index.floors[0]?.id ?? ''
+    const isDone = doors.every((d) => d.tool.data.status === 'done')
+    const isProposed = doors.some(
+      (d) => typeof d.tool.data.status === 'string' && d.tool.data.status.startsWith('proposed'),
+    )
+    const doorFocusIds = doors.flatMap((d) =>
+      [d.spaceA?.id, d.spaceB?.id].filter((x): x is string => Boolean(x)),
+    )
+    const highlightIds = doors.flatMap((d) => d.highlightIds)
+    const pairs = doors.map((d) => `${d.between.join(' ↔ ')}${n > 1 ? ` (${d.widthM} m)` : ''}`)
+    const changes = doors
+      .map((d) => d.tool.data.change)
+      .filter((x): x is string => typeof x === 'string')
 
     return {
       trace,
@@ -230,19 +248,28 @@ export function extractLiveTurn(
         kind: 'edit',
         buildingId,
         buildingName,
-        title: `New door · ${focusFloor ? floorNameOf(index, focusFloor) : buildingName}`,
-        sub: `${doorBetween.join(' ↔ ')} · ${widthM} m · step-free`,
-        understood: cleanBody || `${doorBetween.join(' ↔ ')} (${widthM} m door).`,
+        title: `${n > 1 ? `${n} new doors` : 'New door'} · ${focusFloor ? floorNameOf(index, focusFloor) : buildingName}`,
+        sub: n > 1 ? pairs.join(' · ') : `${pairs[0]} · ${widthM} m · step-free`,
+        understood: cleanBody || (n > 1 ? `${pairs.join('; ')}.` : `${pairs[0]} (${widthM} m door).`),
         stats,
-        note: isProposed ? 'Proposed by the agent — confirm to apply to the building session.' : undefined,
-        floors: focusFloor ? [focusFloor] : [],
+        note: isProposed
+          ? `Proposed by the agent — confirm to apply ${n > 1 ? `all ${n} doors` : 'it'} to the building session.`
+          : undefined,
+        floors: [...new Set(doors.map((d) => d.spaceA?.floor_id).filter((x): x is string => Boolean(x)))],
         focusFloor,
-        ghostDoor:
-          wall && spaceA ? { floorId: spaceA.floor_id, pos: wall.pos, vertical: wall.vertical, widthM } : undefined,
+        ghostDoors: doors.flatMap((d) =>
+          d.wall && d.spaceA
+            ? [{ floorId: d.spaceA.floor_id, pos: d.wall.pos, vertical: d.wall.vertical, widthM: d.widthM }]
+            : [],
+        ),
         focusIds: doorFocusIds.length ? doorFocusIds : highlightIds.length ? highlightIds : null,
-        confirm: 'Add the door',
-        confirmPrompt: 'Yes, please add the door.',
-        applied: typeof doorTool.data.change === 'string' ? doorTool.data.change : 'Door added to the building plan.',
+        confirm: n > 1 ? `Add all ${n} doors` : 'Add the door',
+        confirmPrompt: n > 1 ? `Yes, please add all ${n} doors.` : 'Yes, please add the door.',
+        applied: changes.length
+          ? changes.join(' ')
+          : n > 1
+            ? `${n} doors added to the building plan.`
+            : 'Door added to the building plan.',
         undo: 'Undo',
         say: cleanBody || undefined,
       },

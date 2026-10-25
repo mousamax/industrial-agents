@@ -101,7 +101,7 @@ function focusBBox(
   geo: FloorGeo,
   index: SceneIndex,
   route: ShowRoute | null,
-  ghostDoor: GhostDoorState | null,
+  ghostDoors: GhostDoorState[],
   /** Shown tilted in 3D: rooms and route parts on the other floors are on screen too. */
   allFloors = false,
 ): BBox | null {
@@ -129,9 +129,7 @@ function focusBBox(
     const c = index.connectorById.get(id)
     if (c) for (const [f, sid] of c.stops) if (f === geo.floorId) b = unionBBox(b, geo.byId.get(sid)?.bbox ?? null)
   }
-  if (ghostDoor && ghostDoor.floorId === geo.floorId) {
-    b = unionBBox(b, pt(toSvg(ghostDoor.pos), 3))
-  }
+  for (const door of ghostDoors) if (door.floorId === geo.floorId) b = unionBBox(b, pt(toSvg(door.pos), 3))
   if (isRouteFocus && route) {
     for (const seg of route.segments) {
       if (seg.floor_id === geo.floorId || allFloors) {
@@ -158,7 +156,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   )
   const closedIds = useApp((s) => s.closedIds)
   const affectedIds = useApp((s) => s.affectedIds)
-  const ghostDoor = useApp((s) => s.ghostDoor)
+  const ghostDoors = useApp((s) => s.ghostDoors)
   const walkMarker = useApp((s) => s.walkMarker)
   const mapInsets = useApp((s) => s.mapInsets)
   const surroundings = useSurroundings(scene?.id)
@@ -661,7 +659,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     prev.current = { sceneId: scene.id, floorId: geo.floorId, nonce: focus.nonce, sized, insets: mapInsets }
     updateLimits()
 
-    if ((nonceChanged || newScene) && (focus.ids.length || focus.points?.length || ghostDoor)) {
+    if ((nonceChanged || newScene) && (focus.ids.length || focus.points?.length || ghostDoors.length)) {
       // A tap on the map selected this: keep the zoom, only make sure the pin is not under the sheet.
       if (tapFocus.current && focus.ids.length === 1 && focus.ids[0] === tapFocus.current) {
         tapFocus.current = null
@@ -673,7 +671,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
       }
       const pts = focus.points?.length ? bboxOf(focus.points.map(toSvg)) : null
       const follow = !!pts && !!focus.follow
-      const b = pts ? padBBox(pts, follow ? 0 : 4) : focusBBox(focus.ids, geo, index, route, ghostDoor, !!view3dRef.current)
+      const b = pts ? padBBox(pts, follow ? 0 : 4) : focusBBox(focus.ids, geo, index, route, ghostDoors, !!view3dRef.current)
       if (b) {
         const ins = insets()
         const pad = 20
@@ -700,7 +698,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     } else if (floorChanged) {
       // If there's an active route on this floor, fit to the route segment on this floor
       if (route) {
-        const b = focusBBox(route.space_ids, geo, index, route, ghostDoor, !!view3dRef.current)
+        const b = focusBBox(route.space_ids, geo, index, route, ghostDoors, !!view3dRef.current)
         if (b) {
           const ins = insets()
           const pad = 20
@@ -838,9 +836,9 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
 
   useEffect(() => {
     if (!ready) return
-    engine.current?.setGhostDoor(ghostDoor)
+    engine.current?.setGhostDoors(ghostDoors)
     engine.current?.requestRender()
-  }, [ready, ghostDoor])
+  }, [ready, ghostDoors])
 
   // The answer reads best in 3D (rooms on top of each other, a route across floors): tilt in, and flatten again
   // when the next answer doesn't need it. A tilt the person chose themselves is left alone.
@@ -1188,7 +1186,9 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
               {drawnRoute && (
                 <RouteLines route={drawnRoute} floorId={geo.floorId} index={index} instant={routeReveal !== null} />
               )}
-              <GhostDoorLayer door={ghostDoor} floorId={geo.floorId} />
+              {ghostDoors.map((door, i) => (
+                <GhostDoorLayer key={i} door={door} floorId={geo.floorId} />
+              ))}
               <Labels geo={geo} k={zoomK} skipId={sel?.space?.id ?? null} />
               <AssetDots geo={geo} level={assetLevel} />
               <HighlightDots points={hl.dots} />

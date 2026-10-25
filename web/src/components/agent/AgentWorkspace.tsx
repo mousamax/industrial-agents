@@ -67,6 +67,7 @@ import { splitAnswer, stripPreferences, withPreferences } from '../chat/text'
 import { MapView } from '../map/MapView'
 import { speak, stopSpeaking, voiceAvailable } from '../voice/speech'
 import { describeStep, summarizeTurn } from '../voice/turnSummary'
+import { cardLabel, pickCard, rememberCard, type ShownCard } from '../voice/shownCards'
 import { sessionContext, useLiveVoice, type LiveVoice } from '../voice/useLiveVoice'
 import { VoiceBar, VoiceDock } from '../voice/VoiceDock'
 import { mapLabel, shapeAnswer } from './assistantCopy'
@@ -260,6 +261,10 @@ function Workspace({ phone }: { phone: boolean }) {
     chat?.clearError()
     setLiveError(undefined)
   }, [chat])
+
+  // Every answer card the guide produced in this conversation, newest last, so the voice agent can bring one back
+  // (show_on_screen) or confirm a change that is no longer on screen (apply_change).
+  const shownRef = useRef<ShownCard[]>([])
 
   // Live voice session (set below, once the tools it calls exist) and the voice turn waiting for the guide
   const voiceRef = useRef<LiveVoice | null>(null)
@@ -489,6 +494,7 @@ function Workspace({ phone }: { phone: boolean }) {
         setPhase('ask')
         setAsk(extracted.ask)
       } else if (extracted.result) {
+        shownRef.current = rememberCard(shownRef.current, extracted.result, Boolean(extracted.alreadyApplied))
         playResult(extracted.result, Boolean(scenario?.voice), Boolean(extracted.alreadyApplied))
       }
       // The voice agent hears the turn it asked for; any other turn it learns as context
@@ -690,7 +696,7 @@ function Workspace({ phone }: { phone: boolean }) {
     setListenText('')
     setRoute(null)
     setHighlight([])
-    setMapOverlays({ closedIds: [], affectedIds: [], ghostDoor: null, walkMarker: null })
+    setMapOverlays({ closedIds: [], affectedIds: [], ghostDoors: [], walkMarker: null })
     setMapInsets({ top: 0, right: 0, bottom: 0, left: 0 })
     // Where you were belongs to the last question; preferences (step-free, short answers) carry over.
     useApp.setState((s) => ({ memory: s.memory.filter((m) => !m.spaceId) }))
@@ -698,6 +704,7 @@ function Workspace({ phone }: { phone: boolean }) {
 
   // Start over: the welcome screen, and the guide forgets this conversation
   const reset = useCallback(() => {
+    shownRef.current = []
     clearView()
     if (buildingId) resetChat(buildingId)
   }, [clearView, buildingId])
@@ -766,10 +773,33 @@ function Workspace({ phone }: { phone: boolean }) {
       return describeStep(steps, next)
     },
     apply_change: ({ decision }) => {
-      if (!result?.confirm) return 'Nothing on screen is waiting for confirmation.'
-      const undo = decision === 'undo'
-      setApplied(!undo)
-      return guideTurn(undo ? 'Undo the last change.' : (result.confirmPrompt ?? 'Yes, please apply that change.'), true)
+      if (decision === 'undo') {
+        setApplied(false)
+        return guideTurn('Undo the last change.', true)
+      }
+      // The change on screen, or else the latest one still waiting for a yes: shown again before it is applied.
+      const waiting = result?.confirm && !applied ? null : [...shownRef.current].reverse().find((c) => c.result.confirm && !c.applied)
+      const target = waiting?.result ?? result
+      if (!target?.confirm) return 'No change is waiting for confirmation. Ask the guide to propose it first.'
+      if (waiting) playResult(waiting.result, false, false)
+      setApplied(true)
+      return guideTurn(target.confirmPrompt ?? 'Yes, please apply that change.', true)
+    },
+    show_on_screen: ({ what }) => {
+      const cards = shownRef.current
+      if (!cards.length) return 'Nothing has been shown in this call yet. Ask the guide: its answer appears on screen.'
+      const card = pickCard(cards, what, result)
+      const list = cards.map((c) => cardLabel(c)).join('; ')
+      if (!card) return `Nothing shown in this call matches "${what}". Shown so far: ${list}. For anything new, ask the guide.`
+      playResult(card.result, false, card.applied)
+      const r = card.result
+      return [
+        `On screen now: ${cardLabel(card)}.`,
+        r.confirm && !card.applied && 'It is a preview waiting for their yes; confirm with apply_change.',
+        r.route && 'They can be guided along it with start_walk.',
+      ]
+        .filter(Boolean)
+        .join(' ')
     },
     show_floor: ({ floor: wanted }) => {
       if (!index) return 'The building is still loading.'
@@ -817,7 +847,7 @@ function Workspace({ phone }: { phone: boolean }) {
       setView3d(null)
       setRoute(null)
       setHighlight([])
-      setMapOverlays({ closedIds: [], affectedIds: [], ghostDoor: null, walkMarker: null })
+      setMapOverlays({ closedIds: [], affectedIds: [], ghostDoors: [], walkMarker: null })
       // Home: the whole floor sits between the building pill and the greeting above the bar.
       setMapInsets(
         CLASSIC
@@ -850,7 +880,7 @@ function Workspace({ phone }: { phone: boolean }) {
       setMapOverlays({
         closedIds: [],
         affectedIds: [],
-        ghostDoor: null,
+        ghostDoors: [],
         walkMarker:
           curSpace && activeFloor
             ? { floorId: activeFloor, pos: curStep?.points?.[0] ?? (curSpace.anchor as [number, number]) }
@@ -874,7 +904,7 @@ function Workspace({ phone }: { phone: boolean }) {
       setMapOverlays({
         closedIds: result.closed ?? [],
         affectedIds: result.affected ?? [],
-        ghostDoor: result.ghostDoor ? { ...result.ghostDoor, applied } : null,
+        ghostDoors: (result.ghostDoors ?? []).map((door) => ({ ...door, applied })),
         walkMarker: null,
       })
     }
