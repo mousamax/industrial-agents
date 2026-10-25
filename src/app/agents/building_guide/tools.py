@@ -37,7 +37,20 @@ from app.building import geometry, queries
 from app.building.directions import directions, walk_path
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
 from app.building.routing import PRODUCTION_BAYS, Constraints, Route, RouteGraph
-from app.building.state import AddAsset, AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen, Stamp
+from app.building.state import (
+    AddAsset,
+    AddDoor,
+    BuildingState,
+    Close,
+    Edit,
+    MoveAsset,
+    Reopen,
+    SplitRoom,
+    Stamp,
+    split_between,
+    split_room,
+    with_split,
+)
 
 from .graph import route_graph
 
@@ -163,7 +176,24 @@ def _spaces_named(b: Building, text: str, floor: str | int | None) -> list[Space
         hits = b.resolve(bare, floor_id) if bare != text.strip() else []
     if not hits:  # "room 1.3": plans write 1.03 or 1.30; both existing means the person must say which
         hits = [s for form in _number_forms(text) for s in b.resolve(form, floor_id)]
+    if not hits:  # "2.03" or "Office 2.03" after a wall split it: both halves (2.03-1, 2.03-2), so ask which
+        said = text.strip().casefold()
+        hits = [
+            s
+            for s in b.spaces.values()
+            if (floor_id is None or s.floor_id == floor_id) and said in _before_split(s)
+        ]
     return hits
+
+
+def _before_split(s: Space) -> set[str]:
+    """What people may still call a split half: "2.03", "Office 2.03" (both halves match) and "Office 2.03
+    (west half)" for "Office 2.03-1 (west half)". Empty for rooms that were never split."""
+    m = re.fullmatch(r"(.+)-\d", s.ref)
+    if not m or not s.name.endswith(" half)"):
+        return set()
+    old = s.name.replace(s.ref, m[1])  # "Office 2.03 (west half)" names just this half
+    return {m[1].casefold(), re.sub(r"\s*\([^()]*half\)$", "", old).casefold(), old.casefold()}
 
 
 def _asset_named(b: Building, text: str):
@@ -679,6 +709,41 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
             **{f"directly_{d}_ambiguous": t for d, t in ties.items() if t},
             **_stack(b, s),
             "highlight": [s.id],
+        }
+    )
+
+
+def highlight_rooms(ctx: RunContext[Deps], rooms: list[str], label: str | None = None) -> str:
+    """Light up exactly these rooms on the person's map, replacing whatever is lit now. Call it whenever
+    the answer is a set of rooms they should see: "highlight / show me / mark ..." and results you worked
+    out over several lookups (the rooms next to these, the neighbours of a set, rooms matching a rule).
+    Pass the final set only (e.g. the adjacent rooms, not the rooms you started from, unless asked for
+    both). The last call in a turn is what stays on screen.
+
+    Args:
+        rooms: Every room to light up: names, numbers, "Name (Floor name)", ids, or item names (their room).
+        label: A few words for the map caption, e.g. "rooms next to 0.29 and 0.31".
+    """
+    b = ctx.deps.building
+    ids: list[str] = []
+    missing: dict[str, str] = {}
+    for text in rooms:
+        try:
+            s = space_of(b, text)
+        except ModelRetry as e:
+            missing[text] = e.message
+            continue
+        if isinstance(s, str):
+            missing[text] = "'outside' is not a room."
+        elif s.id not in ids:
+            ids.append(s.id)
+    if not ids:
+        raise ModelRetry(f"None of these is one room: {missing}. Pass ids from find or room_details.")
+    return _json(
+        {
+            "highlighted": [_label(b, i) for i in ids],
+            **({"not_found": missing} if missing else {}),
+            "view": [{"kind": "highlight", "ids": ids, "label": label}],
         }
     )
 
@@ -1571,10 +1636,34 @@ def calculate(ctx: RunContext[Deps], expression: str) -> str:
 # ---- tools: changes to the building (session state) ----------------------------------------------------
 
 
-def _propose_or_apply(ctx: RunContext[Deps], edit: Edit, preview: dict, confirmed: bool) -> str:
+def _proposed(pending: dict[str, Any] | None, edit: Edit) -> Edit | None:
+    """The proposed edit this confirming call means: the same edit, or the same door named the other way
+    round or without the width. The person said yes to what was proposed, so that is what gets applied."""
+    for e in pending["edits"] if pending else []:
+        if e == edit:
+            return e
+        if isinstance(e, AddDoor) and isinstance(edit, AddDoor):
+            if {e.first_space_id, e.second_space_id} == {edit.first_space_id, edit.second_space_id}:
+                return e
+        if isinstance(e, SplitRoom) and isinstance(edit, SplitRoom) and e.space_id == edit.space_id:
+            if {e.from_space_id, e.to_space_id} == {edit.from_space_id, edit.to_space_id}:
+                return e
+    return None
+
+
+def _propose_or_apply(
+    ctx: RunContext[Deps], edit: Edit, preview: dict, confirmed: bool, apply_now: bool = False
+) -> str:
     """Real edits happen in two turns: propose (nothing changes) -> the person says yes -> apply. Everything
-    proposed in one turn is one batch: a single yes applies all of it, without asking again per change."""
+    proposed in one turn is one batch: a single yes applies all of it, without asking again per change.
+    `apply_now`: the person said to make the change without being asked; it is applied at once."""
     d = ctx.deps
+    if apply_now:
+        try:
+            message = d.state.apply(edit, by=d.who)
+        except ValueError as e:
+            raise ModelRetry(str(e)) from None
+        return _json(preview | {"status": "done", "change": message, "undo": "undo_last_change reverts it"})
     if not confirmed:
         if not d.pending or d.pending["run_id"] != ctx.run_id:  # a new turn starts a new batch
             d.pending = {"edits": [], "run_id": ctx.run_id}
@@ -1591,8 +1680,17 @@ def _propose_or_apply(ctx: RunContext[Deps], edit: Edit, preview: dict, confirme
                 "tool again for each with the same arguments and confirmed=true, all in that turn.",
             }
         )
-    if not d.pending or edit not in d.pending["edits"]:
-        raise ModelRetry("Propose this change first (confirmed=false) and get the person's yes.")
+    match = _proposed(d.pending, edit)
+    if match is None:
+        raise ModelRetry(
+            "Nothing like this was proposed in this conversation, so nothing was changed. Propose it now "
+            "(confirmed=false) and ask again; don't tell them it was added. If they said to do it without "
+            "asking, call it with apply_now=true instead."
+        )
+    if match != edit and isinstance(match, AddDoor):
+        preview = preview | {"width_m": match.width_m}
+    edit = match
+    assert d.pending is not None
     if d.pending["run_id"] == ctx.run_id:
         raise ModelRetry("The person hasn't answered yet: ask them, and apply it after they say yes.")
     try:
@@ -1628,16 +1726,24 @@ def set_closed(ctx: RunContext[Deps], element: str, closed: bool = True) -> str:
 
 
 def add_door(
-    ctx: RunContext[Deps], first: str, second: str, width_m: float = 0.9, confirmed: bool = False
+    ctx: RunContext[Deps],
+    first: str,
+    second: str,
+    width_m: float = 0.9,
+    confirmed: bool = False,
+    apply_now: bool = False,
 ) -> str:
     """Add a real door to the plan, in the middle of the wall two spaces share. First call proposes it and
     shows what it would change (nothing is edited); after the person says yes, call again with confirmed=true.
+    Only a result with "status": "done" means the door is in the plan.
 
     Args:
         first: A room, hall or corridor.
         second: A space that shares a wall with `first`, on the same floor.
         width_m: Door width in metres.
         confirmed: True only after the person agreed to this exact change.
+        apply_now: True when the person explicitly said to make the change without asking them first
+            ("just add it", "no need to confirm", "do it right away"): it is added at once, no proposal.
     """
     d = ctx.deps
     b = d.building
@@ -1652,7 +1758,70 @@ def add_door(
         "effect_on_walks_out_on_that_floor": effect,
         "highlight": [a, c],
     }
-    return _propose_or_apply(ctx, AddDoor(a, c, width_m=width_m), preview, confirmed)
+    return _propose_or_apply(ctx, AddDoor(a, c, width_m=width_m), preview, confirmed, apply_now)
+
+
+def _neighbour_id(b: Building, text: str, room_id: str) -> str:
+    """A space named next to a room: on the room's floor first ("Staircase 1" is on every floor)."""
+    try:
+        return _space_id(b, text, b.spaces[room_id].floor_id)
+    except ModelRetry:
+        return _space_id(b, text)
+
+
+def add_wall(
+    ctx: RunContext[Deps],
+    room: str,
+    from_room: str,
+    to_room: str,
+    confirmed: bool = False,
+    apply_now: bool = False,
+) -> str:
+    """Add a new wall to the plan that splits a room into two halves of equal area ("put a wall across
+    Office 2.03", "split this room in two"). The wall runs from the wall the room shares with `from_room` to
+    the wall it shares with `to_room`: neighbours on opposite sides give a wall straight across (north and
+    south neighbours give a north-south wall, leaving a west and an east half); neighbours on two adjacent
+    sides give a diagonal one. The room becomes two rooms with their own numbers, "Office 2.03-1 (west half)" and
+    "Office 2.03-2 (east half)"; its doors and
+    items go to the half they are in. The new wall has no door: if a half is left without one, say so and
+    offer add_door (between the two halves, or to a neighbour). First call proposes it and shows the halves
+    (nothing is edited); after the person says yes, call again with confirmed=true. Only a result with
+    "status": "done" means the wall is in the plan.
+
+    Args:
+        room: The room to split.
+        from_room: A space sharing the wall where the new wall starts (same floor).
+        to_room: A space sharing the wall where it ends, on a different side of the room.
+        confirmed: True only after the person agreed to this exact change.
+        apply_now: True when the person explicitly said to make the change without asking them first
+            ("just do it", "no need to confirm"): it is built at once, no proposal.
+    """
+    d = ctx.deps
+    b = d.building
+    s = _space_id(b, room)
+    try:
+        edit = split_between(b, s, _neighbour_id(b, from_room, s), _neighbour_id(b, to_room, s))
+        split = split_room(b, edit)
+        after = with_split(b, edit)
+    except ValueError as e:
+        raise ModelRetry(f"Can't split it that way: {e}.") from None
+    halves = []
+    for h in split.halves:
+        doors = sorted({_label(b, o.other_side(h.id)) for o in after.openings_of(h.id)})
+        halves.append(
+            {"name": _label(after, h.id), "area_m2": round(h.area, 1), "doors_to": doors}
+            | ({"note": "no door: no way in until one is added"} if not doors else {})
+        )
+    preview = {
+        "split": _label(b, s),
+        "wall_from": _label(b, edit.from_space_id),
+        "wall_to": _label(b, edit.to_space_id),
+        "wall_length_m": round(split.length_m, 1),
+        "halves": halves,
+        "highlight": [s],
+        "wall": {"floor_id": b.spaces[s].floor_id, "ends": [[round(v, 3) for v in xy] for xy in split.wall]},
+    }
+    return _propose_or_apply(ctx, edit, preview, confirmed, apply_now)
 
 
 def move_item(
@@ -1711,7 +1880,14 @@ def item_history(ctx: RunContext[Deps], item: str) -> str:
     )
 
 
-KINDS = {Close: "closed", Reopen: "reopened", AddDoor: "door added", MoveAsset: "moved", AddAsset: "arrived"}
+KINDS = {
+    Close: "closed",
+    Reopen: "reopened",
+    AddDoor: "door added",
+    MoveAsset: "moved",
+    AddAsset: "arrived",
+    SplitRoom: "wall added",
+}
 
 
 def building_changes(ctx: RunContext[Deps], since: str | None = None, until: str | None = None) -> str:
@@ -1795,6 +1971,7 @@ def never_crash(tool):
 TOOLS = [
     find,
     room_details,
+    highlight_rooms,
     list_rooms,
     count_items,
     distance_3d,
@@ -1808,6 +1985,7 @@ TOOLS = [
     calculate,
     set_closed,
     add_door,
+    add_wall,
     move_item,
     item_history,
     building_changes,

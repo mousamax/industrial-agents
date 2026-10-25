@@ -21,6 +21,8 @@ export interface GhostDoorState {
   vertical: boolean
   /** Door width in metres, drawn to scale along the wall. */
   widthM: number
+  /** Set for a new wall instead of a door: its two ends, drawn from one to the other (any direction). */
+  wall?: [XY, XY]
   applied: boolean
 }
 

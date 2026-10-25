@@ -202,8 +202,9 @@ export function GhostDoorLayer({ door, floorId }: { door: GhostDoorState | null;
   if (!door || door.floorId !== floorId) return null
   const hl = door.widthM / 2 // drawn to scale: a 5 m door is five times as long as a 1 m one
   const [x, y] = door.pos
-  const a = toSvg(door.vertical ? [x, y - hl] : [x - hl, y])
-  const c = toSvg(door.vertical ? [x, y + hl] : [x + hl, y])
+  // A new wall runs from end to end in any direction; a door lies along its (axis-aligned) wall.
+  const a = toSvg(door.wall ? door.wall[0] : door.vertical ? [x, y - hl] : [x - hl, y])
+  const c = toSvg(door.wall ? door.wall[1] : door.vertical ? [x, y + hl] : [x + hl, y])
   const center = toSvg([x, y])
   return (
     <g pointerEvents="none">

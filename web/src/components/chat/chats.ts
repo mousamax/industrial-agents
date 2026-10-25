@@ -94,12 +94,12 @@ function createEntry(buildingId: string): Entry {
       const route = messageEffects[res.routeAt].route!
       const current = useApp.getState().highlight.ids
       if (res.highlight.length || current.length) {
-        app.setHighlight(res.highlight) // destination things, or clear stale search hits
+        app.setHighlight(res.highlight, res.label) // destination things, or clear stale search hits
         shownRoute = null // re-apply so the route (not the highlight) gets the camera
       }
       showRoute(route)
     } else if (res.unreachable) app.setUnreachable(res.unreachable)
-    else if (res.highlight.length) app.setHighlight(res.highlight)
+    else if (res.highlight.length) app.setHighlight(res.highlight, res.label)
   }
 
   const unsubscribe = [chat['~registerMessagesCallback'](onMessages), chat['~registerStatusCallback'](onStatus)]

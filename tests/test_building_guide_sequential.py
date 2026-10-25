@@ -25,6 +25,7 @@ from app.building.state import BuildingState
 CHANGES = {
     "set_closed",
     "add_door",
+    "add_wall",
     "move_item",
     "undo_last_change",
     "draft_building",

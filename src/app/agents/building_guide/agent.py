@@ -14,7 +14,7 @@ from benchmark.score import committed_answer, numbers_in
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import Caching, Thinking
-from pydantic_ai.messages import ModelRequest, RetryPromptPart, ToolReturnPart
+from pydantic_ai.messages import ModelRequest, RetryPromptPart, ToolReturnPart, UserPromptPart
 
 from app.core import AgentCard, load_prompt
 from app.models import model
@@ -29,6 +29,8 @@ from .tools import (
     _clock,
     _label,
     add_door,
+    add_wall,
+    highlight_rooms,
     move_item,
     never_crash,
     overview,
@@ -216,13 +218,59 @@ def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) ->
     return reply
 
 
-CHANGES_STATE = {set_closed, add_door, move_item, undo_last_change, draft_building, fix_draft, accept_guesses}
+CLAIMS_A_CHANGE = re.compile(
+    r"\bi(?:'ve|’ve| have) (?:just |now )?(?:added|applied|put in|made the change)"
+    r"|\b(?:has|have) (?:now )?been (?:added|applied)|\bis now (?:added|in the plan)|\bare now in the plan",
+    flags=re.IGNORECASE,
+)
+"""How a reply says a change to the plan was made (not proposed, not "will be added once you confirm")."""
+
+
+def _changed_this_turn(ctx: RunContext[Deps]) -> bool:
+    """A tool changed the building in this turn: an edit came back "done", or a tool that records at once ran."""
+    turn: list[ToolReturnPart] = []
+    for message in ctx.messages:
+        if isinstance(message, ModelRequest):
+            if any(isinstance(p, UserPromptPart) for p in message.parts):
+                turn = []  # a new turn from the person starts here
+            turn += [p for p in message.parts if isinstance(p, ToolReturnPart)]
+    direct = {
+        t.__name__
+        for t in (set_closed, move_item, undo_last_change, draft_building, fix_draft, accept_guesses)
+    }
+    return any(p.tool_name in direct or '"status":"done"' in p.model_response_str() for p in turn)
+
+
+def _says_only_what_was_changed(ctx: RunContext[Deps], reply: str) -> str:
+    """A reply may say a change was made only when a tool made it in this turn. The person (and the voice
+    agent reading this reply) take "I've added the door" at its word; a proposal is not an edit."""
+    if ctx.retry >= ctx.max_retries or not CLAIMS_A_CHANGE.search(reply) or _changed_this_turn(ctx):
+        return reply
+    raise ModelRetry(
+        "Your reply says a change was made, but no tool changed the building in this turn (a proposal "
+        'changes nothing; only a result with "status": "done" does). If they already said yes, call the tool '
+        "again with confirmed=true; if they said to do it without asking, with apply_now=true; otherwise say "
+        "what you propose and ask them to confirm."
+    )
+
+
+CHANGES_STATE = {
+    set_closed,
+    add_door,
+    add_wall,
+    move_item,
+    undo_last_change,
+    draft_building,
+    fix_draft,
+    accept_guesses,
+}
 """Tools that change the building: each runs alone, after the calls before it and before the calls after it.
 The model often emits set_closed and route in one turn; run in parallel, the route ignored the closure."""
 
 
-PREPARE = {walk_directions: walk_mode_only}
-"""Tools offered only in some conversations: walk_directions only where Deps.detail is "walk"."""
+PREPARE = {walk_directions: walk_mode_only, highlight_rooms: walk_mode_only}
+"""Tools offered only in some conversations: walk_directions and highlight_rooms only where Deps.detail is
+"walk" (a person with a map), never in benchmark runs."""
 
 
 def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[Deps, str]:
@@ -246,6 +294,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
     built.instructions(_live_context)
     built.instructions(_draft_context)
     built.instructions(_calendar_context)
+    built.output_validator(_says_only_what_was_changed)
     built.output_validator(_answer_line_is_committed_and_grounded)
     return built
 

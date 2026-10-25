@@ -17,13 +17,17 @@ from __future__ import annotations
 import copy
 import dataclasses
 import functools
+import math
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from shapely.geometry import LineString, Point, Polygon
+from shapely.ops import linemerge, split, substring, unary_union
+
 from app.building import geometry
-from app.building.model import OUTSIDE, XY, Asset, Building, Opening
+from app.building.model import OUTSIDE, XY, Asset, Building, Opening, Space
 from app.building.routing import WALKING, Constraints
 
 
@@ -67,8 +71,21 @@ class AddAsset:
     depth_m: float = 1.0
 
 
-Edit = Close | Reopen | AddDoor | MoveAsset | AddAsset
-STRUCTURAL = (AddDoor, MoveAsset, AddAsset)
+@dataclass(frozen=True)
+class SplitRoom:
+    """A new straight wall across a room from `start` to `end` (points on its outline), splitting it into two
+    rooms (two new spaces; the room's id is gone). The wall has no door. `from_space_id` / `to_space_id` are
+    the neighbours (or OUTSIDE) the ends were taken from, when they were named: for the message only."""
+
+    space_id: str
+    start: XY
+    end: XY
+    from_space_id: str | None = None
+    to_space_id: str | None = None
+
+
+Edit = Close | Reopen | AddDoor | MoveAsset | AddAsset | SplitRoom
+STRUCTURAL = (AddDoor, MoveAsset, AddAsset, SplitRoom)
 
 
 def _now() -> datetime:
@@ -226,6 +243,15 @@ class BuildingState:
                 if not name.strip():
                     raise ValueError("a new item needs a name")
                 message = f"{name} arrived in {b.label(space_id)}."
+            case SplitRoom():
+                split = split_room(b, edit)
+                first, second = split.halves
+                message = (
+                    f"Split {b.label(edit.space_id)} with a {split.length_m:.1f} m wall from "
+                    f"{_end_label(b, edit.from_space_id, edit.start)} to "
+                    f"{_end_label(b, edit.to_space_id, edit.end)}: {first.name} ({first.area:.1f} m²) and "
+                    f"{second.name} ({second.area:.1f} m²). The new wall has no door."
+                )
             case _:
                 raise ValueError(f"unknown edit {edit!r}")
         self.edits.append(edit)
@@ -244,36 +270,40 @@ class BuildingState:
     # ---- building the view ------------------------------------------------------------------------------
 
     def _apply_structural(self, active: tuple[int, ...]) -> Building:
-        b = self.base
-        openings, assets = dict(b.openings), dict(b.assets)
-        for _, e in self._placed(active):
-            if isinstance(e, Opening):
-                openings[e.id] = e
-            else:
-                assets[e.id] = e
-        raw = self.export(active) if "assets" in b.raw else b.raw  # a Level 3 site keeps its site.json
-        return dataclasses.replace(b, openings=openings, assets=assets, raw=raw)
+        b = self._replay(active)
+        raw = (
+            self._export(b) if "assets" in self.base.raw else self.base.raw
+        )  # a Level 3 site keeps site.json
+        return dataclasses.replace(b, raw=raw)
 
-    def _placed(self, active: tuple[int, ...]) -> list[tuple[int, Opening | Asset]]:
-        """The doors and assets the active structural edits put in place, in edit order."""
-        b, out, assets = self.base, [], dict(self.base.assets)
-        doors = 0
+    def _replay(self, active: tuple[int, ...]) -> Building:
+        """The base with the active structural edits applied in edit order: split rooms, added doors, moved
+        and delivered assets (raw untouched). An edit whose room an undone edit made is skipped."""
+        b, doors = self.base, 0
         for i, e in enumerate(self.edits):
             doors += isinstance(e, AddDoor)
             if i not in active:
                 continue
-            if isinstance(e, AddDoor):
-                floor_id, position = self._door_place(b, e)  # edits never change spaces
+            if isinstance(e, SplitRoom):
+                try:
+                    b = with_split(b, e)
+                except ValueError:
+                    continue
+            elif isinstance(e, AddDoor):
+                try:
+                    floor_id, position = self._door_place(b, e)
+                except ValueError:
+                    continue
                 pair = (e.first_space_id, e.second_space_id)
                 door_id = f"{floor_id}-O-new{doors}"
                 door = Opening(
                     door_id, floor_id, pair, "door", _rounded(position), e.width_m, e.step_free, True
                 )
-                out.append((i, door))
+                b = dataclasses.replace(b, openings={**b.openings, door.id: door})
             elif isinstance(e, MoveAsset):
-                space = b.spaces[e.space_id]
-                old = assets.get(e.asset_id)
-                if old is None:  # the delivery it moved was undone
+                space = b.spaces.get(e.space_id)
+                old = b.assets.get(e.asset_id)
+                if old is None or space is None:  # the delivery it moved, or its room, was undone
                     continue
                 moved = dataclasses.replace(
                     old,
@@ -281,10 +311,11 @@ class BuildingState:
                     floor_id=space.floor_id,
                     position=_rounded(e.position or space.anchor),
                 )
-                assets[moved.id] = moved
-                out.append((i, moved))
+                b = dataclasses.replace(b, assets={**b.assets, moved.id: moved})
             elif isinstance(e, AddAsset):
-                space = b.spaces[e.space_id]
+                space = b.spaces.get(e.space_id)
+                if space is None:
+                    continue
                 new = Asset(
                     self.asset_id(i),
                     e.name,
@@ -298,19 +329,29 @@ class BuildingState:
                     0.0,
                     "reported",
                 )
-                assets[new.id] = new
-                out.append((i, new))
-        return out
+                b = dataclasses.replace(b, assets={**b.assets, new.id: new})
+        return b
 
     @_locked
     def export(self, active: tuple[int, ...] | None = None) -> dict:
         """building.json (kit format) with the edits that hold now applied: for saving and for Level 4."""
         if active is None:
             active = tuple(i for i in self._active() if isinstance(self.edits[i], STRUCTURAL))
+        return self._export(self._replay(active))
+
+    def _export(self, b: Building) -> dict:
+        """The base's building.json brought in line with `b` (the replayed building)."""
         raw = copy.deepcopy(self.base.raw)
-        assets = {a["id"]: a for a in raw["assets"]}
-        for _, e in self._placed(active):
-            if isinstance(e, Opening):
+        spaces = {s["id"]: s for s in raw["spaces"]}
+        if spaces.keys() != b.spaces.keys():  # a room was split: its halves replace it
+            raw["spaces"] = [spaces.get(s.id) or _space_json(s) for s in b.spaces.values()]
+        known = set()
+        for o in raw["openings"]:
+            known.add(o["id"])
+            if o["id"] in b.openings:
+                o["space_ids"] = list(b.openings[o["id"]].space_ids)
+        for e in b.openings.values():
+            if e.id not in known:
                 raw["openings"].append(
                     {
                         "id": e.id,
@@ -323,22 +364,31 @@ class BuildingState:
                         "synthetic": True,
                     }
                 )
-            elif e.id in assets:
-                assets[e.id].update(space_id=e.space_id, floor_id=e.floor_id, position=list(e.position))
+        for c in raw["vertical_connectors"]:
+            if c["id"] in b.connectors:
+                stops = dict(b.connectors[c["id"]].stops)
+                c["space_ids"] = [
+                    stops.get(f, s) for f, s in zip(c["floor_ids"], c["space_ids"], strict=True)
+                ]
+        assets = {a["id"]: a for a in raw["assets"]}
+        for e in b.assets.values():
+            if e.id in assets:
+                if e != self.base.assets.get(e.id):
+                    assets[e.id].update(space_id=e.space_id, floor_id=e.floor_id, position=list(e.position))
             else:
-                asset = {
-                    "id": e.id,
-                    "name": e.name,
-                    "category": e.category,
-                    "type": e.type,
-                    "space_id": e.space_id,
-                    "floor_id": e.floor_id,
-                    "position": list(e.position),
-                    "footprint": {"width_m": e.width_m, "depth_m": e.depth_m, "rotation_deg": 0.0},
-                    "source": e.source,
-                }
-                raw["assets"].append(asset)
-                assets[e.id] = asset
+                raw["assets"].append(
+                    {
+                        "id": e.id,
+                        "name": e.name,
+                        "category": e.category,
+                        "type": e.type,
+                        "space_id": e.space_id,
+                        "floor_id": e.floor_id,
+                        "position": list(e.position),
+                        "footprint": {"width_m": e.width_m, "depth_m": e.depth_m, "rotation_deg": 0.0},
+                        "source": e.source,
+                    }
+                )
         return raw
 
     @staticmethod
@@ -376,3 +426,279 @@ class BuildingState:
 
 def _rounded(xy: XY) -> XY:
     return (round(xy[0], 3), round(xy[1], 3))
+
+
+def _space_json(s: Space) -> dict:
+    return {
+        "id": s.id,
+        "floor_id": s.floor_id,
+        "type": s.type,
+        "room_type": s.room_type,
+        "name": s.name,
+        "ref": s.ref,
+        "polygon": [list(p) for p in s.polygon],
+        "synthetic": s.synthetic,
+    }
+
+
+# ---- splitting a room with a new wall ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Split:
+    halves: tuple[Space, Space]
+    wall: tuple[XY, XY]
+    """The new wall's two ends, on the room's outline."""
+
+    @property
+    def length_m(self) -> float:
+        (x0, y0), (x1, y1) = self.wall
+        return math.hypot(x1 - x0, y1 - y0)
+
+
+@dataclass(frozen=True)
+class Anchor:
+    """Where a new wall meets the room's outline: the middle of the stretch shared with a neighbour (or the
+    outside), and that stretch as a polyline."""
+
+    point: XY
+    stretch: tuple[XY, ...]
+
+    @property
+    def length_m(self) -> float:
+        return LineString(self.stretch).length if len(self.stretch) > 1 else 0.0
+
+
+SNAP_M = 0.5
+"""A wall end given as coordinates is moved onto the room's outline when it is at most this far from it."""
+
+
+def _outline(room: Space) -> Polygon:
+    shape = room.shape if room.shape.is_valid else room.shape.buffer(0)
+    if not isinstance(shape, Polygon):  # an invalid OSM outline that fell apart: its biggest piece
+        shape = max(getattr(shape, "geoms", []), key=lambda g: g.area)
+    return shape
+
+
+def _pieces(g) -> list[LineString]:
+    """The connected stretches of a linear geometry."""
+    if g.is_empty:
+        return []
+    if not isinstance(g, LineString):
+        lines = [p for p in getattr(g, "geoms", []) if isinstance(p, LineString) and p.length > 0]
+        if not lines:
+            return []
+        g = linemerge(lines) if len(lines) > 1 else lines[0]
+    return [p for p in getattr(g, "geoms", [g]) if p.length > 0]
+
+
+def _middle(piece: LineString) -> XY:
+    p = piece.interpolate(0.5, normalized=True)
+    return (p.x, p.y)
+
+
+def _anchor(piece: LineString) -> Anchor:
+    return Anchor(_rounded(_middle(piece)), tuple(_rounded(xy) for xy in piece.coords))
+
+
+def _shared_stretches(b: Building, room: Space, neighbour_id: str) -> list[LineString]:
+    """The stretches of the room's outline along a neighbour, or along no space at all for OUTSIDE."""
+    shape, label = _outline(room), b.label(room.id)
+    tolerance = geometry.WALL_TOLERANCE_M
+    if neighbour_id == OUTSIDE:
+        near = [
+            s.shape.exterior.buffer(tolerance)
+            for s in b.spaces_on(room.floor_id)
+            if s.id != room.id and geometry._near(shape, s.shape, tolerance)  # noqa: SLF001
+        ]
+        free = shape.exterior.difference(unary_union(near)) if near else shape.exterior
+        pieces = [p for p in _pieces(free) if p.length >= geometry.MIN_WALL_M]
+        if not pieces:
+            raise ValueError(f"{label} has no outside wall: every wall is shared with another space")
+        return pieces
+    if neighbour_id not in b.spaces:
+        raise ValueError(f"unknown space {neighbour_id!r}")
+    if neighbour_id == room.id:
+        raise ValueError(f"name a neighbour of {label}, not the room itself")
+    other = b.spaces[neighbour_id]
+    if other.floor_id != room.floor_id or geometry.shared_wall_midpoint(b, room.id, neighbour_id) is None:
+        raise ValueError(f"{b.label(neighbour_id)} doesn't share a wall with {label}")
+    pieces = _pieces(geometry._wall_on(shape, other.shape, tolerance))  # noqa: SLF001
+    if not pieces:
+        raise ValueError(f"{b.label(neighbour_id)} doesn't share a wall with {label}")
+    return pieces
+
+
+def wall_anchors(b: Building, room_id: str, first_id: str, second_id: str) -> tuple[Anchor, Anchor]:
+    """The two ends of a new wall across a room named by its neighbours (space ids, or OUTSIDE).
+
+    Each end is the middle of the stretch of the room's outline shared with that neighbour (the longest one
+    if there are several). For OUTSIDE it is the middle of an outside wall (outline shared with no space):
+    of several, the one farthest from the other end, roughly the opposite wall. ValueError with a reason."""
+    if room_id not in b.spaces or room_id == OUTSIDE:
+        raise ValueError(f"unknown space {room_id!r}")
+    room = b.spaces[room_id]
+    if first_id == second_id and first_id != OUTSIDE:
+        raise ValueError(
+            f"name two different neighbours of {b.label(room_id)}: the wall runs from one to the other"
+        )
+    stretches = [_shared_stretches(b, room, sid) for sid in (first_id, second_id)]
+    found: list[Anchor | None] = [None, None]
+    for k, sid in enumerate((first_id, second_id)):
+        if sid != OUTSIDE:
+            found[k] = _anchor(max(stretches[k], key=lambda p: p.length))
+    if (
+        found[0] is None and found[1] is None
+    ):  # both outside: the longest outside wall and the farthest other one
+        longest = max(stretches[0], key=lambda p: p.length)
+        rest = [p for p in stretches[1] if not p.equals(longest)]
+        if not rest:
+            raise ValueError(
+                f"{b.label(room_id)} has only one outside wall: name a neighbour for the other end"
+            )
+        found[0] = _anchor(longest)
+        stretches[1] = rest
+    for k in (0, 1):
+        if found[k] is None:
+            other = Point(found[1 - k].point)  # type: ignore[union-attr]
+            found[k] = _anchor(max(stretches[k], key=lambda p: Point(_middle(p)).distance(other)))
+    return found[0], found[1]  # type: ignore[return-value]
+
+
+def split_between(b: Building, room_id: str, first_id: str, second_id: str) -> SplitRoom:
+    """The SplitRoom for a wall across a room from the wall it shares with `first_id` to the one it shares
+    with `second_id` (space ids, or OUTSIDE): its ends are wall_anchors. ValueError with a reason."""
+    start, end = wall_anchors(b, room_id, first_id, second_id)
+    return SplitRoom(room_id, start.point, end.point, first_id, second_id)
+
+
+def snap_to_outline(b: Building, room_id: str, xy: XY) -> XY:
+    """A point moved onto the room's outline, or ValueError when it is more than SNAP_M away from it."""
+    shape = _outline(b.spaces[room_id])
+    ring = shape.exterior
+    p = ring.interpolate(ring.project(Point(xy)))
+    gap = p.distance(Point(xy))
+    if gap > SNAP_M:
+        raise ValueError(
+            f"({xy[0]:.2f}, {xy[1]:.2f}) is {gap:.1f} m from the walls of {b.label(room_id)}: a wall end must be "
+            f"on its outline (within {SNAP_M:g} m)"
+        )
+    return _rounded((p.x, p.y))
+
+
+def _compass(dx: float, dy: float) -> str:
+    """The compass word for the direction (dx, dy) on the plan (y points north): one of the eight winds."""
+    ns = "north" if dy > 0 else "south"
+    ew = "east" if dx > 0 else "west"
+    if abs(dy) < abs(dx) * 0.414:  # within 22.5° of east-west
+        return ew
+    if abs(dx) < abs(dy) * 0.414:
+        return ns
+    return f"{ns}-{ew}"
+
+
+def _end_label(b: Building, sid: str | None, xy: XY) -> str:
+    if sid == OUTSIDE:
+        return "the outside wall"
+    if sid:
+        return f"the wall with {b.label(sid)}"
+    return f"({xy[0]:.2f}, {xy[1]:.2f})"
+
+
+def split_room(b: Building, edit: SplitRoom) -> Split:
+    """The two parts the straight wall from edit.start to edit.end cuts a room into, or ValueError (with a
+    reason for a person) when it doesn't cut it in two: it runs outside the room, along one of its walls,
+    or cuts it into more pieces. The halves are whatever the wall cuts: not necessarily equal."""
+    if edit.space_id not in b.spaces or edit.space_id == OUTSIDE:
+        raise ValueError(f"unknown space {edit.space_id!r}")
+    room = b.spaces[edit.space_id]
+    label = b.label(room.id)
+    shape = _outline(room)
+    p, q = edit.start, edit.end
+    seg = LineString([p, q])
+    if seg.length < 0.1:
+        raise ValueError(
+            f"the two ends of the wall are the same point: pick ends on two different walls of {label}"
+        )
+    span = f"from {_end_label(b, edit.from_space_id, p)} to {_end_label(b, edit.to_space_id, q)}"
+    inner = substring(seg, 0.001, seg.length - 0.001)
+    if not shape.contains(inner):
+        if shape.exterior.buffer(0.01).contains(inner):
+            raise ValueError(
+                f"a wall {span} would run along a wall of {label}, not across it: both ends are on the same side of the room"
+            )
+        raise ValueError(f"a straight wall {span} would leave {label}: its shape is in the way")
+    d = ((q[0] - p[0]) / seg.length, (q[1] - p[1]) / seg.length)
+    reach = 0.01
+    longer = LineString(
+        [(p[0] - d[0] * reach, p[1] - d[1] * reach), (q[0] + d[0] * reach, q[1] + d[1] * reach)]
+    )
+    parts = [g for g in split(shape, longer).geoms if isinstance(g, Polygon) and g.area > 1e-4]
+    if len(parts) != 2:
+        raise ValueError(f"a straight wall {span} would cut {label} into {len(parts)} parts, not two")
+    first, second = parts
+    dx, dy = first.centroid.x - second.centroid.x, first.centroid.y - second.centroid.y
+    if (dx > 0) if abs(dx) >= abs(dy) else (dy < 0):  # number in reading order: west, then north, first
+        first, second = second, first
+    halves = []
+    for number, (half, other) in enumerate(((first, second), (second, first)), start=1):
+        word = _compass(half.centroid.x - other.centroid.x, half.centroid.y - other.centroid.y)
+        tag = "".join(w[0].upper() for w in word.split("-"))
+        corners = [_rounded(xy) for xy in list(half.exterior.coords)[:-1]]
+        polygon = tuple(xy for i, xy in enumerate(corners) if xy != corners[i - 1])  # no repeated corners
+        # Each half gets its own number: 0.33 -> 0.33-1 and 0.33-2, in the name too where it shows the ref.
+        ref = f"{room.ref}-{number}" if room.ref else str(number)
+        name = (
+            room.name.replace(room.ref, ref, 1)
+            if room.ref and room.ref in room.name
+            else f"{room.name} {ref}"
+        )
+        halves.append(
+            Space(
+                f"{room.id}-{tag}",
+                room.floor_id,
+                room.type,
+                room.room_type,
+                f"{name} ({word} half)",
+                ref,
+                polygon,
+                True,
+            )
+        )
+    if halves[0].id == halves[1].id or any(h.id in b.spaces for h in halves):
+        raise ValueError(f"can't name the two halves of {label}")
+    return Split((halves[0], halves[1]), (_rounded(p), _rounded(q)))
+
+
+def with_split(b: Building, edit: SplitRoom) -> Building:
+    """`b` with a room replaced by its two halves. Doors and items go to the half they are in (or nearest),
+    stairs and lifts to the half holding the room's anchor."""
+    split = split_room(b, edit)
+    old = b.spaces[edit.space_id]
+
+    def half_at(xy: XY) -> str:
+        p = Point(xy)
+        return min(split.halves, key=lambda h: h.shape.distance(p)).id
+
+    spaces: dict[str, Space] = {}
+    for sid, s in b.spaces.items():
+        if sid == old.id:
+            spaces |= {h.id: h for h in split.halves}
+        else:
+            spaces[sid] = s
+    openings = dict(b.openings)
+    for o in b.openings_of(old.id):
+        half = half_at(o.position)
+        openings[o.id] = dataclasses.replace(
+            o, space_ids=tuple(half if sid == old.id else sid for sid in o.space_ids)
+        )
+    assets = dict(b.assets)
+    for a in b.assets_in(old.id):
+        assets[a.id] = dataclasses.replace(a, space_id=half_at(a.position))
+    connectors = dict(b.connectors)
+    anchor_half = half_at(old.anchor)
+    for c in b.connectors_at(old.id):
+        connectors[c.id] = dataclasses.replace(
+            c, stops=tuple((f, anchor_half if sid == old.id else sid) for f, sid in c.stops)
+        )
+    return dataclasses.replace(b, spaces=spaces, openings=openings, assets=assets, connectors=connectors)

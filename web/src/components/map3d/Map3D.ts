@@ -390,14 +390,16 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     shown.forEach((door, i) => {
       const mesh = doorMeshAt(i)
       mesh.visible = true
+      // A panel from end to end: a new wall's two ends, or the door's width along its axis-aligned wall.
+      const h = door.widthM / 2
       const [x, y] = door.pos
-      mesh.position.set(x, selectedY() + 0.01, -y)
-      // Wall along scene y (vertical in 2D) runs along world Z; along scene x it runs along world X.
-      mesh.scale.set(
-        door.vertical ? thick : door.widthM,
-        settings.wallHeightM * rise + 0.05,
-        door.vertical ? door.widthM : thick,
-      )
+      const [[x0, y0], [x1, y1]] = door.wall?.length === 2
+        ? door.wall
+        : door.vertical ? [[x, y - h], [x, y + h]] : [[x - h, y], [x + h, y]]
+      mesh.position.set((x0 + x1) / 2, selectedY() + 0.01, -(y0 + y1) / 2)
+      // World (X, Z) = (x, -y): rotating the unit box by atan2(dy, dx) about Y lays its X axis along the panel.
+      mesh.rotation.y = Math.atan2(y1 - y0, x1 - x0)
+      mesh.scale.set(Math.hypot(x1 - x0, y1 - y0), settings.wallHeightM * rise + 0.05, thick)
     })
     doorMat.opacity = shown.every((d) => d.applied) ? 0.95 : 0.6
   }

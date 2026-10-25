@@ -10,7 +10,7 @@ import pytest
 
 from app.building.model import load_building, parse_building
 from app.building.routing import Constraints, RouteGraph
-from app.building.state import AddDoor, BuildingState, Close, MoveAsset, Reopen
+from app.building.state import AddDoor, BuildingState, Close, MoveAsset, Reopen, split_between
 from app.settings import get_settings
 
 DATA = get_settings().synera_kit_dir / "data" / "dev"
@@ -124,3 +124,101 @@ def test_export_round_trips(wall):
     assert door.width_m == 1.2 and door.synthetic and set(door.space_ids) == {first, second}
     assert again.assets[asset.id].space_id == first and again.assets[asset.id].position == (1.0, 2.0)
     assert len(state.base.raw["openings"]) == len(state.base.openings)  # base raw not mutated
+
+
+# ---- SplitRoom: a new wall that halves a room ---------------------------------------------------------------
+
+
+def _ids(b, *names):
+    return [b.resolve(n)[0].id for n in names]
+
+
+@pytest.fixture
+def office():
+    """Office 2.03 (campus): Lab 2.02 to the north, Staircase 1 to the south, its door on the corridor side."""
+    b = load_building("proc-campus-dev-000")
+    room, lab, stairs = _ids(b, "Office 2.03", "Lab 2.02", "Staircase 1 (Floor 2)")
+    return BuildingState(b), split_between(b, room, lab, stairs)
+
+
+def test_split_makes_two_equal_halves_and_the_room_id_goes(office):
+    state, edit = office
+    before = state.building.spaces[edit.space_id]
+    message = state.apply(edit)
+    assert message.startswith("Split Office 2.03") and "no door" in message
+    b = state.building
+    assert edit.space_id not in b.spaces
+    halves = [s for sid, s in b.spaces.items() if sid.startswith(edit.space_id + "-")]
+    assert len(halves) == 2
+    assert halves[0].area == pytest.approx(halves[1].area, rel=1e-3)
+    assert sum(h.area for h in halves) == pytest.approx(before.area, rel=1e-3)
+    # North and south neighbours: a north-south wall, a west and an east half.
+    assert sorted(h.name for h in halves) == ["Office 2.03-1 (west half)", "Office 2.03-2 (east half)"]
+    assert sorted(h.ref for h in halves) == ["2.03-1", "2.03-2"]  # distinct room numbers
+    assert all(h.floor_id == before.floor_id and h.room_type == before.room_type for h in halves)
+
+
+def test_split_puts_doors_and_items_in_the_half_they_are_in(office):
+    state, edit = office
+    base = state.building
+    state.apply(edit)
+    b = state.building
+    east, west = (f"{edit.space_id}-{t}" for t in "EW")
+    corridor_door = next(o for o in base.openings_of(edit.space_id))
+    assert east in b.openings[corridor_door.id].space_ids  # the door on the corridor (east) wall
+    assert not b.openings_of(west)
+    for a in base.assets_in(edit.space_id):
+        assert b.assets[a.id].space_id == (east if a.position[0] > 3.0 else west)
+
+
+def test_a_door_between_the_halves_can_be_added_and_undo_restores_the_room(office):
+    state, edit = office
+    state.apply(edit)
+    east, west = (f"{edit.space_id}-{t}" for t in "EW")
+    assert state.apply(AddDoor(east, west)).startswith("Added")
+    assert RouteGraph(state.building, state.constraints()).shortest(west, east) is not None
+    state.undo()
+    state.undo()
+    assert edit.space_id in state.building.spaces and east not in state.building.spaces
+    assert state.building is state.base
+
+
+def test_split_export_has_both_halves(office):
+    state, edit = office
+    state.apply(edit)
+    raw = state.export()
+    ids = {s["id"] for s in raw["spaces"]}
+    assert edit.space_id not in ids and {f"{edit.space_id}-E", f"{edit.space_id}-W"} <= ids
+    assert parse_building(raw).spaces[f"{edit.space_id}-E"].area == pytest.approx(12.54, abs=0.01)
+
+
+def test_a_wall_across_a_through_room_makes_the_route_go_round():
+    """Logistics zone H-C2 is walked through between H-C1 and H-C3; a wall from the aisle (south) to H-C1
+    (west) is a diagonal that leaves those two doors in different halves."""
+    b = load_building("proc-factory-dev-007")
+    room, aisle, c1, c3 = _ids(
+        b, "Logistics zone H-C2", "Main aisle H-B2", "Logistics zone H-C1", "Logistics zone H-C3"
+    )
+    state = BuildingState(b)
+    before = RouteGraph(state.building, state.constraints()).shortest(c1, c3)
+    assert room in before.space_path
+    state.apply(split_between(b, room, aisle, c1))
+    after = RouteGraph(state.building, state.constraints()).shortest(c1, c3)
+    assert after is not None and after.length_m > before.length_m + 10
+    assert room not in after.space_path
+
+
+@pytest.mark.parametrize(
+    ("room", "first", "second", "why"),
+    [
+        ("Office 2.03", "Lab 2.02", "Kitchen 2.07", "doesn't share a wall"),
+        ("Corridor 2.01", "Lab 2.02", "Office 2.03", "same side"),
+        ("Office 2.03", "Lab 2.02", "Lab 2.02", "two different"),
+    ],
+)
+def test_split_is_refused_with_a_reason(room, first, second, why):
+    b = load_building("proc-campus-dev-000")
+    state = BuildingState(b)
+    with pytest.raises(ValueError, match=why):
+        state.apply(split_between(b, *_ids(b, room, first, second)))
+    assert not state.edits

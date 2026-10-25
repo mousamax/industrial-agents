@@ -129,7 +129,9 @@ function focusBBox(
     const c = index.connectorById.get(id)
     if (c) for (const [f, sid] of c.stops) if (f === geo.floorId) b = unionBBox(b, geo.byId.get(sid)?.bbox ?? null)
   }
-  for (const door of ghostDoors) if (door.floorId === geo.floorId) b = unionBBox(b, pt(toSvg(door.pos), 3))
+  for (const door of ghostDoors)
+    if (door.floorId === geo.floorId)
+      for (const p of door.wall ?? [door.pos]) b = unionBBox(b, pt(toSvg(p), 3))
   if (isRouteFocus && route) {
     for (const seg of route.segments) {
       if (seg.floor_id === geo.floorId || allFloors) {

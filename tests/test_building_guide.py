@@ -14,9 +14,13 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from app.agents.building_guide.agent import make_agent
 from app.agents.building_guide.tools import (
     Deps,
+    _spaces_named,
     add_door,
+    add_wall,
+    building_changes,
     calculate,
     find,
+    highlight_rooms,
     list_rooms,
     plan_visits,
     route,
@@ -102,6 +106,63 @@ def test_confirming_without_a_proposal_is_refused():
     deps = Deps.load(CAMPUS)
     with pytest.raises(ModelRetry):
         add_door(ctx(deps, "turn-2"), "Seminar room 2.06", "Kitchen 2.07", confirmed=True)
+
+
+def test_the_yes_applies_the_door_that_was_proposed_even_if_restated_differently():
+    deps = Deps.load(CAMPUS)
+    call(add_door, ctx(deps, "turn-1"), "Seminar room 2.06", "Kitchen 2.07", width_m=5)
+    # The confirming call names the rooms the other way round and forgets the width: still the same door.
+    got = call(add_door, ctx(deps, "turn-2"), "Kitchen 2.07", "Seminar room 2.06", confirmed=True)
+    assert got["status"] == "done" and got["width_m"] == 5
+    assert [e.width_m for e in deps.state.edits] == [5]
+
+
+def test_a_person_who_says_dont_ask_gets_the_change_at_once():
+    deps = Deps.load(CAMPUS)
+    got = call(add_door, ctx(deps, "turn-1"), "Seminar room 2.06", "Kitchen 2.07", apply_now=True)
+    assert got["status"] == "done" and len(deps.state.edits) == 1 and deps.pending is None
+
+
+def _tool_call_then(reply: str, **door_args):
+    """A model that calls add_door once (with door_args), then answers `reply` until told otherwise."""
+    from pydantic_ai.messages import ToolCallPart
+
+    seen: list[list[ModelMessage]] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(messages)
+        if len(seen) == 1:
+            args = {"first": "Seminar room 2.06", "second": "Kitchen 2.07", **door_args}
+            return ModelResponse(parts=[ToolCallPart("add_door", args)])
+        if len(seen) == 2:
+            return ModelResponse(parts=[TextPart(reply)])
+        return ModelResponse(parts=[TextPart("I've proposed the door; shall I add it?")])
+
+    return model, seen
+
+
+async def test_saying_a_door_was_added_when_it_was_only_proposed_is_sent_back():
+    model, seen = _tool_call_then("I've added the door between Seminar room 2.06 and Kitchen 2.07.")
+    deps = Deps.load(CAMPUS, detail="walk")
+    agent = make_agent()
+    with agent.override(model=FunctionModel(model)):
+        result = await agent.run("Add a door between Seminar room 2.06 and Kitchen 2.07", deps=deps)
+    assert not deps.state.edits
+    assert len(seen) == 3 and result.output.startswith("I've proposed")
+
+
+async def test_saying_a_door_was_added_when_it_was_is_fine():
+    model, seen = _tool_call_then(
+        "I've added the door between Seminar room 2.06 and Kitchen 2.07.", apply_now=True
+    )
+    deps = Deps.load(CAMPUS, detail="walk")
+    agent = make_agent()
+    with agent.override(model=FunctionModel(model)):
+        result = await agent.run(
+            "Just add a door between Seminar room 2.06 and Kitchen 2.07, don't ask", deps=deps
+        )
+    assert len(deps.state.edits) == 1
+    assert len(seen) == 2 and result.output.startswith("I've added")
 
 
 async def test_a_reply_that_keeps_failing_the_answer_check_is_returned_not_crashed():
@@ -462,3 +523,81 @@ def test_a_scored_route_from_a_shared_name_commits_to_the_middle_option():
     assert got["total_length_m"] == each[middle]
     assert "Ambiguous" not in json.dumps(got)
     assert sorted(o["total_length_m"] for o in got["shared_name"]["options"]) == sorted(each.values())
+
+
+# ---- add_wall: a new wall that halves a room -----------------------------------------------------------------
+
+SPLIT = ("Office 2.03", "Lab 2.02", "Staircase 1")  # north and south neighbours: a west and an east half
+
+
+def test_a_wall_is_proposed_then_built_after_a_yes_and_undone():
+    deps = Deps.load(CAMPUS)
+    room = deps.building.resolve("Office 2.03")[0]
+    proposed = call(add_wall, ctx(deps, "turn-1"), *SPLIT)
+    assert proposed["status"].startswith("proposed") and not deps.state.edits
+    assert [h["area_m2"] for h in proposed["halves"]] == [12.5, 12.5]
+    assert any("note" in h for h in proposed["halves"])  # the west half has no door yet
+    with pytest.raises(ModelRetry):  # same turn: the person hasn't answered
+        add_wall(ctx(deps, "turn-1"), *SPLIT, confirmed=True)
+    done = call(add_wall, ctx(deps, "turn-2"), "Office 2.03", "Staircase 1", "Lab 2.02", confirmed=True)
+    assert done["status"] == "done" and room.id not in deps.building.spaces
+    halves = _spaces_named(deps.building, "Office 2.03", None)  # the old name finds both halves
+    assert sorted(h.name for h in halves) == ["Office 2.03-1 (west half)", "Office 2.03-2 (east half)"]
+    assert [h.id for h in _spaces_named(deps.building, "2.03-2", None)] == [halves[1].id]
+    assert sum(h.area for h in halves) == pytest.approx(room.area, rel=1e-3)
+    assert call(building_changes, ctx(deps, "turn-3"))["changes"][0]["kind"] == "wall added"
+    call(undo_last_change, ctx(deps, "turn-3"))
+    assert room.id in deps.building.spaces and not deps.state.edits
+
+
+def test_a_wall_asked_for_without_confirmation_is_built_at_once_and_a_door_can_join_the_halves():
+    deps = Deps.load(CAMPUS)
+    got = call(add_wall, ctx(deps, "turn-1"), *SPLIT, apply_now=True)
+    assert got["status"] == "done" and len(deps.state.edits) == 1 and deps.pending is None
+    door = call(
+        add_door, ctx(deps, "turn-1"), "Office 2.03 (west half)", "Office 2.03 (east half)", apply_now=True
+    )
+    assert door["status"] == "done"
+    walk = call(route, ctx(deps, "turn-2"), "Office 2.03 (west half)", "Corridor 2.01")
+    assert len(walk["legs"][0]["space_path"]) == 3  # west half, east half, corridor
+
+
+@pytest.mark.parametrize(
+    ("room", "first", "second", "why"),
+    [
+        ("Office 2.03", "Lab 2.02", "Kitchen 2.07", "doesn't share a wall"),
+        ("Corridor 2.01", "Lab 2.02", "Office 2.03", "same side"),
+    ],
+)
+def test_a_wall_that_cannot_halve_the_room_is_refused_clearly(room, first, second, why):
+    deps = Deps.load(CAMPUS)
+    with pytest.raises(ModelRetry, match=why):
+        add_wall(ctx(deps), room, first, second, apply_now=True)
+    assert not deps.state.edits
+
+
+def test_highlight_rooms_sends_exactly_the_given_rooms_to_the_map():
+    c = ctx(Deps.load(FACTORY))
+    rooms = call(list_rooms, c, "0")["rooms"][:3]
+    names = [r["room"] for r in rooms]
+    got = call(highlight_rooms, c, [*names, names[0], "swimming pool"], label="next to the lab")
+    (view,) = got["view"]
+    assert view["kind"] == "highlight" and view["label"] == "next to the lab"
+    assert len(view["ids"]) == 3  # the duplicate counted once
+    assert list(got["not_found"]) == ["swimming pool"]
+    with pytest.raises(ModelRetry):
+        highlight_rooms(c, ["swimming pool"])
+
+
+def test_highlight_rooms_is_offered_only_to_people_with_a_map():
+    import asyncio
+
+    from pydantic_ai.models.test import TestModel
+
+    async def offered(detail: str) -> set[str]:
+        m = TestModel(call_tools=[])
+        await make_agent().run("hi", deps=Deps.load(FACTORY, detail=detail), model=m)
+        return {t.name for t in m.last_model_request_parameters.function_tools}
+
+    assert "highlight_rooms" in asyncio.run(offered("walk"))  # app and voice chats
+    assert "highlight_rooms" not in asyncio.run(offered("rooms"))  # benchmark

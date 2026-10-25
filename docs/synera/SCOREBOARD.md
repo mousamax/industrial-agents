@@ -1,6 +1,6 @@
 # Team scoreboard
 
-Generated 2026-10-25T00:39:25+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-25T01:41:09+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
 **Team: 88.3 / 100 estimated points.** Stakes are our guess at Synera's split.
 
@@ -16,7 +16,7 @@ Generated 2026-10-25T00:39:25+00:00 by Magnus Saurbier with `uv run ia scoreboar
 | Does it work | **test-geometry**: Area, wall, stacking and 3D questions answered right end to end (dev, judges' scorer) | Vadim, Mousa | ██████████ 100% (97/97 questions) | 12.0 / 12 | – |
 | Does it work | **test-graph**: Errand, delivery, reachability and what-if questions answered right end to end | Magnus, Mousa | ██████████ 100% (41/41 questions) | 6.0 / 6 | – |
 | Does it work | **sunday-find-and-route**: Sunday-style find, count, route, step-free, closure and tour questions through the agent | Mousa, Magnus | ██████████ 100% (368/369 questions) | 6.0 / 6 | route_with_closure 28/29 |
-| Does it work | **sunday-answers-json**: The Sunday run from the PDF: one command, any building folder + questions.json -> answers.json with item/room ids, valid best routes as node ids, lengths; documented in BENCHMARK.md (no model: deterministic answerer) | Mousa, Magnus | ██████████ 100% (13/13 tests) | 5.0 / 5 | – |
+| Does it work | **sunday-answers-json**: The Sunday run from the PDF: one command, any building folder + questions.json -> answers.json with item/room ids, valid best routes as node ids, lengths; documented in BENCHMARK.md (no model: deterministic answerer) | Mousa, Magnus | ██████████ 100% (16/16 tests) | 5.0 / 5 | – |
 | Does it work | **synera-route-rule**: Routes are the best under Synera's announced rule (per-metre stairs/lifts, forklift, bays) | Magnus | ██████████ 100% (523/523 tests) | 8.0 / 8 | – |
 | Does it work | **unseen-wording**: The scored kinds asked in other words (reworded dev questions) | Mousa | ██████████ 100% (45/45 questions) | 2.0 / 2 | – |
 | Does it work | **unseen-kinds**: 12 question kinds Synera hasn't shown, on test buildings, answers computed by code (held out, score only) | Mousa | ██████████ 98% (94/96 questions) | 2.9 / 3 | within_distance_count 6/8 |
@@ -25,7 +25,7 @@ Generated 2026-10-25T00:39:25+00:00 by Magnus Saurbier with `uv run ia scoreboar
 | Does it work | **level4-conversation**: Level 4 by conversation: upload floor plans, get a building in seconds, and settle what the plans don't say by talking (grouped questions, fixes, forklift doors, storey heights) | Mousa, Vadim | ██████████ 100% (9/9 tests + 2/2 scenarios) | health | – |
 | Does it work | **level3-multibuilding**: Several buildings joined by walkways, routed as one site (Level 3; site.json, demo site in evals/datasets/sites) | Magnus | ██████████ 100% (7/7 tests) | 3.0 / 3 | – |
 | Interaction | **tricky-users**: Scripted tricky-user conversations pass the rubric (asks only what it needs, shows understanding, followable) | Mousa | █████████░ 94% (17/18 scenarios) | 10.4 / 11 | hands-full-voice |
-| Interaction | **walk-directions**: Directions a person can follow: turns (left/right, never compass), landmarks, "go around the printer", from geometry (app.building.directions, agent tool walk_directions) | Magnus, Mousa | ██████████ 100% (234/234 tests) | 4.0 / 4 | – |
+| Interaction | **walk-directions**: Directions a person can follow: turns (left/right, never compass), landmarks, "go around the printer", from geometry (app.building.directions, agent tool walk_directions) | Magnus, Mousa | ██████████ 100% (235/235 tests) | 4.0 / 4 | – |
 | Interaction | **voice**: Voice in and out in the app | Maximilian | ████████░░ 80% (80% (owner's call)) | 4.0 / 5 | in: mic button, Web Speech API (Chrome, Edge, Safari); out: Read aloud + spoken answers on request. Gap: hands-full-voice scenario |
 | Interaction | **ui-shows-it**: The app draws routes and highlights what the agent understood, on the floor plan | Maximilian | ██████████ 100% (100% (owner's call)) | 5.0 / 5 | checked in the browser 2026-10-25: routes, highlights, the right floor and 3D on factory, campus, MUCL |
 | Creativity | **level5-addin**: Level 5 "live building": things move and deliveries arrive ("this is now here" in chat, or a barcode/RFID scan), every colleague and the map see it at once, and time questions work (delivered yesterday, where was it, arriving Monday) | Magnus, Vadim, Mousa, Maximilian | ██████████ 100% (11/11 tests + 3/3 scenarios) | health | – |

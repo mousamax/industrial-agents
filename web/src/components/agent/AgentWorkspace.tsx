@@ -64,6 +64,7 @@ import { BuildingPicker } from '../browse/BuildingPicker'
 import { useBrowseUi } from '../browse/browseStore'
 import { getBuildingChat, resetChat, useBuildingChat, type ChatMessage } from '../chat/chats'
 import { splitAnswer, stripPreferences, withPreferences } from '../chat/text'
+import { clearVoiceLog, copyTranscript } from '../chat/transcript'
 import { MapView } from '../map/MapView'
 import { speak, stopSpeaking, voiceAvailable } from '../voice/speech'
 import { describeStep, summarizeTurn } from '../voice/turnSummary'
@@ -102,6 +103,7 @@ function pastTurns(messages: ChatMessage[]): PastTurn[] {
  *  plan from the server so it shows what routes now use. Mirrors CHANGES_STATE in building_guide/agent.py. */
 const PLAN_EDITS = new Set([
   'add_door',
+  'add_wall',
   'move_item',
   'set_closed',
   'undo_last_change',
@@ -705,6 +707,7 @@ function Workspace({ phone }: { phone: boolean }) {
   // Start over: the welcome screen, and the guide forgets this conversation
   const reset = useCallback(() => {
     shownRef.current = []
+    clearVoiceLog()
     clearView()
     if (buildingId) resetChat(buildingId)
   }, [clearView, buildingId])
@@ -938,6 +941,7 @@ function Workspace({ phone }: { phone: boolean }) {
           buildingId={buildingId}
           history={history}
           drafted={buildings.find((b) => b.id === buildingId)?.split === 'draft'}
+          onCopyTranscript={() => copyTranscript(buildingId ?? null, liveMessages)}
           phase={phase}
           buildingName={result?.buildingName ?? activeBuildingName}
           memory={memory}
@@ -1090,6 +1094,8 @@ function Workspace({ phone }: { phone: boolean }) {
 
 export interface ViewProps {
   buildingId?: string | null
+  /** Copies the whole conversation, tool calls included, for debugging; false if the clipboard refused. */
+  onCopyTranscript?: () => Promise<boolean>
   phase: FlowPhase
   buildingName: string
   memory: MemoryChip[]

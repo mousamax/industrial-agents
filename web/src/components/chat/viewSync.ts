@@ -2,7 +2,7 @@
 //
 // Preferred path: the tool result carries `view: ViewCommand[]` (contract in src/app/building/view.py).
 // Fallback (tools that don't send `view` yet): read ids, routes and "no route" errors out of the raw output.
-import type { RouteSegment, ShowRoute, ViewCommand, XY } from '../../api/types'
+import type { Highlight, RouteSegment, ShowRoute, ViewCommand, XY } from '../../api/types'
 import { idsIn, type SceneIndex } from '../../lib/sceneIndex'
 import { walkInside } from '../../lib/walkInside'
 
@@ -469,6 +469,8 @@ export interface Resolution {
   routeAt: number | null
   unreachable: string | null
   highlight: string[]
+  /** Caption of an explicit highlight (highlight_rooms), if the agent sent one. */
+  label: string | null
 }
 
 function numbersIn(text: string): number[] {
@@ -487,7 +489,16 @@ export function resolveMessage(
   answer: string | null,
   index: SceneIndex | null,
 ): Resolution {
-  const res: Resolution = { routeAt: null, unreachable: null, highlight: [] }
+  const res: Resolution = { routeAt: null, unreachable: null, highlight: [], label: null }
+  // An explicit highlight command (highlight_rooms) is the agent saying what to show: the last one wins.
+  const shown = effects
+    .flatMap((e) => e.views)
+    .filter((v): v is Highlight => v.kind === 'highlight')
+    .pop()
+  if (shown) {
+    res.highlight = shown.ids
+    res.label = shown.label ?? null
+  }
   const routeIdx = effects.map((e, i) => (e.route ? i : -1)).filter((i) => i >= 0)
   const lastRouteish = [...effects].reverse().find((e) => e.route || e.unreachable)
   const named = index ? namedIn(effects, finalText, index) : []
@@ -514,14 +525,14 @@ export function resolveMessage(
       // Keep only what sits at the destination (the 3D printers in the target room), not stale search hits.
       const route = effects[res.routeAt].route!
       const dest = route.space_ids[route.space_ids.length - 1]
-      res.highlight = named.filter((id) => id === dest || index.assetById.get(id)?.space_id === dest)
+      if (!shown) res.highlight = named.filter((id) => id === dest || index.assetById.get(id)?.space_id === dest)
     }
     return res
   }
 
   if (lastRouteish?.unreachable) res.unreachable = lastRouteish.unreachable
   else if (effects.length && saysNoRoute(answer ?? finalText)) res.unreachable = noRouteSentence(answer ?? finalText)
-  if (!res.unreachable) res.highlight = named
+  if (!res.unreachable && !shown) res.highlight = named
   return res
 }
 

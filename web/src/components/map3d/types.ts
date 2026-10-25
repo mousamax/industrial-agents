@@ -72,6 +72,8 @@ export interface GhostDoor3D {
   pos: XY
   vertical: boolean
   widthM: number
+  /** A new wall instead of a door: its two ends (any direction). */
+  wall?: XY[]
   applied: boolean
 }
 

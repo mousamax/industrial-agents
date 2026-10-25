@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MemoryChip } from '../../lib/buildingGraph'
 import type { SceneIndex } from '../../lib/sceneIndex'
+import { clearVoiceLog, logVoice } from '../chat/transcript'
 import { fetchVoiceSession } from './speech'
 
 export type VoicePhase = 'off' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error'
@@ -120,8 +121,12 @@ export function useLiveVoice(tools: VoiceTools) {
     if (label) setBusy(label)
     try {
       const args = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v ?? '')]))
-      return await (tools[name] as (p: Record<string, string>) => string | Promise<string>)(args)
+      logVoice(`tool ${name}(${JSON.stringify(args)})`)
+      const answer = await (tools[name] as (p: Record<string, string>) => string | Promise<string>)(args)
+      logVoice(`  ← ${answer}`)
+      return answer
     } catch (e) {
+      logVoice(`  ← ERROR ${e instanceof Error ? e.message : String(e)}`)
       return `That did not work: ${e instanceof Error ? e.message : String(e)}`
     } finally {
       if (label) setBusy(null)
@@ -142,6 +147,7 @@ export function useLiveVoice(tools: VoiceTools) {
       setUserCaption('')
       setAgentCaption('')
       setInterrupted(false)
+      clearVoiceLog()
       try {
         // Ask for the microphone first, so a denied permission is a clear message, not a dead session.
         const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -158,6 +164,7 @@ export function useLiveVoice(tools: VoiceTools) {
           },
           overrides: { asr: { keywords: ctx.keywords } },
           onMessage: ({ role, message }) => {
+            logVoice(`${role === 'user' ? 'heard' : 'voice agent'}: ${message}`)
             if (role === 'user') {
               setUserCaption(message)
               setLastSpeaker('user')
@@ -200,7 +207,10 @@ export function useLiveVoice(tools: VoiceTools) {
           },
           onAgentResponseCorrection: ({ corrected_agent_response }) =>
             setAgentCaption(spoken(corrected_agent_response).replace(/(\.\.\.|…)?$/, '…')),
-          onError: (message) => setError(message),
+          onError: (message) => {
+            logVoice(`ERROR ${message}`)
+            setError(message)
+          },
           onDisconnect: (details) => {
             clearTimeout(volumeTimer.current)
             setInterrupted(false)

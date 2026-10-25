@@ -26,6 +26,8 @@ import { parseOutput, resolveMessage, toolEffect, type RouteDirection, type Tool
 
 type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v)
+const isXY = (v: unknown): v is [number, number] =>
+  Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number'
 
 /** Tools whose result is a walk between places. */
 const isRouteTool = (name: string) => name === 'route' || name === 'walk_directions'
@@ -151,6 +153,61 @@ export function extractLiveTurn(
 
   if (!isReady || !index) {
     return { trace, prose: cleanBody || undefined }
+  }
+
+  // 0. `add_wall`: a new wall splitting a room in half, drawn on the map from end to end
+  const wallTool = [...toolRecords].reverse().find((t) => t.name === 'add_wall' && isRec(t.data.wall))
+  if (wallTool) {
+    const data = wallTool.data
+    const w = data.wall as Rec
+    const ends = Array.isArray(w.ends) ? (w.ends as unknown[]).filter(isXY) : []
+    const floorId = typeof w.floor_id === 'string' ? w.floor_id : (index.floors[0]?.id ?? '')
+    const halves = Array.isArray(data.halves) ? data.halves.filter(isRec) : []
+    const room = typeof data.split === 'string' ? data.split : 'the room'
+    const lengthM = typeof data.wall_length_m === 'number' ? data.wall_length_m : 0
+    const isDone = data.status === 'done'
+    const isProposed = typeof data.status === 'string' && data.status.startsWith('proposed')
+    const highlightIds = Array.isArray(data.highlight)
+      ? data.highlight.filter((x): x is string => typeof x === 'string' && index.spaceById.has(x))
+      : []
+    const halfNames = halves.map((h) => String(h.name ?? ''))
+    return {
+      trace,
+      alreadyApplied: isDone,
+      result: {
+        kind: 'edit',
+        buildingId,
+        buildingName,
+        title: `New wall · ${floorId ? floorNameOf(index, floorId) : buildingName}`,
+        sub: `${room} split in half · ${lengthM} m wall`,
+        understood: cleanBody || `${room} split into ${halfNames.join(' and ')}.`,
+        stats: halves.map((h) => ({
+          n: `${String(h.area_m2 ?? '?')} m²`,
+          label: `${String(h.name ?? 'half')}${h.note ? ' · no door yet' : ''}`,
+        })),
+        note: isProposed ? 'Proposed by the agent — confirm to build the wall in the building session.' : undefined,
+        floors: floorId ? [floorId] : [],
+        focusFloor: floorId,
+        ghostDoors:
+          ends.length === 2
+            ? [
+                {
+                  floorId,
+                  pos: [(ends[0][0] + ends[1][0]) / 2, (ends[0][1] + ends[1][1]) / 2],
+                  vertical: false,
+                  widthM: lengthM,
+                  wall: [ends[0], ends[1]],
+                },
+              ]
+            : [],
+        focusIds: highlightIds.length ? highlightIds : null,
+        confirm: 'Build the wall',
+        confirmPrompt: 'Yes, please build the wall.',
+        applied: typeof data.change === 'string' ? data.change : 'Wall added to the building plan.',
+        undo: 'Undo',
+        say: cleanBody || undefined,
+      },
+    }
   }
 
   // 1. Check if `add_door` (one or a batch) or `what_if(add_door_between=...)` was called by the backend agent

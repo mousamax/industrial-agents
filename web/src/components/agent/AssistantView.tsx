@@ -9,6 +9,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ClipboardCopy,
   CircleDot,
   CornerUpLeft,
   CornerUpRight,
@@ -278,6 +279,7 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
     listenText,
     onOpenBuildingPicker,
     onReset,
+    onCopyTranscript,
     onSubmit,
     onRunScenario,
     onPickOption,
@@ -473,6 +475,7 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
             <ChevronDown className="size-4 text-ink-soft" aria-hidden />
           </button>
           <div className="flex items-center gap-2">
+            {!isHome && onCopyTranscript && <CopyTranscriptButton onCopy={onCopyTranscript} />}
             {!isHome && (
               <button
                 type="button"
@@ -803,5 +806,31 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
         </div>
       )}
     </div>
+  )
+}
+
+/** Copies the conversation with every tool call, for debugging; a tick for a moment once it is on the clipboard. */
+function CopyTranscriptButton({ onCopy }: { onCopy: () => Promise<boolean> }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  useEffect(() => {
+    if (state === 'idle') return
+    const t = window.setTimeout(() => setState('idle'), 1800)
+    return () => window.clearTimeout(t)
+  }, [state])
+  const label = state === 'copied' ? 'Transcript copied' : state === 'failed' ? 'Copy failed' : 'Copy transcript'
+  return (
+    <button
+      type="button"
+      onClick={() => void onCopy().then((ok) => setState(ok ? 'copied' : 'failed'))}
+      aria-label={label}
+      title={label}
+      className={clsx('grid size-12 place-items-center rounded-full', GLASS)}
+    >
+      {state === 'copied' ? (
+        <Check className="size-[18px] text-[#137333]" aria-hidden />
+      ) : (
+        <ClipboardCopy className={clsx('size-[18px]', state === 'failed' && 'text-[#b3261e]')} aria-hidden />
+      )}
+    </button>
   )
 }
