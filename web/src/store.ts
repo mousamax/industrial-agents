@@ -36,6 +36,17 @@ export interface View3DIntent {
   link: { from: string; to: string; label: string | null; labelAt: 'mid' | 'to' } | null
 }
 
+/** A small pill on a room (2D map): its bookings while the calendar connects, its role in a planned event. */
+export interface RoomChip {
+  id: string
+  text: string
+  tone: 'event' | 'main' | 'plan' | 'service' | 'busy' | 'booked'
+  /** The chip takes the place of the room's own label (it names the room itself). */
+  replacesLabel?: boolean
+  /** A second, smaller line under the text (the chip then names the room on its first line). */
+  sub?: string
+}
+
 export interface MapInsets {
   top: number
   right: number
@@ -78,6 +89,8 @@ interface AppState {
   pendingPrompt: string | null
   /** How much of the route is drawn (0..1) while an answer draws it in; null draws it the usual way. */
   routeReveal: number | null
+  /** Pills on rooms (the calendar demo); empty draws none. */
+  roomChips: RoomChip[]
 
   loadBuildings: () => Promise<void>
   loadBuilding: (id: string) => Promise<void>
@@ -111,6 +124,7 @@ interface AppState {
   ask: (text: string) => void
   consumePrompt: () => string | null
   setRouteReveal: (frac: number | null) => void
+  setRoomChips: (chips: RoomChip[]) => void
 }
 
 const DEFAULT_BUILDING = 'proc-factory-dev-003'
@@ -152,6 +166,7 @@ export const useApp = create<AppState>((set, get) => ({
   focus: { ids: [], nonce: 0 },
   pendingPrompt: null,
   routeReveal: null,
+  roomChips: [],
 
   loadBuildings: async () => {
     try {
@@ -305,6 +320,7 @@ export const useApp = create<AppState>((set, get) => ({
     return text
   },
   setRouteReveal: (routeReveal) => set({ routeReveal }),
+  setRoomChips: (roomChips) => set({ roomChips }),
 }))
 
 export const initialBuildingId = () => new URL(window.location.href).searchParams.get('b') ?? DEFAULT_BUILDING

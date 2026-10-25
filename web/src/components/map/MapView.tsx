@@ -44,6 +44,8 @@ import {
   SelectedOutline,
   SelectedPin,
   SurroundingsLayer,
+  RoomChips,
+  ChipFills,
 } from './layers'
 import { useSurroundings } from './surroundings'
 import { MapControls } from './MapControls'
@@ -160,6 +162,8 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
   const affectedIds = useApp((s) => s.affectedIds)
   const ghostDoors = useApp((s) => s.ghostDoors)
   const walkMarker = useApp((s) => s.walkMarker)
+  const roomChips = useApp((s) => s.roomChips)
+  const chipLabels = useMemo(() => roomChips.filter((c) => c.replacesLabel).map((c) => c.id), [roomChips])
   const mapInsets = useApp((s) => s.mapInsets)
   const surroundings = useSurroundings(scene?.id)
   const surroundingsRef = useRef(surroundings)
@@ -1183,6 +1187,7 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
               <Footprints geo={geo} visible={assetLevel > 0} />
               <ClosedFill geo={geo} index={index} closedIds={closedIds} />
               <AffectedFill geo={geo} ids={affectedIds} />
+              {roomChips.length > 0 && <ChipFills geo={geo} chips={roomChips} />}
               <HighlightFill geo={geo} ids={hl.spaces} />
               {sel?.space && <SelectedOutline space={sel.space} />}
               {drawnRoute && (
@@ -1191,7 +1196,8 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
               {ghostDoors.map((door, i) => (
                 <GhostDoorLayer key={i} door={door} floorId={geo.floorId} />
               ))}
-              <Labels geo={geo} k={zoomK} skipId={sel?.space?.id ?? null} />
+              <Labels geo={geo} k={zoomK} skipId={sel?.space?.id ?? null} hideIds={chipLabels} />
+              {roomChips.length > 0 && <RoomChips geo={geo} chips={roomChips} />}
               <AssetDots geo={geo} level={assetLevel} />
               <HighlightDots points={hl.dots} />
               {route && (

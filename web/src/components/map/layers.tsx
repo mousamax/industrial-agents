@@ -3,7 +3,7 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ShowRoute } from '../../api/types'
 import type { SceneIndex } from '../../lib/sceneIndex'
-import type { GhostDoorState } from '../../store'
+import type { GhostDoorState, RoomChip } from '../../store'
 import { LINE_H, labelFor, routeOnFloor, showsPoi } from './derive'
 import { At, FloorChip, Pin, PoiBadge, StartDot } from './markers'
 import { TONES, TONE_FILL, toSvg, type FloorGeo, type LowerFloor, type Pt, type SpaceGeo } from './geometry'
@@ -107,17 +107,28 @@ function LabelText({ lines, y0, weight = 500, fill = 'var(--color-map-label)', s
   )
 }
 
-export const Labels = memo(function Labels({ geo, k, skipId }: { geo: FloorGeo; k: number; skipId: string | null }) {
+export const Labels = memo(function Labels({
+  geo,
+  k,
+  skipId,
+  hideIds,
+}: {
+  geo: FloorGeo
+  k: number
+  skipId: string | null
+  hideIds?: string[]
+}) {
   const items = useMemo(() => {
     const out: { s: SpaceGeo; poi: boolean; label: string[] | null }[] = []
+    const hidden = new Set(hideIds)
     for (const s of geo.spaces) {
-      if (s.id === skipId) continue
+      if (s.id === skipId || hidden.has(s.id)) continue
       const poi = showsPoi(s, k)
       const label = labelFor(s, k, poi)
       if (poi || label) out.push({ s, poi, label })
     }
     return out
-  }, [geo, k, skipId])
+  }, [geo, k, skipId, hideIds])
   return (
     <g pointerEvents="none">
       {items.map(({ s, poi, label }) => (
@@ -370,6 +381,74 @@ export function RouteMarkers({
           <FloorChip text={c.text} floorId={c.floorId} />
         </At>
       ))}
+    </g>
+  )
+}
+
+// ---------- room chips (calendar demo) ----------
+
+const CHIP_TONE: Record<RoomChip['tone'], { fill: string; text: string }> = {
+  event: { fill: '#ffffff', text: 'var(--color-ink)' },
+  main: { fill: 'var(--color-sun)', text: 'var(--color-accent)' },
+  plan: { fill: '#ffffff', text: '#9a4a12' },
+  service: { fill: '#ffffff', text: 'var(--color-sky)' },
+  busy: { fill: '#ffffff', text: 'var(--color-rose)' },
+  booked: { fill: 'var(--color-mint)', text: '#ffffff' },
+}
+
+/** Soft fills under chipped rooms, strongest for the main room; no outlines. Drawn below labels. */
+const CHIP_FILL: Partial<Record<RoomChip['tone'], { color: string; opacity: number }>> = {
+  main: { color: 'var(--color-sun)', opacity: 0.38 },
+  plan: { color: 'var(--color-sun)', opacity: 0.16 },
+  booked: { color: 'var(--color-mint)', opacity: 0.22 },
+  busy: { color: 'var(--color-ink-soft)', opacity: 0.1 },
+}
+
+export function ChipFills({ geo, chips }: { geo: FloorGeo; chips: RoomChip[] }) {
+  return (
+    <g pointerEvents="none">
+      {chips.map((c) => {
+        const s = geo.byId.get(c.id)
+        const f = CHIP_FILL[c.tone]
+        return s && f ? <path key={c.id} d={s.d} style={{ fill: f.color }} fillOpacity={f.opacity} /> : null
+      })}
+    </g>
+  )
+}
+
+/** One pill per room on this floor: in the label's place when it names the room, else just under the label. */
+export function RoomChips({ geo, chips }: { geo: FloorGeo; chips: RoomChip[] }) {
+  return (
+    <g pointerEvents="none">
+      {chips.map((c) => {
+        const s = geo.byId.get(c.id)
+        if (!s) return null
+        const t = CHIP_TONE[c.tone]
+        const w = Math.max(c.text.length * 6.6, (c.sub?.length ?? 0) * 6.2) + 20
+        const h = c.sub ? 36 : 22
+        return (
+          <At key={c.id} p={s.anchor}>
+            <g className="anim-spring" transform={c.replacesLabel ? undefined : 'translate(0 16)'}>
+              <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={11} style={{ fill: t.fill }}
+                filter="drop-shadow(0 2px 5px rgb(43 38 64 / 0.16))" />
+              {c.sub ? (
+                <>
+                  <text textAnchor="middle" dy={-3} fontSize={11} fontWeight={500} style={{ fill: 'var(--color-ink-soft)' }}>
+                    {c.text}
+                  </text>
+                  <text textAnchor="middle" dy={12} fontSize={12} fontWeight={700} style={{ fill: t.text }}>
+                    {c.sub}
+                  </text>
+                </>
+              ) : (
+                <text textAnchor="middle" dy={4} fontSize={12} fontWeight={600} style={{ fill: t.text }}>
+                  {c.text}
+                </text>
+              )}
+            </g>
+          </At>
+        )
+      })}
     </g>
   )
 }

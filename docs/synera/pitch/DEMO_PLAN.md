@@ -52,6 +52,10 @@ from the entrance, and no clash with other events that day.
 
 ### Work split
 
+**Built (12:15):** `?demo=fm` runs 2.1 → 2.8 end to end (`web/src/components/onboard/CalendarConnect.tsx`).
+`?demo=calendar` starts at 2.4 to rehearse the calendar part alone. Still open: the reconstruction video
+between "Build it" and the map (2.2). Restart the API before each run so the request is waiting again.
+
 **Maximilian (D, `web/`): the click path, 2.1–2.8**
 - A demo entry point for scene 2, e.g. `?demo=fm`, so we never type URLs on stage.
 - 2.1: a chat composer with 6 image thumbnails pre-attached. Enter plays the video (2.2). When the video

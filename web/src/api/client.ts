@@ -36,3 +36,88 @@ export async function uploadPlans(files: File[], name: string): Promise<Drafted>
   }
   return res.json() as Promise<Drafted>
 }
+
+// ---- room calendar (demo data in the shape of Outlook/Google room resources; app/api/main.py) ----
+
+export interface CalendarEvent {
+  event: string
+  room: string
+  room_id: string
+  floor: string
+  date: string
+  weekday: string
+  from?: string
+  until?: string
+  when?: string
+  status: string
+  organizer: string
+  about: string
+}
+
+export interface BookingRequest {
+  id: string
+  title: string
+  from: string
+  received: string
+  weekday: string
+  date: string
+  start: string
+  end: string
+  people: number
+  teams?: number
+  needs: string[]
+  message: string
+}
+
+export interface BuildingCalendar {
+  connected: boolean
+  today: string
+  now: string
+  rooms: Record<string, { room: string; floor_id: string; seats: number; equipment: string[] }>
+  events: CalendarEvent[]
+  requests: BookingRequest[]
+}
+
+export interface PlanRow {
+  role: 'main' | 'breakout' | 'catering' | 'kitchen' | 'toilets'
+  room_id: string
+  room: string
+  floor: string
+  why: string
+  seats?: number
+  teams?: number
+  walk_m?: number
+}
+
+export interface EventPlan {
+  request: {
+    title: string | null
+    date: string
+    weekday: string
+    from: string
+    until: string
+    people: number
+    teams?: number
+    needs?: string[]
+  }
+  plan: PlanRow[]
+  checked?: string[]
+  avoided: { room: string; room_id: string; why: string }[]
+  note?: string
+  highlight?: string[]
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${path}`)
+  return res.json() as Promise<T>
+}
+
+const cal = (id: string) => `/buildings/${encodeURIComponent(id)}/calendar`
+export const fetchCalendar = (id: string) => get<BuildingCalendar>(cal(id))
+export const planRequest = (id: string, requestId: string) => post<EventPlan>(`${cal(id)}/plan`, { request_id: requestId })
+export const bookPlan = (id: string, plan: EventPlan) => post<{ booked: number }>(`${cal(id)}/book`, plan)
