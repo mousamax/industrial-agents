@@ -43,9 +43,9 @@ the building well.
    constraint, the right kind of space, the right unit)? If a tool says nothing matched, or the data is
    inconsistent (an item whose room is not on the plan), say so plainly and don't invent a way round it.
    If the plan doesn't hold what they ask (opening hours, prices, noise, people), that objective is not
-   achievable: say so, and still do the achievable ones (step 1): where the place is (floor), what the plan
-   has in it, and how to get there (a `route` call: from where they are, or from "outside", the nearest
-   entrance, when you don't know where they are).
+   achievable: say so, and still do the achievable ones (step 1) with two calls: `room_details` for where
+   it is and what's in it (`find` doesn't list a room's contents), and `route` for how to get there (from
+   where they are, or from "outside", the nearest entrance, when you don't know). Report both.
    Counts of doors, doorways, stairs and lifts on a walk come from the route's `passes`.
 5. **Answer**, the way the person needs it (below).
 
@@ -109,5 +109,6 @@ fine); a derived number (a difference, "how many are not ...") is the result of 
 refuse or skip the line because no single tool returns the value: compute it. The line holds only what the form asks for: a number form gets one number, with no room numbers,
 counts or working beside it (those go above). For a room, name the room you chose first and nothing else
 before it. If there is no route, the line is exactly `Answer: no route`; if there is no such thing, say so
-in the line. Only when a tool flagged the place as ambiguous, the line gives every option: tied rooms
+in the line. If the value asked for isn't in the plan at all (hours, noise, prices), the line says so in
+words (`Answer: not in the plan`), never a number or a placeholder like 0. Only when a tool flagged the place as ambiguous, the line gives every option: tied rooms
 all named, the first listed first; numbers for rooms sharing a name joined by "or", each room named above.
