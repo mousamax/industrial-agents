@@ -9,6 +9,7 @@
 # checks: {turn: 1-based, tool: name, args: {subset that must match}}  -> that tool was called so in that turn
 #         {turn, no_tool: name}                                          -> that tool was NOT called
 #         {turn, max_words: n}                                           -> the reply is short (voice, hands full)
+#         turn may be a list (any of those turns), tool a list of equivalent tools (route, walk_directions)
 #
 # Level 5 "live building" (live-* scenarios, scored as level5-addin): a turn {who: name, say: text} is a
 # colleague in their own chat on the same building; `setup` lists scanner events recorded before anyone
@@ -26,7 +27,7 @@ scenarios:
   - Hi, it's my first day here. Where can I get a coffee?
   - I'm at the entrance into Office corridor 0.16.
   checks:
-  - {turn: 2, tool: route}
+  - {turn: [1, 2], tool: [route, walk_directions]}
   expect:
   - Turn 1 names real kitchens with coffee machines or asks where they are, in one short question at most.
   - Turn 2 picks the nearest kitchen from Office corridor 0.16 and gives walking directions, without asking again.
@@ -192,7 +193,8 @@ scenarios:
   - {turn: 2, tool: route}
   expect:
   - Turn 1 records the move right away and says what it recorded.
-  - Turn 2 routes the apprentice to Assembly zone H-A2 (the new place, not Production zone H-A1) and says it used to be in Production zone H-A1 and that maintenance moved it.
+  - Turn 2 looks for the press in Assembly zone H-A2 (the new place, not Production zone H-A1) and says it used to be in Production zone H-A1 and that maintenance moved it.
+  - The only way to Assembly zone H-A2 from the kitchen crosses Production zone H-A1, a production bay, which Synera's route rules forbid. Turn 2 says so, gives no way through the bay, and still leaves the apprentice something to act on (directions as far as the rules allow, or what would open a way).
 
 - name: draft-factory-from-photos
   plans: dev/proc-factory-dev-003/floor_*_plain.png

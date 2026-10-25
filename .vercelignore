@@ -1,0 +1,6 @@
+# Vercel serves only the frontend in web/; the Python backend runs on Render.
+/*
+!/web
+/web/node_modules
+/web/dist
+/web/video

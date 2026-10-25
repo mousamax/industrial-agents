@@ -1,6 +1,6 @@
 # Team scoreboard
 
-Generated 2026-10-25T09:12:16+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
+Generated 2026-10-25T09:24:56+00:00 by Magnus Saurbier with `uv run ia scoreboard`. Don't edit by hand: change `scoreboard.yaml` (rows, stakes, manual status) or make a row's eval pass.
 
 **Team: 88.4 / 100 estimated points.** Stakes are our guess at Synera's split.
 
@@ -37,7 +37,7 @@ Generated 2026-10-25T09:12:16+00:00 by Magnus Saurbier with `uv run ia scoreboar
 | Health | **agent-tools**: Agent tools vs every golden answer, no model | Mousa | ██████████ 100% (139/139 tests) | health | – |
 | Health | **todo-open-questions**: Open questions to settle with a teammate: a strict-xfail reminder per question in tests/building/test_todo.py (none open now) | Magnus | ██████████ 100% (1/1 tests) | health | – |
 
-Agent suites last run: benchmark 2026-10-24T22:06:42+00:00 by mousamax (default); warmup 2026-10-25T08:44:21+00:00 by Magnus Saurbier (default); reworded 2026-10-24T18:42:51+00:00 by mousamax (default); scenarios 2026-10-24T22:10:03+00:00 by mousamax (default); unseen 2026-10-24T18:39:40+00:00 by mousamax (default); holdout 2026-10-25T08:47:13+00:00 by Magnus Saurbier (default)
+Agent suites last run: benchmark 2026-10-25T06:28:32+00:00 by mousamax (default); warmup 2026-10-25T07:33:25+00:00 by mousamax (default); reworded 2026-10-25T07:06:45+00:00 by mousamax (default); scenarios 2026-10-25T07:40:02+00:00 by mousamax (default); unseen 2026-10-25T07:07:07+00:00 by mousamax (default); holdout 2026-10-25T07:30:39+00:00 by mousamax (default)
 
 How a row moves: write or fix the failing eval first (red), then the code (green), then
 `uv run ia scoreboard` and commit SCOREBOARD.md with your change.

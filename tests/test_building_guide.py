@@ -536,8 +536,8 @@ def test_no_route_names_every_restriction_that_blocks_it() -> None:
 
 def test_a_machine_moved_behind_a_production_bay_gets_no_route_and_a_next_step() -> None:
     """Scenario live-moved-machine: the drill press moves from Production zone H-A1 into Assembly zone H-A2.
-    From the office wing the only way in crosses H-A1, so there is no route by the bay rule (scored: no
-    route), but a person being guided hears how far they can go and whom to ask."""
+    From the office wing the only way in crosses H-A1, so there is no route by the bay rule, but the result
+    says how far the rules let them go (into the bay on the way), so the person still gets a next step."""
     from app.agents.building_guide.tools import move_item
 
     deps = Deps.load(FACTORY, detail="walk")
@@ -545,16 +545,12 @@ def test_a_machine_moved_behind_a_production_bay_gets_no_route_and_a_next_step()
     r = call(route, ctx(deps), "Kitchen 0.28", "Drill press H-A1")
     assert r["reachable"] is False
     assert r["stops"][-1].startswith("Assembly zone H-A2") and "Production zone H-A1" in r["blocked_by"][0]
-    step = r["next_step"]
-    assert step["closest_by_the_rules"].startswith("Production zone H-A1")
-    assert step["bay_borders"].startswith("Assembly zone H-A2") and step["walk_m"] > 0
+    (step,) = r["as_far_as_the_rules_allow"]
+    assert step["place"].startswith("Production zone H-A1") and "production bay" in step["beyond_it"]
+    assert step["route_there"]["length_m"] > 0
     # ending in the bay itself is a route, and so is leaving the bay you stand in
     assert call(route, ctx(deps), "Kitchen 0.28", "Production zone H-A1")["reachable"] is True
     assert call(route, ctx(deps), "Assembly zone H-A2", "Main aisle H-B1")["reachable"] is True
-    # scored runs (detail="rooms") keep the plain no-route answer
-    scored = Deps.load(FACTORY)
-    call(move_item, ctx(scored), "Drill press H-A1", "Assembly zone H-A2")
-    assert "next_step" not in call(route, ctx(scored), "Kitchen 0.28", "Drill press H-A1")
 
 
 def test_no_route_says_when_places_are_not_connected() -> None:
@@ -847,3 +843,34 @@ def test_highlight_rooms_is_offered_only_to_people_with_a_map():
 
     assert "highlight_rooms" in asyncio.run(offered("walk"))  # app and voice chats
     assert "highlight_rooms" not in asyncio.run(offered("rooms"))  # benchmark
+
+
+def test_an_ambiguous_place_still_gets_one_number_in_the_answer_line():
+    """The judges' scorer wants exactly one number ("hedging doesn't earn credit"), so "A or B" is retried
+    even after a tool flagged the place as ambiguous."""
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+    from app.agents.building_guide.agent import _answer_line_is_committed_and_grounded
+
+    flagged = ModelRequest(
+        parts=[ToolReturnPart("find", "Ambiguous: 2 rooms are called 'Kitchen': 28.0 23.9", "c1")]
+    )
+    c = SimpleNamespace(
+        prompt="How big is the kitchen? Finish with a line 'Answer: <number>'.",
+        retry=0,
+        max_retries=4,
+        messages=[flagged],
+        deps=Deps.load(FACTORY),
+    )
+    with pytest.raises(ModelRetry, match="commit to the most plausible"):
+        _answer_line_is_committed_and_grounded(c, "Two kitchens fit.\nAnswer: 28.0 or 23.9")
+    assert _answer_line_is_committed_and_grounded(c, "I took the first.\nAnswer: 28.0").endswith("28.0")
+
+
+def test_a_blocked_route_names_how_far_the_rules_allow_and_gives_no_way_through():
+    deps = Deps.load(FACTORY)
+    blocked = call(route, ctx(deps), "Kitchen 0.28", "Assembly zone H-A2")  # only via Production zone H-A1
+    assert blocked["reachable"] is False and "legs" not in blocked
+    edge = blocked["as_far_as_the_rules_allow"][0]
+    assert "Production zone H-A1" in edge["place"] and "production bay" in edge["beyond_it"]
+    assert call(route, ctx(deps), "Kitchen 0.28", edge["id"])["reachable"]  # a valid route takes them there
