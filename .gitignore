@@ -16,3 +16,5 @@ agent_output/
 synera-kit/agent_output/
 .vscode/
 .cache/
+# Pitch video recordings (large media, not part of the code)
+pitch_video/
