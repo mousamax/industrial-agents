@@ -19,6 +19,7 @@ import ast
 import dataclasses
 import difflib
 import functools
+import itertools
 import json
 import math
 import operator
@@ -810,10 +811,31 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
                 "(width, steps, closures, production bays) gives a route"
             )
         else:
-            causes.append(
-                "not connected: no door, stairs or lift joins these places on the plan, under any rule"
-            )
+            causes.append(_not_connected(b, stops))
     return causes
+
+
+def _not_connected(b: Building, stops: list[str]) -> str:
+    """What the plan is missing between stops no rule can join: a room with no door at all, a floor no stairs
+    or lift stops at, or else how small the cut-off part is. Facts from the plan, so nobody has to guess."""
+    free = _BaysPassable(b, Constraints())
+    for a, z in itertools.pairwise(stops):
+        if z in free.reachable(a):
+            continue
+        for sid in (z, a):
+            if sid != OUTSIDE and not b.openings_of(sid) and not b.connectors_at(sid):
+                return (f"not connected: {_label(b, sid)} has no door, opening, stairs or lift at all on the plan, "
+                        "so nothing leads into it (a gap in the plan)")  # fmt: skip
+        part = free.reachable(z) if z != OUTSIDE else free.reachable(a)
+        stopped = {fid for k in b.connectors.values() for fid, _ in k.stops}
+        floors = {b.spaces[s].floor_id for s in part if s in b.spaces}
+        if len(floors) == 1 and (fid := next(iter(floors))) not in stopped and len(b.floors) > 1:
+            levels = sorted(b.floors[f].level for f in stopped) or [None]
+            return (f"not connected: no stairs or lift stops at {b.floors[fid].name} (they reach level "
+                    f"{levels[0]} to {levels[-1]}), so nothing leads up or down to it (a gap in the plan)")  # fmt: skip
+        return (f"not connected: {_label(b, z)} is in a part of the plan of {len(part)} spaces that no door, "
+                f"stairs or lift joins to {_label(b, a)} (a gap in the plan)")  # fmt: skip
+    return "not connected: no door, stairs or lift joins these places on the plan, under any rule"
 
 
 def route(
