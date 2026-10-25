@@ -16,6 +16,8 @@ const MAX_LIFT = 0.03
 
 export interface FloorGeometry {
   slab: THREE.BufferGeometry
+  /** Stairwell floors, drawn see-through so a route can be followed down and up the stairs through the floors. */
+  see: THREE.BufferGeometry
   /** Unit-height walls (y in 0..1, scaled by the mesh), with an `aOff` attribute for zoom-dependent thickness. */
   walls: THREE.BufferGeometry
   bbox: BBox | null
@@ -157,7 +159,8 @@ export function buildFloorGeometry(index: SceneIndex, floorId: string): FloorGeo
     }
   }
 
-  const slab = new Tris()
+  const solid = new Tris()
+  const see = new Tris()
   const walls = new Tris()
   const sideCol = new THREE.Color(SLAB_SIDE)
   const wallTop = new THREE.Color(WALL_TOP)
@@ -169,6 +172,7 @@ export function buildFloorGeometry(index: SceneIndex, floorId: string): FloorGeo
     const lift = 0.002 + MAX_LIFT * (1 - (Math.log(areas[i]) - lmin) / Math.max(lmax - lmin, 1e-6))
     liftById.set(s.id, lift)
     const top = new THREE.Color(TONE_HEX[toneOf(s)])
+    const slab = s.type.toLowerCase() === 'stair' || /stair/.test(s.room_type.toLowerCase()) ? see : solid
     for (const [x, y] of poly) {
       if (x < minX) minX = x
       if (x > maxX) maxX = x
@@ -228,7 +232,8 @@ export function buildFloorGeometry(index: SceneIndex, floorId: string): FloorGeo
   })
 
   return {
-    slab: slab.geometry(),
+    slab: solid.geometry(),
+    see: see.geometry(),
     walls: walls.geometry(),
     bbox: minX <= maxX ? { minX, minY, maxX, maxY } : null,
     liftById,

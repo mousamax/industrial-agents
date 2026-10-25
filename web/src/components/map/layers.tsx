@@ -291,11 +291,22 @@ function truncate(lines: Pt[][], frac: number): Pt[][] {
 
 const DRAW_MS = 1100
 
-/** Route lines (world layer) — drawn in once per new route. */
-export function RouteLines({ route, floorId, index }: { route: ShowRoute; floorId: string; index: SceneIndex }) {
+/** Route lines (world layer) — drawn in once per new route, unless `instant` (the caller draws it in itself). */
+export function RouteLines({
+  route,
+  floorId,
+  index,
+  instant = false,
+}: {
+  route: ShowRoute
+  floorId: string
+  index: SceneIndex
+  instant?: boolean
+}) {
   const drawing = useMemo(() => routeOnFloor(route, floorId, index), [route, floorId, index])
   const [prog, setProg] = useState({ route, frac: 0 })
   useEffect(() => {
+    if (instant) return
     let raf = 0
     const t0 = performance.now()
     const tick = (now: number) => {
@@ -305,8 +316,8 @@ export function RouteLines({ route, floorId, index }: { route: ShowRoute; floorI
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [route])
-  const frac = prog.route === route ? prog.frac : 0
+  }, [route, instant])
+  const frac = instant ? 1 : prog.route === route ? prog.frac : 0
   const lines = truncate(drawing.lines, frac)
   const pts = (l: Pt[]) => l.map((p) => `${p[0]},${p[1]}`).join(' ')
   return (

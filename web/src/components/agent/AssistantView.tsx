@@ -295,10 +295,13 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
     onForgetOne,
     onArrive,
     voiceBar,
+    drawing = false,
   } = props
 
   const [showSteps, setShowSteps] = useState(false)
   const [arrived, setArrived] = useState(false)
+  // Show mode: "Let's go" waits for the route to finish drawing in, then pops up.
+  const routeReveal = useApp((s) => s.routeReveal)
   useEffect(() => {
     setShowSteps(false)
     setArrived(false)
@@ -488,7 +491,14 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
       {showPanel && (
         <section
           aria-label="Conversation"
-          className={clsx(panelPos, GLASS, 'anim-spring z-20 flex flex-col overflow-hidden rounded-[28px]')}
+          className={clsx(
+            panelPos,
+            GLASS,
+            'anim-spring z-20 flex flex-col overflow-hidden rounded-[28px]',
+            // Show mode on a phone: the card slides down out of the way while the route draws, then comes back.
+            phone && 'transition-[translate,opacity] duration-500 ease-[cubic-bezier(.22,1,.36,1)]',
+            phone && drawing && 'pointer-events-none translate-y-[calc(100%+120px)] opacity-0',
+          )}
         >
           <div ref={threadRef} className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 select-text">
             {history.map((t, i) => (
@@ -599,7 +609,9 @@ export function AssistantView(props: ViewProps & { phone: boolean; history?: Pas
 
                   {result.kind === 'route' && steps.length > 0 && (
                     <>
-                      <PrimaryButton onClick={onStartWalk}>Let’s go</PrimaryButton>
+                      <div className={drawing ? 'invisible' : routeReveal === null ? undefined : 'show-pop'}>
+                        <PrimaryButton onClick={onStartWalk}>Let’s go</PrimaryButton>
+                      </div>
                       {showSteps && (
                         <ol className="flex flex-col">
                           {steps.map((st, i) => (

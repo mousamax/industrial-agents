@@ -72,6 +72,29 @@ svg text { text-rendering: geometricPrecision; }
 .chip-row[data-fade-left] { --fade-l: 28px; }
 .chip-row[data-fade-right] { --fade-r: 36px; }
 
+/* Show mode (src/show): the greyed welcome page behind a pulsing mic, and "Let's go" popping in. */
+.show-intro {
+  background: rgb(243 242 248 / 0.45);
+  backdrop-filter: grayscale(1) blur(3px) brightness(0.92);
+  -webkit-backdrop-filter: grayscale(1) blur(3px) brightness(0.92);
+  transition: opacity 280ms ease, backdrop-filter 280ms ease;
+}
+.show-intro[data-leaving] { opacity: 0; }
+.show-mic { animation: show-breathe 1.8s ease-in-out infinite; }
+.show-mic-core {
+  background: radial-gradient(circle at 35% 30%, #ffb07a 0%, var(--color-sun) 45%, #ff6b3d 100%);
+  box-shadow: 0 0 0 10px rgb(255 138 61 / 0.18), 0 0 60px 18px rgb(255 138 61 / 0.45), 0 18px 40px rgb(255 107 61 / 0.4);
+}
+.show-halo {
+  position: absolute; inset: 0; border-radius: 9999px;
+  background: radial-gradient(circle, rgb(255 138 61 / 0.55) 0%, rgb(255 138 61 / 0.25) 55%, rgb(255 138 61 / 0) 72%);
+  animation: show-halo 1.8s cubic-bezier(.2,.6,.3,1) infinite;
+}
+.show-pop { animation: show-pop 420ms cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes show-breathe { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.06) } }
+@keyframes show-halo { 0% { transform: scale(1); opacity: .9 } 100% { transform: scale(2.6); opacity: 0 } }
+@keyframes show-pop { 0% { transform: scale(.85); opacity: 0 } 100% { transform: scale(1); opacity: 1 } }
+
 @keyframes ttyb-draw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
 @keyframes ttyb-pulse { 0% { transform: scale(.6); opacity: .9 } 100% { transform: scale(1.8); opacity: 0 } }
 @keyframes ttyb-spin { to { transform: rotate(360deg) } }

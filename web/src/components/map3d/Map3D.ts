@@ -58,6 +58,10 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
 
   // ---------- materials ----------
   const slabMat = flatMaterial(0, false)
+  // Stairwell floors (on every shown floor): a faint glass, so the stairs and a route on them read through floors.
+  const seeMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide,
+  })
   const wallMat = flatMaterial(0, true)
   const lowerMats: { slab: THREE.MeshBasicMaterial; wall: THREE.MeshBasicMaterial }[] = []
   const lowerMat = (depth: number) => {
@@ -75,6 +79,9 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   })
   const markLineMat = new THREE.MeshBasicMaterial({ vertexColors: true })
   const routeMat = new THREE.MeshBasicMaterial({ vertexColors: true })
+  const routeXrayMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false,
+  })
   // The link is seen through the floors in between (see buildLink).
   const linkFillMat = new THREE.MeshBasicMaterial({
     color: ROUTE, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
@@ -124,9 +131,11 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     const group = new THREE.Group()
     group.name = `floor:${id}`
     const slab = new THREE.Mesh(geo.slab, slabMat)
+    const see = new THREE.Mesh(geo.see, seeMat)
+    see.renderOrder = 1 // after the opaque floors, so what lies below shows through
     const walls = new THREE.Mesh(geo.walls, wallMat)
     walls.frustumCulled = false // the shader offsets vertices; the bounding sphere is close enough but not exact
-    group.add(slab, walls)
+    group.add(slab, see, walls)
     root.add(group)
     e = { geo, group, slab, walls }
     floors.set(id, e)
@@ -320,6 +329,11 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     const mesh = geo ? new THREE.Mesh(geo, routeMat) : null
     if (mesh) {
       mesh.renderOrder = 3
+      // The same line again, drawn last and through everything: where a wall hides the route it still shows,
+      // ghosted, so you always see where it goes.
+      const xray = new THREE.Mesh(geo!, routeXrayMat)
+      xray.renderOrder = 10
+      mesh.add(xray)
       root.add(mesh)
     }
     routeMesh = { mesh, k: view.k }
@@ -379,6 +393,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     disposeLink()
     for (const e of floors.values()) {
       e.geo.slab.dispose()
+      e.geo.see.dispose()
       e.geo.walls.dispose()
       e.group.removeFromParent()
     }
@@ -540,7 +555,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       raf = 0
       clearScene()
       surroundings?.dispose()
-      for (const m of [slabMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat, linkFillMat, linkLineMat]) m.dispose()
+      for (const m of [slabMat, seeMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat, routeXrayMat, linkFillMat, linkLineMat]) m.dispose()
       for (const l of lowerMats) {
         l.slab.dispose()
         l.wall.dispose()
