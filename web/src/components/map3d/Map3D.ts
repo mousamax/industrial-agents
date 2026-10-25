@@ -14,9 +14,9 @@ import { floorGeo, spaceAt, toSvg } from '../map/geometry'
 import { buildAssetLayer, type AssetLayer, type AssetSlot } from './assets'
 import { buildFloorGeometry, type FloorGeometry } from './floorMesh'
 import { buildLink, buildMarks, buildRoute, type FloorY, type SpaceMark } from './overlays'
-import { ACCENT, BG, ROUTE, LOWER_FADE_STEP, LOWER_SLAB, LOWER_WALL, flatMaterial } from './palette'
+import { ACCENT, BG, GHOST_DOOR, ROUTE, LOWER_FADE_STEP, LOWER_SLAB, LOWER_WALL, flatMaterial } from './palette'
 import { buildSurroundings, type SurroundingsMesh } from './surroundings3d'
-import type { Link3D, Map3DEngine, Map3DSettings, ScreenPoint, SurroundingFeature, View3D, XY } from './types'
+import type { GhostDoor3D, Link3D, Map3DEngine, Map3DSettings, ScreenPoint, SurroundingFeature, View3D, XY } from './types'
 import { DEFAULT_3D } from './devSettings'
 
 interface FloorEntry {
@@ -87,6 +87,12 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     color: ROUTE, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
   })
   const linkLineMat = new THREE.MeshBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false, transparent: true })
+  // A new door: a solid panel where it stands, plus the same panel ghosted through walls so it never hides.
+  const doorMat = new THREE.MeshBasicMaterial({ color: GHOST_DOOR, transparent: true, opacity: 0.9 })
+  const doorXrayMat = new THREE.MeshBasicMaterial({
+    color: GHOST_DOOR, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false,
+  })
+  const doorGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0) // unit box standing on y = 0
 
   // ---------- state ----------
   let index: SceneIndex | null = null
@@ -99,6 +105,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   let selection: { kind: 'space' | 'asset'; id: string } | null = null
   let route: ShowRoute | null = null
   let link: Link3D | null = null
+  let ghostDoor: GhostDoor3D | null = null
   let diag = 100 // building extent (m), for the far plane
   let surroundingFeatures: SurroundingFeature[] | null = null
   let surroundings: SurroundingsMesh | null = null
@@ -111,6 +118,13 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
   let routeMesh: { mesh: THREE.Mesh | null; k: number } | null = null
   let linkMesh: { group: THREE.Group; k: number } | null = null
   let linkDirty = true
+  const doorMesh = new THREE.Mesh(doorGeo, doorMat)
+  doorMesh.add(new THREE.Mesh(doorGeo, doorXrayMat))
+  doorMesh.children[0].renderOrder = 11
+  doorMesh.renderOrder = 4
+  doorMesh.visible = false
+  doorMesh.frustumCulled = false
+  root.add(doorMesh)
   let marksDirty = true
   let routeDirty = true
   let touched: AssetSlot[] = [] // asset instances currently tinted / lifted
@@ -359,6 +373,23 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
     linkMesh = { group, k: view.k }
   }
 
+  /** The door panel: as wide as the door, a bit taller and thicker than the wall it cuts, rising with the walls. */
+  function layoutDoor() {
+    doorMesh.visible = !!(index && ghostDoor && ghostDoor.floorId === floorId)
+    if (!ghostDoor || !doorMesh.visible) return
+    const rise = Math.max(0.02, smoothstep(0, WALL_RISE_DEG, view.pitchDeg))
+    const thick = Math.max(0.3, 6 / Math.max(view.k, 1e-6)) // at least ~6 px across when zoomed out
+    const [x, y] = ghostDoor.pos
+    doorMesh.position.set(x, selectedY() + 0.01, -y)
+    // Wall along scene y (vertical in 2D) runs along world Z; along scene x it runs along world X.
+    doorMesh.scale.set(
+      ghostDoor.vertical ? thick : ghostDoor.widthM,
+      settings.wallHeightM * rise + 0.05,
+      ghostDoor.vertical ? ghostDoor.widthM : thick,
+    )
+    doorMat.opacity = ghostDoor.applied ? 0.95 : 0.6
+  }
+
   const drift = (k0: number) => Math.abs(Math.log(view.k / k0)) > 0.18
 
   // ---------- render ----------
@@ -373,6 +404,7 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       if (routeDirty || (routeMesh && drift(routeMesh.k))) rebuildRoute()
       if (linkDirty || (linkMesh && drift(linkMesh.k))) rebuildLink()
     }
+    layoutDoor()
     const halfT = Math.max(0.05, 0.6 / Math.max(view.k, 1e-6))
     for (const m of [wallMat, ...lowerMats.map((l) => l.wall)]) m.userData.uniforms.uHalfT.value = halfT
     renderer.render(scene, camera)
@@ -489,6 +521,10 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       linkDirty = true
       requestRender()
     },
+    setGhostDoor(door) {
+      ghostDoor = door ? { ...door, pos: [door.pos[0], door.pos[1]] } : null
+      requestRender()
+    },
     setSurroundings(features) {
       if (features === surroundingFeatures) return
       surroundingFeatures = features
@@ -555,7 +591,8 @@ export function createMap3D(canvas: HTMLCanvasElement): Map3DEngine {
       raf = 0
       clearScene()
       surroundings?.dispose()
-      for (const m of [slabMat, seeMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat, routeXrayMat, linkFillMat, linkLineMat]) m.dispose()
+      for (const m of [slabMat, seeMat, wallMat, assetModelMat, assetBoxMat, markFillMat, markLineMat, routeMat, routeXrayMat, linkFillMat, linkLineMat, doorMat, doorXrayMat]) m.dispose()
+      doorGeo.dispose()
       for (const l of lowerMats) {
         l.slab.dispose()
         l.wall.dispose()

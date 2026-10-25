@@ -66,6 +66,15 @@ export interface Link3D {
   to: string
 }
 
+/** A door the agent proposes or added: `widthM` long, centred at `pos` on the wall two spaces share. */
+export interface GhostDoor3D {
+  floorId: string
+  pos: XY
+  vertical: boolean
+  widthM: number
+  applied: boolean
+}
+
 export interface Map3DEngine {
   /** Build (lazily, per floor) the meshes for a building. Call again when the building or scene changes. */
   setScene(index: SceneIndex): void
@@ -83,6 +92,8 @@ export interface Map3DEngine {
   setRoute(route: ShowRoute | null): void
   /** Light up both rooms on their own floors and join them, seen through the floors in between. */
   setLink(link: Link3D | null): void
+  /** Draw a new door as a panel in its wall (fainter while only proposed); null removes it. */
+  setGhostDoor(door: GhostDoor3D | null): void
   /** Streets, green and neighbouring buildings on the ground around the building; null removes them. */
   setSurroundings(features: SurroundingFeature[] | null): void
   /** What is under a container point (CSS px). Assets win over spaces. */

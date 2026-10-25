@@ -97,8 +97,17 @@ function pastTurns(messages: ChatMessage[]): PastTurn[] {
   return turns.slice(0, -1).filter((t) => t.user && t.reply)
 }
 
-/** Tools that change the drafted plan itself (Level 4): the map must reload the corrected building. */
-const PLAN_EDITS = new Set(['fix_draft', 'draft_building'])
+/** Tools that change the building (a new door, a moved item, an undo, a corrected draft): the map reloads the
+ *  plan from the server so it shows what routes now use. Mirrors CHANGES_STATE in building_guide/agent.py. */
+const PLAN_EDITS = new Set([
+  'add_door',
+  'move_item',
+  'set_closed',
+  'undo_last_change',
+  'draft_building',
+  'fix_draft',
+  'accept_guesses',
+])
 
 /** `?ui=classic` keeps the first agent-first layout (sidebar + Google palette) reachable for comparison. */
 const CLASSIC = new URLSearchParams(window.location.search).get('ui') === 'classic'

@@ -7,6 +7,7 @@ export const BG = '#f3f2f8' // --color-map-bg
 export const ACCENT = '#ff8a3d' // --color-accent
 export const ROUTE = '#ff8a3d' // --color-route
 export const ROUTE_CASING = '#ff6b5a' // --color-route-casing
+export const GHOST_DOOR = '#6e7bff' // --color-sky, like the 2D ghost door
 
 /** Slab fill per tone (index.css --color-map-*; outdoor matches TONE_FILL in map/geometry.ts). */
 export const TONE_HEX: Record<Tone, string> = {

@@ -91,7 +91,7 @@ export interface ScenarioResult {
   focusIds?: string[] | null
   closed?: string[]
   affected?: string[]
-  ghostDoor?: { floorId: string; pos: XY; vertical: boolean }
+  ghostDoor?: { floorId: string; pos: XY; vertical: boolean; widthM: number }
   stats?: { n: string; label: string }[]
   note?: string
   confirm?: string

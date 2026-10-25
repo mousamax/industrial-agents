@@ -200,7 +200,7 @@ export function AffectedFill({ geo, ids }: { geo: FloorGeo; ids: string[] }) {
 
 export function GhostDoorLayer({ door, floorId }: { door: GhostDoorState | null; floorId: string }) {
   if (!door || door.floorId !== floorId) return null
-  const hl = 0.6
+  const hl = door.widthM / 2 // drawn to scale: a 5 m door is five times as long as a 1 m one
   const [x, y] = door.pos
   const a = toSvg(door.vertical ? [x, y - hl] : [x - hl, y])
   const c = toSvg(door.vertical ? [x, y + hl] : [x + hl, y])

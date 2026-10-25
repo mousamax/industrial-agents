@@ -836,6 +836,12 @@ export function MapView({ hideControls }: { hideControls?: boolean } = {}) {
     engine.current?.requestRender()
   }, [ready, view3d])
 
+  useEffect(() => {
+    if (!ready) return
+    engine.current?.setGhostDoor(ghostDoor)
+    engine.current?.requestRender()
+  }, [ready, ghostDoor])
+
   // The answer reads best in 3D (rooms on top of each other, a route across floors): tilt in, and flatten again
   // when the next answer doesn't need it. A tilt the person chose themselves is left alone.
   const answerTilt = useRef(false)

@@ -19,6 +19,8 @@ export interface GhostDoorState {
   floorId: string
   pos: XY
   vertical: boolean
+  /** Door width in metres, drawn to scale along the wall. */
+  widthM: number
   applied: boolean
 }
 

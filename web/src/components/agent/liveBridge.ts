@@ -182,7 +182,12 @@ export function extractLiveTurn(
     const doorBetween = Array.isArray(doorTool.data.door_between)
       ? doorTool.data.door_between.filter((x): x is string => typeof x === 'string')
       : [spaceA ? spaceLabel(spaceA) : 'Room A', spaceB ? spaceLabel(spaceB) : 'Room B']
-    const widthM = typeof doorTool.data.width_m === 'number' ? doorTool.data.width_m : 0.9
+    const widthM =
+      typeof doorTool.data.width_m === 'number'
+        ? doorTool.data.width_m
+        : typeof doorTool.input.width_m === 'number'
+          ? doorTool.input.width_m
+          : 0.9
     const effectRec = isRec(doorTool.data.effect_on_walks_out_on_that_floor)
       ? doorTool.data.effect_on_walks_out_on_that_floor
       : doorTool.data
@@ -232,7 +237,8 @@ export function extractLiveTurn(
         note: isProposed ? 'Proposed by the agent — confirm to apply to the building session.' : undefined,
         floors: focusFloor ? [focusFloor] : [],
         focusFloor,
-        ghostDoor: wall && spaceA ? { floorId: spaceA.floor_id, pos: wall.pos, vertical: wall.vertical } : undefined,
+        ghostDoor:
+          wall && spaceA ? { floorId: spaceA.floor_id, pos: wall.pos, vertical: wall.vertical, widthM } : undefined,
         focusIds: doorFocusIds.length ? doorFocusIds : highlightIds.length ? highlightIds : null,
         confirm: 'Add the door',
         confirmPrompt: 'Yes, please add the door.',
