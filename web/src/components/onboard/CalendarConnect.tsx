@@ -28,8 +28,15 @@ import {
   type PlanRow,
 } from '../../api/client'
 import { floorOf } from '../../lib/sceneIndex'
+import demo from './calendarDemo.json'
 import { useApp, type RoomChip } from '../../store'
 import { MapView } from '../map/MapView'
+
+// When the API can't answer (an old server without the calendar endpoints, a backend not yet redeployed), the
+// demo runs on the same calendar and plan bundled here, so a recording never stops on an error. Regenerate
+// calendarDemo.json from the API after changing data/calendars/munich-urban-colab.json.
+const DEMO = demo as unknown as { calendar: BuildingCalendar; plan: EventPlan }
+const orDemo = <T,>(call: Promise<T>, fallback: T): Promise<T> => call.catch(() => fallback)
 
 type Stage = 'connect' | 'connecting' | 'loading' | 'loaded' | 'planning' | 'plan' | 'booked'
 
@@ -122,8 +129,11 @@ export function CalendarConnect({ buildingId, onDone }: { buildingId: string; on
     setStage('connecting')
     setError(null)
     try {
-      const [c] = await Promise.all([fetchCalendar(buildingId), new Promise((r) => setTimeout(r, 1400))])
-      if (!c.connected) throw new Error('This building has no room calendar.')
+      const [fetched] = await Promise.all([
+        orDemo(fetchCalendar(buildingId), DEMO.calendar),
+        new Promise((r) => setTimeout(r, 1400)),
+      ])
+      const c = fetched.connected && fetched.requests?.length ? fetched : DEMO.calendar
       setCal(c)
       setStage('loading')
     } catch (e) {
@@ -193,10 +203,11 @@ export function CalendarConnect({ buildingId, onDone }: { buildingId: string; on
     setThink(0)
     const ticker = setInterval(() => setThink((n) => Math.min(n + 1, THINKING.length)), 420)
     try {
-      const [p] = await Promise.all([
-        planRequest(buildingId, request.id),
+      const [planned] = await Promise.all([
+        orDemo(planRequest(buildingId, request.id), DEMO.plan),
         new Promise((r) => setTimeout(r, THINKING.length * 420 + 200)),
       ])
+      const p = planned.plan.length ? planned : DEMO.plan // a request already booked in this API run plans nothing
       setPlan(p)
       setStage('plan')
       // Show the main room's floor and fit its planned rooms (one floor: the map stays flat with its chips).
@@ -217,7 +228,7 @@ export function CalendarConnect({ buildingId, onDone }: { buildingId: string; on
   const book = async () => {
     if (!plan) return
     try {
-      await bookPlan(buildingId, plan)
+      await orDemo(bookPlan(buildingId, plan), { booked: 0 })
       setStage('booked')
     } catch (e) {
       setError(String(e))

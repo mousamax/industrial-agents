@@ -1,0 +1,801 @@
+{
+ "note": "Fallback for the facility-manager demo when the API has no calendar endpoints. Regenerate: see CalendarConnect.tsx.",
+ "calendar": {
+  "connected": true,
+  "calendar": "Munich Urban Colab room calendar (demo data)",
+  "source": "Mock of the building's Outlook/Google room resources: no real calendar account is connected.",
+  "today": "2026-10-25",
+  "now": "10:00",
+  "reception": "F0-EING",
+  "rooms": {
+   "F0-FOYER": {
+    "room": "Foyer (Ground floor (Erdgeschoss))",
+    "floor_id": "F0",
+    "seats": 150,
+    "equipment": [
+     "projector",
+     "screen",
+     "microphones"
+    ]
+   },
+   "F0-ARENA": {
+    "room": "„Arena“ Seminarraum (Ground floor (Erdgeschoss))",
+    "floor_id": "F0",
+    "seats": 50,
+    "equipment": [
+     "projector",
+     "screen"
+    ]
+   },
+   "F0-PROJ1": {
+    "room": "Projektraum 1 PROJ1 (Ground floor (Erdgeschoss))",
+    "floor_id": "F0",
+    "seats": 50,
+    "equipment": [
+     "screen",
+     "whiteboard"
+    ]
+   },
+   "F0-PROJ2": {
+    "room": "Projektraum 2 PROJ2 (Ground floor (Erdgeschoss))",
+    "floor_id": "F0",
+    "seats": 50,
+    "equipment": [
+     "screen",
+     "whiteboard"
+    ]
+   },
+   "F0-GAST": {
+    "room": "Gastraum (Ground floor (Erdgeschoss))",
+    "floor_id": "F0",
+    "seats": 70,
+    "equipment": [
+     "catering"
+    ]
+   },
+   "F1-ARENA": {
+    "room": "Arena (Auditorium) (Floor 1 (1. Obergeschoss))",
+    "floor_id": "F1",
+    "seats": 120,
+    "equipment": [
+     "projector",
+     "screen",
+     "microphones",
+     "video_call"
+    ]
+   },
+   "F1-SEM1": {
+    "room": "Seminarraum 1 SEM1 (Floor 1 (1. Obergeschoss))",
+    "floor_id": "F1",
+    "seats": 40,
+    "equipment": [
+     "projector",
+     "whiteboard"
+    ]
+   },
+   "F1-SEM2": {
+    "room": "Seminarraum 2 SEM2 (Floor 1 (1. Obergeschoss))",
+    "floor_id": "F1",
+    "seats": 40,
+    "equipment": [
+     "projector",
+     "whiteboard"
+    ]
+   },
+   "F1-SEM3": {
+    "room": "Seminarraum 3 SEM3 (Floor 1 (1. Obergeschoss))",
+    "floor_id": "F1",
+    "seats": 60,
+    "equipment": [
+     "projector",
+     "screen",
+     "whiteboard"
+    ]
+   },
+   "F1-CAD": {
+    "room": "CAD-Center (Floor 1 (1. Obergeschoss))",
+    "floor_id": "F1",
+    "seats": 20,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F1-ELAB": {
+    "room": "Elektronik Labor ELAB (Floor 1 (1. Obergeschoss))",
+    "floor_id": "F1",
+    "seats": 16,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F2-BESP-S1": {
+    "room": "Besprechung BESP-S1 (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 50,
+    "equipment": [
+     "screen",
+     "whiteboard"
+    ]
+   },
+   "F2-BESP-S2": {
+    "room": "Besprechung BESP-S2 (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 30,
+    "equipment": [
+     "screen",
+     "whiteboard"
+    ]
+   },
+   "F2-BESP-S3": {
+    "room": "Besprechung BESP-S3 (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 16,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F2-BESP-A": {
+    "room": "Besprechung BESP-A (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 10,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F2-BESP-B": {
+    "room": "Besprechung BESP-B (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 10,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F2-BESP-C": {
+    "room": "Besprechung BESP-C (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 10,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F2-BESP-D": {
+    "room": "Besprechung BESP-D (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 12,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F2-TL1": {
+    "room": "Tech-Lab TL1 (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 20,
+    "equipment": [
+     "screen",
+     "whiteboard"
+    ]
+   },
+   "F2-TT1": {
+    "room": "Think Tank TT1 (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 6,
+    "equipment": [
+     "whiteboard"
+    ]
+   },
+   "F2-TT2": {
+    "room": "Think Tank TT2 (Floor 2 (2. Obergeschoss))",
+    "floor_id": "F2",
+    "seats": 4,
+    "equipment": []
+   },
+   "F3-OPEN-S": {
+    "room": "Offener Bürobereich Süd OPEN-S (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 120,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F3-BESP1": {
+    "room": "Besprechung BESP1 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 14,
+    "equipment": [
+     "screen",
+     "video_call"
+    ]
+   },
+   "F3-BESP2": {
+    "room": "Besprechung BESP2 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 8,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F3-BESP3": {
+    "room": "Besprechung BESP3 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 8,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F3-BESP4": {
+    "room": "Besprechung BESP4 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 8,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F3-BESP5": {
+    "room": "Besprechung BESP5 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 10,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F3-TT1": {
+    "room": "Think Tank TT1 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 4,
+    "equipment": []
+   },
+   "F3-TT2": {
+    "room": "Think Tank TT2 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 4,
+    "equipment": []
+   },
+   "F3-TT3": {
+    "room": "Think Tank TT3 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 4,
+    "equipment": []
+   },
+   "F3-TT4": {
+    "room": "Think Tank TT4 (Floor 3 (3. Obergeschoss))",
+    "floor_id": "F3",
+    "seats": 4,
+    "equipment": []
+   },
+   "F4-AKTIV": {
+    "room": "Aktivraum / Bibliothek (Floor 4 (4. Obergeschoss))",
+    "floor_id": "F4",
+    "seats": 16,
+    "equipment": [
+     "whiteboard"
+    ]
+   },
+   "F4-BESP1": {
+    "room": "Besprechung BESP1 (Floor 4 (4. Obergeschoss))",
+    "floor_id": "F4",
+    "seats": 8,
+    "equipment": [
+     "screen",
+     "video_call"
+    ]
+   },
+   "F4-BESP2": {
+    "room": "Besprechung BESP2 (Floor 4 (4. Obergeschoss))",
+    "floor_id": "F4",
+    "seats": 8,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F4-BESP3": {
+    "room": "Besprechung BESP3 (Floor 4 (4. Obergeschoss))",
+    "floor_id": "F4",
+    "seats": 8,
+    "equipment": [
+     "screen"
+    ]
+   },
+   "F4-BESP4": {
+    "room": "Besprechung BESP4 (Floor 4 (4. Obergeschoss))",
+    "floor_id": "F4",
+    "seats": 8,
+    "equipment": [
+     "screen"
+    ]
+   }
+  },
+  "events": [
+   {
+    "event": "Industrial Agents Hackathon: Talk to Your Building",
+    "room": "Offener Bürobereich Süd OPEN-S (Floor 3 (3. Obergeschoss))",
+    "room_id": "F3-OPEN-S",
+    "floor": "Floor 3 (3. Obergeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "when": "all day",
+    "status": "on now",
+    "organizer": "UnternehmerTUM with Synera",
+    "about": "Teams build AI agents for industrial partners. Guests and visitors welcome, check in at the reception.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Startup office hours",
+    "room": "Seminarraum 2 SEM2 (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-SEM2",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "10:00",
+    "until": "12:00",
+    "status": "on now",
+    "organizer": "Munich Urban Colab",
+    "about": "Founders meet mentors.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Mobility Lab stand-up",
+    "room": "Besprechung BESP-S1 (Floor 2 (2. Obergeschoss))",
+    "room_id": "F2-BESP-S1",
+    "floor": "Floor 2 (2. Obergeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "09:30",
+    "until": "10:00",
+    "status": "over for today",
+    "organizer": "Mobility Lab",
+    "about": "Daily team check-in.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Jury briefing",
+    "room": "Besprechung BESP1 (Floor 3 (3. Obergeschoss))",
+    "room_id": "F3-BESP1",
+    "floor": "Floor 3 (3. Obergeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "11:30",
+    "until": "12:30",
+    "status": "later today",
+    "organizer": "UnternehmerTUM",
+    "about": "The jury aligns on scoring.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Lunch and dinner for participants",
+    "room": "Gastraum (Ground floor (Erdgeschoss))",
+    "room_id": "F0-GAST",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "12:00",
+    "until": "20:30",
+    "status": "later today",
+    "organizer": "Gastraum team",
+    "about": "Catering in the Gastraum.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Startup demo hour",
+    "room": "Arena (Auditorium) (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-ARENA",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "13:30",
+    "until": "15:30",
+    "status": "later today",
+    "organizer": "Munich Urban Colab",
+    "about": "Resident startups show their latest builds.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Synera partner meeting",
+    "room": "Think Tank TT1 (Floor 3 (3. Obergeschoss))",
+    "room_id": "F3-TT1",
+    "floor": "Floor 3 (3. Obergeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "14:00",
+    "until": "15:00",
+    "status": "later today",
+    "organizer": "Synera",
+    "about": "Internal meeting.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Laser cutter induction",
+    "room": "MakerSpace Werkstatt (nicht im Fluchtplan) (Ground floor (Erdgeschoss))",
+    "room_id": "F0-MAKER",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-25",
+    "weekday": "Sunday",
+    "from": "16:00",
+    "until": "17:00",
+    "status": "later today",
+    "organizer": "MakerSpace",
+    "about": "Safety briefing before using the laser cutter.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Smart City round table",
+    "room": "Seminarraum 3 SEM3 (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-SEM3",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-26",
+    "weekday": "Monday",
+    "from": "10:00",
+    "until": "12:00",
+    "status": "upcoming",
+    "organizer": "City of Munich",
+    "about": "Partners discuss the next pilot districts.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "CAD for beginners",
+    "room": "CAD-Center (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-CAD",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-26",
+    "weekday": "Monday",
+    "from": "14:00",
+    "until": "17:00",
+    "status": "upcoming",
+    "organizer": "MakerSpace",
+    "about": "Hands-on course, laptops provided.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Investor office hours",
+    "room": "Besprechung BESP-S1 (Floor 2 (2. Obergeschoss))",
+    "room_id": "F2-BESP-S1",
+    "floor": "Floor 2 (2. Obergeschoss)",
+    "date": "2026-10-26",
+    "weekday": "Monday",
+    "from": "15:00",
+    "until": "18:00",
+    "status": "upcoming",
+    "organizer": "UnternehmerTUM",
+    "about": "Book a 20-minute slot at the reception.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Team offsite: Mobility Lab",
+    "room": "Projektraum 1 PROJ1 (Ground floor (Erdgeschoss))",
+    "room_id": "F0-PROJ1",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-27",
+    "weekday": "Tuesday",
+    "from": "09:00",
+    "until": "17:00",
+    "status": "upcoming",
+    "organizer": "Mobility Lab",
+    "about": "Full-day planning session.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Retail Living Lab demo day",
+    "room": "Living Lab Einzelhandel (Shop) LLEH (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-LLEH",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-27",
+    "weekday": "Tuesday",
+    "from": "10:00",
+    "until": "16:00",
+    "status": "upcoming",
+    "organizer": "Living Lab",
+    "about": "Prototype shop open for testing.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Lunch & Learn: AI in facilities",
+    "room": "„Arena“ Seminarraum (Ground floor (Erdgeschoss))",
+    "room_id": "F0-ARENA",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-27",
+    "weekday": "Tuesday",
+    "from": "12:00",
+    "until": "13:30",
+    "status": "upcoming",
+    "organizer": "Munich Urban Colab",
+    "about": "Talk with lunch in the Arena.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Board meeting",
+    "room": "Besprechung BESP1 (Floor 4 (4. Obergeschoss))",
+    "room_id": "F4-BESP1",
+    "floor": "Floor 4 (4. Obergeschoss)",
+    "date": "2026-10-28",
+    "weekday": "Wednesday",
+    "from": "09:00",
+    "until": "11:00",
+    "status": "upcoming",
+    "organizer": "Munich Urban Colab",
+    "about": "Quarterly board meeting.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Design sprint",
+    "room": "Besprechung BESP-S2 (Floor 2 (2. Obergeschoss))",
+    "room_id": "F2-BESP-S2",
+    "floor": "Floor 2 (2. Obergeschoss)",
+    "date": "2026-10-28",
+    "weekday": "Wednesday",
+    "from": "09:00",
+    "until": "17:00",
+    "status": "upcoming",
+    "organizer": "Synera",
+    "about": "Five-day sprint, day 3.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Community meetup",
+    "room": "Foyer (Ground floor (Erdgeschoss))",
+    "room_id": "F0-FOYER",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-28",
+    "weekday": "Wednesday",
+    "from": "18:00",
+    "until": "21:00",
+    "status": "upcoming",
+    "organizer": "Munich Urban Colab",
+    "about": "Drinks and lightning talks. Open to all.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Startup pitch training",
+    "room": "Seminarraum 1 SEM1 (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-SEM1",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-29",
+    "weekday": "Thursday",
+    "from": "10:00",
+    "until": "12:00",
+    "status": "upcoming",
+    "organizer": "UnternehmerTUM",
+    "about": "Practise your pitch with coaches.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Electronics workshop",
+    "room": "Elektronik Labor ELAB (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-ELAB",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-29",
+    "weekday": "Thursday",
+    "from": "13:00",
+    "until": "17:00",
+    "status": "upcoming",
+    "organizer": "MakerSpace",
+    "about": "Soldering and microcontrollers.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Facility walk-through",
+    "room": "Tech-Lab TL1 (Floor 2 (2. Obergeschoss))",
+    "room_id": "F2-TL1",
+    "floor": "Floor 2 (2. Obergeschoss)",
+    "date": "2026-10-29",
+    "weekday": "Thursday",
+    "from": "15:00",
+    "until": "16:00",
+    "status": "upcoming",
+    "organizer": "Facility management",
+    "about": "Quarterly safety walk.",
+    "open_to_visitors": false
+   },
+   {
+    "event": "Recruiting day",
+    "room": "Projektraum 2 PROJ2 (Ground floor (Erdgeschoss))",
+    "room_id": "F0-PROJ2",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-30",
+    "weekday": "Friday",
+    "from": "10:00",
+    "until": "15:00",
+    "status": "upcoming",
+    "organizer": "UnternehmerTUM",
+    "about": "Startups meet students.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Demo Friday",
+    "room": "Arena (Auditorium) (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-ARENA",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-30",
+    "weekday": "Friday",
+    "from": "16:00",
+    "until": "18:00",
+    "status": "upcoming",
+    "organizer": "Munich Urban Colab",
+    "about": "Teams show what they built this week.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Founder bootcamp",
+    "room": "Seminarraum 2 SEM2 (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-SEM2",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "date": "2026-10-31",
+    "weekday": "Saturday",
+    "from": "09:00",
+    "until": "17:00",
+    "status": "upcoming",
+    "organizer": "UnternehmerTUM",
+    "about": "Weekend bootcamp for first-time founders.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Open House: Munich Urban Colab",
+    "room": "Foyer (Ground floor (Erdgeschoss))",
+    "room_id": "F0-FOYER",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-31",
+    "weekday": "Saturday",
+    "from": "10:00",
+    "until": "16:00",
+    "status": "upcoming",
+    "organizer": "Munich Urban Colab",
+    "about": "Tours for the neighbourhood, every 30 minutes.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Kids coding club",
+    "room": "Besprechung BESP-S1 (Floor 2 (2. Obergeschoss))",
+    "room_id": "F2-BESP-S1",
+    "floor": "Floor 2 (2. Obergeschoss)",
+    "date": "2026-10-31",
+    "weekday": "Saturday",
+    "from": "10:00",
+    "until": "12:00",
+    "status": "upcoming",
+    "organizer": "MakerSpace",
+    "about": "Scratch and Lego robots for ages 8 to 12.",
+    "open_to_visitors": true
+   },
+   {
+    "event": "Robotics meetup",
+    "room": "Projektraum 1 PROJ1 (Ground floor (Erdgeschoss))",
+    "room_id": "F0-PROJ1",
+    "floor": "Ground floor (Erdgeschoss)",
+    "date": "2026-10-31",
+    "weekday": "Saturday",
+    "from": "13:00",
+    "until": "18:00",
+    "status": "upcoming",
+    "organizer": "Munich Robotics",
+    "about": "Community robotics evening.",
+    "open_to_visitors": true
+   }
+  ],
+  "requests": [
+   {
+    "id": "req-hackathon",
+    "title": "Industrial AI Hackathon",
+    "from": "Lena Huber, UnternehmerTUM",
+    "received": "08:12",
+    "day": "saturday",
+    "start": "09:00",
+    "end": "21:00",
+    "people": 60,
+    "teams": 12,
+    "needs": [
+     "projector",
+     "screen",
+     "catering"
+    ],
+    "message": "Hi! We'd like to run a one-day hackathon at MUCL this Saturday: about 60 people in 12 teams. We need one room for the kickoff and the pitches with a projector, rooms where the teams can work with screens, and somewhere for lunch. Everything should be step-free. Can you suggest rooms?",
+    "date": "2026-10-31",
+    "weekday": "Saturday"
+   }
+  ]
+ },
+ "plan": {
+  "request": {
+   "title": "Industrial AI Hackathon",
+   "date": "2026-10-31",
+   "weekday": "Saturday",
+   "from": "09:00",
+   "until": "21:00",
+   "people": 60,
+   "teams": 12,
+   "needs": [
+    "projector",
+    "screen",
+    "catering"
+   ]
+  },
+  "plan": [
+   {
+    "role": "main",
+    "room_id": "F1-ARENA",
+    "room": "Arena (Auditorium) (Floor 1 (1. Obergeschoss))",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "why": "Free then, 120 seats, projector, screen, microphones, video_call",
+    "seats": 120
+   },
+   {
+    "role": "breakout",
+    "room_id": "F1-SEM3",
+    "room": "Seminarraum 3 SEM3 (Floor 1 (1. Obergeschoss))",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "why": "Free, 4 teams, projector, screen, whiteboard, 28 m from the main room",
+    "teams": 4,
+    "walk_m": 27.9
+   },
+   {
+    "role": "breakout",
+    "room_id": "F1-SEM1",
+    "room": "Seminarraum 1 SEM1 (Floor 1 (1. Obergeschoss))",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "why": "Free, 4 teams, projector, whiteboard, 44 m from the main room",
+    "teams": 4,
+    "walk_m": 43.5
+   },
+   {
+    "role": "breakout",
+    "room_id": "F1-CAD",
+    "room": "CAD-Center (Floor 1 (1. Obergeschoss))",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "why": "Free, 4 teams, screen, 59 m from the main room",
+    "teams": 4,
+    "walk_m": 59.4
+   },
+   {
+    "role": "catering",
+    "room_id": "F0-GAST",
+    "room": "Gastraum (Ground floor (Erdgeschoss))",
+    "floor": "Ground floor (Erdgeschoss)",
+    "why": "80 m from the main room, step-free",
+    "walk_m": 79.7
+   },
+   {
+    "role": "kitchen",
+    "room_id": "F1-TEEK",
+    "room": "Teeküche (Floor 1 (1. Obergeschoss))",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "why": "23 m from the main room, step-free",
+    "walk_m": 22.9
+   },
+   {
+    "role": "toilets",
+    "room_id": "F1-WC2",
+    "room": "WC WC2 (Floor 1 (1. Obergeschoss))",
+    "floor": "Floor 1 (1. Obergeschoss)",
+    "why": "31 m from the main room, step-free",
+    "walk_m": 30.8
+   }
+  ],
+  "checked": [
+   "free on Saturday 09:00–21:00",
+   "120 seats for 60 people plus 10%",
+   "projector, screen in the main room",
+   "12 of 12 teams in breakouts within 60 m",
+   "kitchen and toilets nearby",
+   "step-free from Eingangsbereich (Ground floor (Erdgeschoss)), 55 m"
+  ],
+  "avoided": [
+   {
+    "room": "Foyer (Ground floor (Erdgeschoss))",
+    "room_id": "F0-FOYER",
+    "why": "Open House: Munich Urban Colab 10:00–16:00"
+   },
+   {
+    "room": "Seminarraum 2 SEM2 (Floor 1 (1. Obergeschoss))",
+    "room_id": "F1-SEM2",
+    "why": "Founder bootcamp 09:00–17:00"
+   }
+  ],
+  "booked": false,
+  "highlight": [
+   "F1-ARENA",
+   "F1-SEM3",
+   "F1-SEM1",
+   "F1-CAD",
+   "F0-GAST",
+   "F1-TEEK",
+   "F1-WC2"
+  ]
+ }
+}
