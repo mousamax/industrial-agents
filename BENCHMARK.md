@@ -50,7 +50,22 @@ command, no manual steps:
 uv run python -m app.agents.building_guide.sunday <building_dir> <questions.json> <answers.json>
 # e.g. uv run python -m app.agents.building_guide.sunday data/sunday/building data/sunday/questions.json answers.json
 # --concurrency 8 (default): questions in flight
+# --check: then check every answer the way Synera scores it (crash, no Answer line, invalid route); exit 1 on problems
+# --csv answers.csv: also write the kit's CSV format (question_id, full reply)
 ```
+
+On Sunday: run it with `--check --csv submission/answers.csv` and output `submission/answers.json`, fix or
+re-run anything `--check` lists, commit both before code freeze.
+
+**Rehearsal** (the same command on a kit building with known answers, scored by kind; uses the model):
+
+```bash
+uv run python scripts/synera/sunday_rehearsal.py --limit 3     # mock run: 3 questions spread over kinds
+uv run python scripts/synera/sunday_rehearsal.py               # every question of the building
+uv run python scripts/synera/sunday_rehearsal.py --building proc-factory-dev-003 --suite warmup
+```
+
+It writes `evals/reports/sunday-rehearsal/<building>/` (questions.json, answers.json/.csv, summary.json).
 
 `questions.json` is a list (or `{"questions": [...]}`) of `{"id", "text", "constraints"?}`; constraints
 such as `{"step_free": true}` are passed on to the agent. `answers.json` is a list with one record per
@@ -60,11 +75,11 @@ question id, in input order:
 {"id": "...", "reply": "<full reply>", "answer": "<text after the last 'Answer:'>",
  "item_id": "<asset id>|null", "space_id": "<space id>|null", "count": 3,
  "reachable": true, "route": ["<space id>", "..."], "elements": ["<door/stair/lift id>", "..."],
- "length_m": 42.17}
+ "length_m": 42.17, "stops": ["<space id>", "..."]}
 ```
 
 `route` is the ordered list of spaces (what `docs/synera/ROUTE_SCORING.md` scores; a tour's legs joined),
-`elements` the doors, stairs and lifts used; unreachable gives `reachable: false` and null route/length.
+`elements` the doors, stairs and lifts used, `stops` a tour's stops (null otherwise); unreachable gives `reachable: false` and null route/length.
 The fields come from the agent's own tool results, never from its prose. A question that crashes still
 gets a record with `"error"`. **Provisional:** Synera hasn't published their schema yet; once they do,
 change `empty_record`/`to_record` in `src/app/agents/building_guide/sunday.py` (the only place it lives).

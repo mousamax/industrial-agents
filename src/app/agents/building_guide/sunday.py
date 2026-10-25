@@ -1,6 +1,10 @@
 """Sunday benchmark: one command from Synera's input to answers.json, no manual steps (challenge PDF).
 
     uv run python -m app.agents.building_guide.sunday <building_dir> <questions.json> <answers.json>
+    ... --check                 # then check every route the way Synera scores it (invalid = 0 points)
+    ... --csv answers.csv       # also write the kit's CSV (question_id, full reply)
+
+Rehearsal on a kit building with known answers: scripts/synera/sunday_rehearsal.py.
 
 Input: a building folder in the kit format (anywhere on disk, not only in synera-kit/data) and
 questions.json with one entry per question: {"id", "text", "constraints"?} (a list, or {"questions": [...]}).
@@ -60,6 +64,7 @@ def empty_record(question_id: str) -> dict[str, Any]:
         "route": None,
         "elements": None,
         "length_m": None,
+        "stops": None,
     }
 
 
@@ -132,7 +137,10 @@ def to_record(question: dict[str, Any], reply: str, tool_calls: list[ToolCall]) 
         last = routes[-1]
         record["reachable"] = bool(last["reachable"])
         if last["reachable"]:
-            record["route"], record["elements"] = _joined(last.get("legs") or [])
+            legs = last.get("legs") or []
+            record["route"], record["elements"] = _joined(legs)
+            if len(legs) > 1:  # a tour: where each leg starts, plus the end (bays may be stops, not passed)
+                record["stops"] = [leg["space_path"][0] for leg in legs] + [legs[-1]["space_path"][-1]]
             record["length_m"] = last.get("total_length_m")
     return record
 
@@ -274,17 +282,91 @@ def run_benchmark(
     return records
 
 
+def check_records(
+    building_dir: Path, questions: list[dict[str, Any]], records: list[dict[str, Any]]
+) -> dict[str, list[str]]:
+    """Problems that would cost points, per question id (empty when none): a crash, no Answer line, a route
+    Synera would score 0 (routing.validate_route under the question's step-free and closure constraints;
+    a tour's stops may be production bays), or a route whose fields don't agree."""
+    from app.building.routing import Constraints, validate_route
+
+    by_id = {q["id"]: q for q in questions}
+    problems: dict[str, list[str]] = {}
+    for r in records:
+        found = []
+        if "error" in r:
+            found.append(f"crashed: {r['error']}")
+        elif r.get("answer") is None:
+            found.append("no 'Answer:' line in the reply")
+        if r.get("reachable") and (not r.get("route") or r.get("length_m") is None):
+            found.append("reachable but no route or length")
+        if r.get("route"):
+            question = by_id.get(r["id"], {"id": r["id"]})
+            deps = deps_for(building_dir, question)
+            rules = Constraints(
+                step_free=bool((question.get("constraints") or {}).get("step_free")), closed=deps.closed
+            )
+            stops = r.get("stops") or []
+            legs = [r["route"]] if not stops else _split(r["route"], stops)
+            found += [p for leg in legs for p in validate_route(deps.building, leg, rules)]
+        if found:
+            problems[r["id"]] = found
+    return problems
+
+
+def _split(route: list[str], stops: list[str]) -> list[list[str]]:
+    """A joined tour route cut back into legs at its stops (each stop ends one leg and starts the next)."""
+    legs, current, wanted = [], [], list(stops[1:])
+    for sid in route:
+        current.append(sid)
+        if wanted and sid == wanted[0] and len(current) > 1:
+            legs.append(current)
+            current, wanted = [sid], wanted[1:]
+    if len(current) > 1:
+        legs.append(current)
+    return legs
+
+
+def write_csv(records: list[dict[str, Any]], path: Path) -> None:
+    """The kit's submission format: question_id, answer (the full reply; the scorer reads its last
+    'Answer:' line)."""
+    import csv
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["question_id", "answer"])
+        writer.writerows([r["id"], r.get("reply") or ""] for r in records)
+
+
 def main(
     building_dir: Annotated[Path, typer.Argument(help="The building folder (building.json, plans, ...)")],
     questions: Annotated[Path, typer.Argument(help="questions.json from Synera")],
     answers: Annotated[Path, typer.Argument(help="Where to write answers.json")],
     concurrency: Annotated[int, typer.Option(help="Questions in flight")] = 8,
+    check: Annotated[
+        bool, typer.Option(help="Check every answer the way Synera scores it; exit 1 on problems")
+    ] = False,
+    csv_path: Annotated[
+        Path | None, typer.Option("--csv", help="Also write the kit's CSV (question_id, answer)")
+    ] = None,
 ) -> None:
     records = run_benchmark(building_dir, questions, answers, agent_answerer, concurrency)
     errors = sum("error" in r for r in records)
     if errors:
         typer.echo(f"{errors} question(s) errored (see their 'error' field)")
     typer.echo(f"{len(records)} answers -> {answers}")
+    if csv_path:
+        write_csv(records, csv_path)
+        typer.echo(f"CSV -> {csv_path}")
+    if check:
+        problems = check_records(building_dir, load_questions(questions), records)
+        for qid, found in problems.items():
+            typer.echo(f"  {qid}: " + "; ".join(found))
+        typer.echo(f"check: {len(records) - len(problems)}/{len(records)} answers without problems")
+        if problems:
+            raise typer.Exit(1)
 
 
 if __name__ == "__main__":

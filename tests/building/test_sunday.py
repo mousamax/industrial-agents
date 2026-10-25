@@ -144,3 +144,36 @@ def test_sunday_closure_constraint_is_applied(q, key, tmp_path):
     assert a["closed_element_id"] in deps.closed
     got = json.loads(route(SimpleNamespace(deps=deps, run_id="1"), a["from_space_id"], a["to_space_id"]))
     assert route_length_ok(got["total_length_m"], a["optimal_length_m"]), got
+
+
+def _questions() -> list[dict[str, Any]]:
+    return [
+        {"id": q["id"], "text": q["question"]}
+        | ({"constraints": {"step_free": True}} if "step_free" in q["kind"] else {})
+        for q in GOLDEN
+    ]
+
+
+def test_sunday_check_passes_good_answers_and_flags_bad_ones(answers):
+    from app.agents.building_guide.sunday import check_records
+
+    records = list(answers.values())
+    building = building_dir(BUILDING_ID)
+    assert call(check_records, building, _questions(), records) == {}
+    route = next(r for r in records if r.get("route") and not r.get("stops"))
+    broken = route | {"route": [route["route"][0], route["route"][-1]]}  # skips every door in between
+    silent = records[0] | {"answer": None}
+    found = check_records(building, _questions(), [broken, silent])
+    assert set(found) == {broken["id"], silent["id"]}, found
+
+
+def test_sunday_csv_has_every_full_reply(answers, tmp_path):
+    import csv
+
+    from app.agents.building_guide.sunday import write_csv
+
+    records = list(answers.values())
+    call(write_csv, records, tmp_path / "answers.csv")
+    with (tmp_path / "answers.csv").open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert [(r["question_id"], r["answer"]) for r in rows] == [(r["id"], r["reply"]) for r in records]
