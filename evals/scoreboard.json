@@ -49,10 +49,10 @@
    "output_tokens": 34206
   },
   "warmup": {
-   "at": "2026-10-24T18:36:52+00:00",
-   "by": "mousamax",
+   "at": "2026-10-25T08:44:21+00:00",
+   "by": "Magnus Saurbier",
    "model": "default",
-   "correct": 368,
+   "correct": 369,
    "total": 369,
    "by_kind": {
     "count": [
@@ -72,7 +72,7 @@
      40
     ],
     "route_with_closure": [
-     28,
+     29,
      29
     ],
     "tour": [
@@ -81,8 +81,8 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 5226062,
-   "output_tokens": 79887
+   "input_tokens": 14457845,
+   "output_tokens": 91210
   },
   "reworded": {
    "at": "2026-10-24T18:42:51+00:00",
@@ -223,10 +223,10 @@
    "output_tokens": 40235
   },
   "holdout": {
-   "at": "2026-10-24T18:40:51+00:00",
-   "by": "mousamax",
+   "at": "2026-10-25T08:47:13+00:00",
+   "by": "Magnus Saurbier",
    "model": "default",
-   "correct": 94,
+   "correct": 95,
    "total": 96,
    "by_kind": {
     "area_difference": [
@@ -246,7 +246,7 @@
      8
     ],
     "exit_distance": [
-     8,
+     7,
      8
     ],
     "floor_with_most": [
@@ -274,13 +274,13 @@
      8
     ],
     "within_distance_count": [
-     6,
+     8,
      8
     ]
    },
    "errors": 0,
-   "input_tokens": 2263526,
-   "output_tokens": 42615
+   "input_tokens": 3820261,
+   "output_tokens": 20986
   }
  }
 }

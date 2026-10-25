@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(uv run *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "mcp__claude-in-chrome__tabs_context_mcp"
     ]
   }
 }

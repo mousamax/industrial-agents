@@ -4,6 +4,7 @@ never crashing on a reply that fails the answer check. No model calls."""
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +24,7 @@ from app.agents.building_guide.tools import (
     highlight_rooms,
     list_rooms,
     plan_visits,
+    remove_door,
     route,
     undo_last_change,
 )
@@ -37,6 +39,13 @@ def ctx(deps: Deps, run_id: str = "turn-1") -> SimpleNamespace:
 
 def call(tool, c, *args, **kwargs) -> dict:
     return json.loads(tool(c, *args, **kwargs))
+
+
+def asking(reference: str, detail="rooms") -> Deps:
+    """A conversation whose plan edits wait for a yes (the voice call); everywhere else they apply at once."""
+    deps = Deps.load(reference, detail=detail)
+    deps.confirm_edits = True
+    return deps
 
 
 def test_find_matches_words_not_substrings():
@@ -62,8 +71,144 @@ def test_calculate_is_exact_and_safe():
         calculate(ctx(Deps.load(FACTORY)), "__import__('os').system('ls')")
 
 
-def test_edits_need_a_yes_in_a_later_turn():
+def test_a_door_is_added_at_once_and_the_next_route_in_the_same_turn_uses_it():
     deps = Deps.load(CAMPUS)
+    pair = ("Office 0.02", "Kitchen 0.03")
+    assert call(route, ctx(deps), *pair)["total_length_m"] == pytest.approx(10.77)
+    done = call(add_door, ctx(deps), *pair, width_m=1.0)
+    assert done["status"] == "done" and len(deps.state.edits) == 1 and deps.pending is None
+    assert "Added a 1 m door between Office 0.02" in done["change"] and "undo_last_change" in done["undo"]
+    assert call(route, ctx(deps), *pair)["total_length_m"] == pytest.approx(4.17)
+    again = call(add_door, ctx(deps), *pair, width_m=1.0, confirmed=True)  # an old habit: "confirm" it
+    assert again["status"] == "done" and len(deps.state.edits) == 1  # not added twice
+    call(undo_last_change, ctx(deps))
+    assert call(route, ctx(deps), *pair)["total_length_m"] == pytest.approx(10.77)
+
+
+def test_asking_for_the_same_door_again_adds_nothing_and_says_it_is_in_the_plan():
+    # Live bug: the voice agent still asked "shall I add it?", the "yes" reached the guide as a new request,
+    # and the second add_door stacked a duplicate door on the first one.
+    deps = Deps.load(CAMPUS)
+    pair = ("Office 0.02", "Kitchen 0.03")
+    first = call(add_door, ctx(deps, "turn-1"), *pair)
+    for c in (ctx(deps, "turn-1"), ctx(deps, "turn-2")):  # same turn, or the "yes" in the next one
+        again = call(add_door, c, *reversed(pair))
+        assert again["status"] == "done" and len(deps.state.edits) == 1
+        assert "already in the plan" in again["change"] and "nothing added" in again["change"]
+        assert not re.search(r"mistake|error|sorry", json.dumps(again), flags=re.IGNORECASE)
+    door_id = deps.state.edits[0].door_id
+    assert door_id in first["change"] and door_id in again["change"]
+    assert len([o for o in deps.building.openings.values() if o.id not in deps.state.base.openings]) == 1
+
+
+def test_a_door_where_the_plan_has_one_adds_nothing_unless_a_second_is_asked_for():
+    deps = Deps.load(CAMPUS)
+    pair = ("Office 0.02", "Corridor 0.01")
+    got = call(add_door, ctx(deps), *pair)
+    assert got["status"] == "already there" and not deps.state.edits
+    assert "F0-O0001" in got["change"] and "0.9 m" in got["change"]
+    assert call(add_door, ctx(deps), *pair, another=True)["status"] == "done" and len(deps.state.edits) == 1
+
+
+async def test_the_agent_is_not_told_its_own_new_door_was_there_before():
+    # Live bug: after add_door, the next model request's instructions said "1 change recorded (latest: Added a
+    # door ... just now)"; read next to the tool result, the model said a door "had already been added" and
+    # that there were now two. The context describes the building as the turn started, the same all turn.
+    from pydantic_ai.messages import ModelRequest, ToolCallPart
+
+    seen: list[str] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(next(m.instructions for m in reversed(messages) if isinstance(m, ModelRequest)) or "")
+        if len(seen) == 1:
+            args = {"first": "Office 0.02", "second": "Kitchen 0.03"}
+            return ModelResponse(parts=[ToolCallPart("add_door", args)])
+        return ModelResponse(parts=[TextPart("I've added the door between Office 0.02 and Kitchen 0.03.")])
+
+    deps = Deps.load(CAMPUS, detail="walk")
+    agent = make_agent()
+    with agent.override(model=FunctionModel(model)):
+        await agent.run("Add a door between Office 0.02 and Kitchen 0.03", deps=deps)
+        assert len(deps.state.edits) == 1 and len(seen) == 2
+        assert seen[0] == seen[1] and "Added a 0.9 m door" not in seen[1]
+        seen.clear()
+        await agent.run("How far is it now?", deps=deps)  # the next turn knows about it
+    assert "Added a 0.9 m door" in seen[0]
+
+
+async def test_one_request_with_a_repeated_add_door_call_gives_one_door():
+    from pydantic_ai.messages import ToolCallPart
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls = sum(isinstance(p, ToolCallPart) for m in messages for p in getattr(m, "parts", []))
+        if calls < 2:  # the model calls add_door, then again "to be sure"
+            args = {"first": "Office 0.02", "second": "Kitchen 0.03"}
+            return ModelResponse(parts=[ToolCallPart("add_door", args)])
+        return ModelResponse(parts=[TextPart("I've added the door between Office 0.02 and Kitchen 0.03.")])
+
+    deps = Deps.load(CAMPUS, detail="walk")
+    agent = make_agent()
+    with agent.override(model=FunctionModel(model)):
+        result = await agent.run("Add a door between Office 0.02 and Kitchen 0.03", deps=deps)
+    assert len(deps.state.edits) == 1 and result.output.startswith("I've added")
+
+
+def test_a_door_to_the_street_is_a_new_entrance():
+    deps = Deps.load(CAMPUS)
+    far = call(route, ctx(deps), "outside", "Seminar room 0.17")["total_length_m"]
+    done = call(add_door, ctx(deps), "Seminar room 0.17", "the street", width_m=1.5)
+    assert done["status"] == "done" and "entrance from outside into Seminar room 0.17" in done["change"]
+    assert done["entrance_into"] == ["Seminar room 0.17 (Ground floor)"]
+    assert call(route, ctx(deps), "outside", "Seminar room 0.17")["total_length_m"] < far - 30
+    with pytest.raises(ModelRetry, match="no entrance"):
+        add_door(ctx(deps), "Office 2.03", "outside")
+
+
+def test_remove_door_says_what_it_cuts_off_and_undo_puts_it_back():
+    deps = Deps.load(CAMPUS)
+    got = call(remove_door, ctx(deps), between=["Office 0.02", "Corridor 0.01"])
+    assert got["status"] == "done" and got["change"].startswith("Removed the door between Office 0.02")
+    assert "undo_last_change" in got["undo"]
+    assert "Office 0.02 (Ground floor)" in got["no_way_in_any_more"]
+    assert call(route, ctx(deps), "Office 0.02", "Kitchen 0.03")["reachable"] is False
+    call(undo_last_change, ctx(deps))
+    assert call(route, ctx(deps), "Office 0.02", "Kitchen 0.03")["total_length_m"] == pytest.approx(10.77)
+    with pytest.raises(ModelRetry):
+        remove_door(ctx(deps), between=["Office 0.02", "Kitchen 0.03"])  # no door there
+
+
+def test_removing_a_door_already_removed_in_this_session_changes_nothing_and_says_so():
+    deps = Deps.load(CAMPUS)
+    door = call(remove_door, ctx(deps), between=["Office 0.02", "Corridor 0.01"])["door"]
+    again = call(remove_door, ctx(deps), door=door)  # the voice "yes" repeats the request
+    assert again["status"] == "done" and "already removed" in again["change"] and len(deps.state.edits) == 1
+
+
+def test_a_width_change_is_remove_then_add_in_the_same_place():
+    deps = Deps.load(CAMPUS)
+    removed = call(remove_door, ctx(deps), between=["Office 0.02", "Corridor 0.01"])
+    again = removed["re_add_at"]
+    done = call(add_door, ctx(deps), again["first"], again["second"], width_m=1.5, position=again["position"])
+    assert done["status"] == "done"
+    (new,) = [o for o in deps.building.openings.values() if o.id not in deps.state.base.openings]
+    assert list(new.position) == again["position"] and new.width_m == 1.5
+    assert done["position"] == again["position"]  # the map draws the new door here, in the old door's cutout
+    assert removed["door"] not in deps.building.openings  # so the map's scene has no trace of the old one
+    assert call(route, ctx(deps), "Office 0.02", "Kitchen 0.03")["total_length_m"] == pytest.approx(10.77)
+
+
+def test_where_edits_need_a_yes_a_door_is_only_proposed_until_confirmed():
+    deps = asking(CAMPUS)
+    pair = ("Office 0.02", "Kitchen 0.03")
+    assert call(add_door, ctx(deps, "turn-1"), *pair)["status"].startswith("proposed")
+    assert not deps.state.edits
+    assert call(route, ctx(deps, "turn-1"), *pair)["total_length_m"] == pytest.approx(10.77)
+    assert call(add_door, ctx(deps, "turn-2"), *pair, confirmed=True)["status"] == "done"
+    assert call(route, ctx(deps, "turn-2"), *pair)["total_length_m"] == pytest.approx(4.17)
+
+
+def test_edits_need_a_yes_in_a_later_turn():
+    deps = asking(CAMPUS)
     pair = ("Seminar room 2.06", "Kitchen 2.07")
     proposed = call(add_door, ctx(deps, "turn-1"), *pair)
     assert proposed["status"].startswith("proposed") and not deps.state.edits
@@ -78,7 +223,7 @@ def test_edits_need_a_yes_in_a_later_turn():
 
 
 def test_several_edits_proposed_together_need_one_yes():
-    deps = Deps.load(CAMPUS)
+    deps = asking(CAMPUS)
     pairs = [
         ("Seminar room 2.06", "Kitchen 2.07"),
         ("Office 2.03", "Lab 2.02"),
@@ -90,12 +235,12 @@ def test_several_edits_proposed_together_need_one_yes():
     for pair in pairs:  # one "yes" in the next turn applies every door, in any order
         assert call(add_door, ctx(deps, "turn-2"), *pair, confirmed=True)["status"] == "done"
     assert len(deps.state.edits) == 3 and deps.pending is None
-    with pytest.raises(ModelRetry):  # each proposal applies once
-        add_door(ctx(deps, "turn-3"), *pairs[0], confirmed=True)
+    again = call(add_door, ctx(deps, "turn-3"), *pairs[0], confirmed=True)  # each proposal applies once
+    assert "already in the plan" in again["change"] and len(deps.state.edits) == 3
 
 
 def test_a_new_proposal_in_a_later_turn_replaces_the_old_batch():
-    deps = Deps.load(CAMPUS)
+    deps = asking(CAMPUS)
     call(add_door, ctx(deps, "turn-1"), "Seminar room 2.06", "Kitchen 2.07")
     call(add_door, ctx(deps, "turn-2"), "Office 2.03", "Lab 2.02")
     with pytest.raises(ModelRetry):  # the person moved on: the first one was never confirmed
@@ -103,13 +248,13 @@ def test_a_new_proposal_in_a_later_turn_replaces_the_old_batch():
 
 
 def test_confirming_without_a_proposal_is_refused():
-    deps = Deps.load(CAMPUS)
+    deps = asking(CAMPUS)
     with pytest.raises(ModelRetry):
         add_door(ctx(deps, "turn-2"), "Seminar room 2.06", "Kitchen 2.07", confirmed=True)
 
 
 def test_the_yes_applies_the_door_that_was_proposed_even_if_restated_differently():
-    deps = Deps.load(CAMPUS)
+    deps = asking(CAMPUS)
     call(add_door, ctx(deps, "turn-1"), "Seminar room 2.06", "Kitchen 2.07", width_m=5)
     # The confirming call names the rooms the other way round and forgets the width: still the same door.
     got = call(add_door, ctx(deps, "turn-2"), "Kitchen 2.07", "Seminar room 2.06", confirmed=True)
@@ -118,7 +263,7 @@ def test_the_yes_applies_the_door_that_was_proposed_even_if_restated_differently
 
 
 def test_a_person_who_says_dont_ask_gets_the_change_at_once():
-    deps = Deps.load(CAMPUS)
+    deps = asking(CAMPUS)
     got = call(add_door, ctx(deps, "turn-1"), "Seminar room 2.06", "Kitchen 2.07", apply_now=True)
     assert got["status"] == "done" and len(deps.state.edits) == 1 and deps.pending is None
 
@@ -143,7 +288,7 @@ def _tool_call_then(reply: str, **door_args):
 
 async def test_saying_a_door_was_added_when_it_was_only_proposed_is_sent_back():
     model, seen = _tool_call_then("I've added the door between Seminar room 2.06 and Kitchen 2.07.")
-    deps = Deps.load(CAMPUS, detail="walk")
+    deps = asking(CAMPUS, detail="walk")
     agent = make_agent()
     with agent.override(model=FunctionModel(model)):
         result = await agent.run("Add a door between Seminar room 2.06 and Kitchen 2.07", deps=deps)
@@ -155,7 +300,7 @@ async def test_saying_a_door_was_added_when_it_was_is_fine():
     model, seen = _tool_call_then(
         "I've added the door between Seminar room 2.06 and Kitchen 2.07.", apply_now=True
     )
-    deps = Deps.load(CAMPUS, detail="walk")
+    deps = asking(CAMPUS, detail="walk")
     agent = make_agent()
     with agent.override(model=FunctionModel(model)):
         result = await agent.run(
@@ -163,6 +308,24 @@ async def test_saying_a_door_was_added_when_it_was_is_fine():
         )
     assert len(deps.state.edits) == 1
     assert len(seen) == 2 and result.output.startswith("I've added")
+
+
+async def test_by_default_the_agent_adds_the_door_without_asking_and_may_say_so():
+    model, seen = _tool_call_then("I've added the door between Seminar room 2.06 and Kitchen 2.07.")
+    deps = Deps.load(CAMPUS, detail="walk")
+    agent = make_agent()
+    with agent.override(model=FunctionModel(model)):
+        result = await agent.run("Add a door between Seminar room 2.06 and Kitchen 2.07", deps=deps)
+    assert len(deps.state.edits) == 1
+    assert len(seen) == 2 and result.output.startswith("I've added")
+
+
+def test_only_a_conversation_that_asks_first_is_told_to_propose_edits():
+    from app.agents.building_guide.agent import CONFIRM_EDITS, _confirm_context
+
+    assert _confirm_context(SimpleNamespace(deps=Deps.load(CAMPUS))) == ""
+    assert _confirm_context(SimpleNamespace(deps=asking(CAMPUS))) == CONFIRM_EDITS
+    assert "ask them to confirm" in CONFIRM_EDITS
 
 
 async def test_a_reply_that_keeps_failing_the_answer_check_is_returned_not_crashed():
@@ -371,6 +534,29 @@ def test_no_route_names_every_restriction_that_blocks_it() -> None:
     assert "production bays" in causes and "2.95 m opening" in causes
 
 
+def test_a_machine_moved_behind_a_production_bay_gets_no_route_and_a_next_step() -> None:
+    """Scenario live-moved-machine: the drill press moves from Production zone H-A1 into Assembly zone H-A2.
+    From the office wing the only way in crosses H-A1, so there is no route by the bay rule (scored: no
+    route), but a person being guided hears how far they can go and whom to ask."""
+    from app.agents.building_guide.tools import move_item
+
+    deps = Deps.load(FACTORY, detail="walk")
+    call(move_item, ctx(deps), "Drill press H-A1", "Assembly zone H-A2")
+    r = call(route, ctx(deps), "Kitchen 0.28", "Drill press H-A1")
+    assert r["reachable"] is False
+    assert r["stops"][-1].startswith("Assembly zone H-A2") and "Production zone H-A1" in r["blocked_by"][0]
+    step = r["next_step"]
+    assert step["closest_by_the_rules"].startswith("Production zone H-A1")
+    assert step["bay_borders"].startswith("Assembly zone H-A2") and step["walk_m"] > 0
+    # ending in the bay itself is a route, and so is leaving the bay you stand in
+    assert call(route, ctx(deps), "Kitchen 0.28", "Production zone H-A1")["reachable"] is True
+    assert call(route, ctx(deps), "Assembly zone H-A2", "Main aisle H-B1")["reachable"] is True
+    # scored runs (detail="rooms") keep the plain no-route answer
+    scored = Deps.load(FACTORY)
+    call(move_item, ctx(scored), "Drill press H-A1", "Assembly zone H-A2")
+    assert "next_step" not in call(route, ctx(scored), "Kitchen 0.28", "Drill press H-A1")
+
+
 def test_no_route_says_when_places_are_not_connected() -> None:
     sealed = ROOT / "data" / "extra_tricky" / "proc-factory-dev-003-xt-sealed"
     if not sealed.exists():
@@ -463,6 +649,66 @@ def test_walk_distances_counts_the_other_rooms_within_a_walk(building, floor, st
     assert all(r["walk_m"] <= within_m for r in got["within"])
 
 
+BIG = "osm-way22744230"  # floors with more rooms than walk_distances lists, several entrances, upper floors
+
+
+def _walk_out(deps: Deps, room: str) -> float:
+    return call(route, ctx(deps), room, "outside")["total_length_m"]
+
+
+def test_one_rooms_walk_out_is_never_lost_to_the_ranking_cutoff():
+    """exit_distance ("how far from X to get outside") is one room's shortest walk to its nearest open
+    entrance. walk_distances lists 30 rooms per floor: on a big floor the asked room may not be listed, so
+    the cut says to route that room, and a room given as start carries its own walk out."""
+    from app.agents.building_guide.tools import walk_distances
+    from app.building.model import OUTSIDE
+    from app.building.routing import RouteGraph
+
+    deps = Deps.load(BIG)
+    b = deps.building
+    floor = max(b.floors_by_level(), key=lambda f: sum(s.type == "room" for s in b.spaces_on(f.id)))
+    got = call(walk_distances, ctx(deps), floor.name)
+    listed = {r["id"] for r in got["longest_first"]} | {got["shortest"]["id"]}
+    out = RouteGraph(b).distances_from([OUTSIDE])
+    hidden = next(s for s in b.spaces_on(floor.id) if s.type == "room" and s.id in out and s.id not in listed)
+    assert 'destination=...), "outside"' in got["note"]
+    assert _walk_out(deps, hidden.id) == round(out[hidden.id], 2)  # route agrees with the ranking
+    from_room = call(walk_distances, ctx(deps), floor.name, start=hidden.id)
+    assert from_room["start_walk_out_m"] == round(out[hidden.id], 2)
+    assert "start_walk_out_m" not in got  # from outside there is no start room
+
+
+def test_walk_out_from_an_upper_floor_takes_the_nearest_entrance_and_avoids_a_closed_one():
+    """Upper floors walk down to the ground-floor entrances; with several entrances the nearest open one
+    counts, and a reported closure moves the walk to the next one (never shorter)."""
+    from app.agents.building_guide.tools import set_closed
+    from app.building.model import OUTSIDE
+
+    deps = Deps.load(BIG)
+    b = deps.building
+    assert len(b.openings_of(OUTSIDE)) >= 2
+    room = next(
+        s
+        for f in reversed(b.floors_by_level())
+        if f.level > 0
+        for s in b.spaces_on(f.id)
+        if s.type == "room" and call(route, ctx(deps), s.id, "outside")["reachable"]
+    )
+    before = call(route, ctx(deps), room.id, "outside")
+    used = [
+        e
+        for leg in before["legs"]
+        for e in leg["element_path"]
+        if e in {o.id for o in b.openings_of(OUTSIDE)}
+    ]
+    assert len(used) == 1  # leaves through exactly one entrance, at the end
+    set_closed(ctx(deps), used[0])
+    after = call(route, ctx(deps), room.id, "outside")
+    assert not after["reachable"] or after["total_length_m"] >= before["total_length_m"]
+    if after["reachable"]:
+        assert used[0] not in [e for leg in after["legs"] for e in leg["element_path"]]
+
+
 def test_rooms_stacked_on_different_floors_are_not_an_overlap():
     """Kitchens drawn one above another share x/y but no floor area: across the building the total stays
     the plain sum (extra_tricky adversarial_language-11 read a 'covered' 120.06 m² instead of 161.34)."""
@@ -531,7 +777,7 @@ SPLIT = ("Office 2.03", "Lab 2.02", "Staircase 1")  # north and south neighbours
 
 
 def test_a_wall_is_proposed_then_built_after_a_yes_and_undone():
-    deps = Deps.load(CAMPUS)
+    deps = asking(CAMPUS)
     room = deps.building.resolve("Office 2.03")[0]
     proposed = call(add_wall, ctx(deps, "turn-1"), *SPLIT)
     assert proposed["status"].startswith("proposed") and not deps.state.edits

@@ -212,7 +212,10 @@ export function extractLiveTurn(
 
   // 1. Check if `add_door` (one or a batch) or `what_if(add_door_between=...)` was called by the backend agent
   const pairKey = (t: { input: Rec }) => `${String(t.input.first)}|${String(t.input.second)}|${String(t.input.width_m)}`
-  const addDoors = toolRecords.filter((t) => t.name === 'add_door' && typeof t.data.status === 'string')
+  // Only doors that were added or proposed: an "already there" answer added nothing to draw.
+  const addDoors = toolRecords.filter(
+    (t) => t.name === 'add_door' && (t.data.status === 'done' || String(t.data.status).startsWith('proposed')),
+  )
   const latestPerDoor = [...new Map(addDoors.map((t) => [pairKey(t), t])).values()] // a confirm repeats the proposal
   const whatIfDoor = [...toolRecords].reverse().find((t) => t.name === 'what_if' && Array.isArray(t.input.add_door_between))
   const doorTools = latestPerDoor.length ? latestPerDoor : whatIfDoor ? [whatIfDoor] : []
@@ -238,7 +241,10 @@ export function extractLiveTurn(
         resolveRoomInput(pairInput[0]) ?? (highlightIds[0] ? index.spaceById.get(highlightIds[0]) : undefined)
       const spaceB =
         resolveRoomInput(pairInput[1]) ?? (highlightIds[1] ? index.spaceById.get(highlightIds[1]) : undefined)
-      const wall = spaceA && spaceB ? sharedWall(index, spaceA.id, spaceB.id) : null
+      const shared = spaceA && spaceB ? sharedWall(index, spaceA.id, spaceB.id) : null
+      // Draw it where the backend put it (a width change re-adds a door at the old door's spot, not mid-wall).
+      const placed = isXY(doorTool.data.position) ? doorTool.data.position : isXY(doorTool.input.position) ? doorTool.input.position : null
+      const wall = shared && placed ? { ...shared, pos: [placed[0], placed[1]] as [number, number] } : shared
       const between = Array.isArray(doorTool.data.door_between)
         ? doorTool.data.door_between.filter((x): x is string => typeof x === 'string')
         : [spaceA ? spaceLabel(spaceA) : 'Room A', spaceB ? spaceLabel(spaceB) : 'Room B']

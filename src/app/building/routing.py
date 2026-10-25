@@ -22,6 +22,10 @@ The route model is the one the judges grade with (synera-kit 1.1.0, README secti
   (wide_delivery_count) reach rooms behind bays only through them.
 - Level 3 sites (model.load_site): a walkway joins an entrance of one building to an entrance of another
   at its length, under the same constraints; it is the only way between buildings.
+- Ours, off unless asked (Constraints.outside_walking, the app's chat and voice only): the outside is one more
+  walkable space. Two entrances of the same ground floor are joined by the shortest walk round the
+  building's outline (its footprint offset 15 cm outward, round corners), at the indoor cost per metre;
+  space_path shows OUTSIDE between them. Never between two buildings of a site: walkways stay the only way.
 The geometry of walking inside one space is the kit's own reference code (starter_agent.building_map:
 door_landing, walking_lengths), imported rather than copied, so the walk is graded the way it's computed.
 
@@ -37,13 +41,15 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 
-from shapely.geometry import Polygon
-from starter_agent.building_map import door_landing, walking_lengths
+import numpy as np
+from shapely.geometry import Point, Polygon, box
+from shapely.ops import nearest_points, unary_union
+from starter_agent.building_map import COVER_TOLERANCE_M, door_landing, visibility_matrix, walking_lengths
 
-from app.building.model import OUTSIDE, Building, Connector, Opening, Space, Walkway
+from app.building.model import OUTSIDE, XY, Building, Connector, Opening, Space, Walkway
 from app.settings import ROOT
 
 WALK_CACHE = ROOT / ".cache" / "walks"
@@ -59,6 +65,7 @@ __all__ = [
     "Route",
     "RouteGraph",
     "Tour",
+    "outside_walks",
     "validate_route",
 ]
 
@@ -67,6 +74,10 @@ STAIRS_M_PER_RISE = 2.0
 LIFT_FIXED_M = 15.0
 LIFT_M_PER_RISE = 1.0
 LENGTH_DECIMALS = 3
+OUTSIDE_CLEARANCE_M = 0.15
+"""outside_walking: the walk round a building keeps this far off its outline (the indoor wall clearance)."""
+WALL_GAP_M = 0.5
+"""Gaps between room outlines up to twice this wide are walls, not a way through the building."""
 
 
 @dataclass(frozen=True)
@@ -79,9 +90,12 @@ class Constraints:
     """Every opening passed must be at least this wide (wide_delivery questions: 1.0 or 1.1 m)."""
     closed: frozenset[str] = frozenset()
     """Element ids (openings, connectors or spaces) that can't be used."""
+    outside_walking: bool = False
+    """Out one entrance, round the building, in through another, when that's shorter. Off for everything
+    scored (the kit and Synera: no route round the outside); on only for the app's chat and voice sessions."""
 
     def with_closed(self, *element_ids: str) -> Constraints:
-        return Constraints(self.step_free, self.min_width_m, self.closed | set(element_ids))
+        return replace(self, closed=self.closed | set(element_ids))
 
 
 WALKING = Constraints()
@@ -203,6 +217,10 @@ class RouteGraph:
             first, second = w.opening_ids
             if _usable(w, c) and first in open_doors and second in open_doors:
                 self._add_edge(DOOR_PREFIX + first, DOOR_PREFIX + second, w.length_m, via=w.id)
+        if c.outside_walking:  # round the outside, between two entrances of one ground floor
+            for (first, second), (length, _) in outside_walks(b).items():
+                if first in open_doors and second in open_doors:
+                    self._add_edge(DOOR_PREFIX + first, DOOR_PREFIX + second, length, space=OUTSIDE)
 
     def _sources(self, node: str) -> list[str]:
         """Graph nodes a route starts from: the space, or every open entrance for OUTSIDE."""
@@ -296,6 +314,62 @@ class RouteGraph:
         through_production_bays=False, the route rule applies: a bay can be reached but not driven across."""
         dist, _, _ = self._dijkstra(self._sources(start), bays_are_ends=not through_production_bays)
         return {n for n in dist if not n.startswith(DOOR_PREFIX)}
+
+
+def outside_walks(b: Building) -> dict[tuple[str, str], tuple[float, tuple[XY, ...]]]:
+    """Walks round the outside between two entrances on the same ground floor (level 0), for
+    Constraints.outside_walking: {(opening id, opening id) sorted: (metres, points from the first to the
+    second)}. The line keeps OUTSIDE_CLEARANCE_M off the floor's footprint (its spaces' outlines merged,
+    gaps between them closed) and goes round its corners, never through it. Entrances into a courtyard only
+    reach each other. Each ground floor is walked alone, so two buildings of a site are never joined."""
+    walks: dict[tuple[str, str], tuple[float, tuple[XY, ...]]] = {}
+    for floor in b.floors.values():
+        doors = tuple(sorted((o.id, o.position) for o in b.openings_of(OUTSIDE) if o.floor_id == floor.id))
+        if floor.level == 0 and len(doors) > 1:
+            walks |= _outside_walks(tuple(s.polygon for s in b.spaces_on(floor.id)), doors)
+    return walks
+
+
+@lru_cache(maxsize=64)
+def _outside_walks(
+    outlines: tuple[tuple[tuple[float, float], ...], ...], doors: tuple[tuple[str, tuple[float, float]], ...]
+) -> dict[tuple[str, str], tuple[float, tuple[XY, ...]]]:
+    footprint = unary_union([_outline(p) for p in outlines])
+    footprint = footprint.buffer(WALL_GAP_M, join_style="mitre").buffer(-WALL_GAP_M, join_style="mitre")
+    kept = footprint.buffer(OUTSIDE_CLEARANCE_M, join_style="mitre").simplify(0.02)
+    outside = box(*kept.buffer(5.0).bounds).difference(kept)
+    positions = dict(doors)
+    walks: dict[tuple[str, str], tuple[float, tuple[XY, ...]]] = {}
+    for part in getattr(outside, "geoms", [outside]):  # the ground round the building, and any courtyards
+        landings = {oid: nearest_points(part, Point(xy))[0] for oid, xy in doors}
+        here = [(oid, (p.x, p.y)) for oid, p in landings.items() if p.distance(Point(positions[oid])) < 1.0]
+        if len(here) < 2:  # an entrance more than 1 m inside the footprint opens onto another part
+            continue
+        corners = [c for ring in [part.exterior, *part.interiors] for c in list(ring.coords)[:-1]]
+        nodes = [xy for _, xy in here] + corners
+        lengths, after = _all_shortest(visibility_matrix(part.buffer(COVER_TOLERANCE_M), nodes))
+        for (i, (a, pa)), (j, (z, pz)) in itertools.combinations(enumerate(here), 2):
+            if not math.isfinite(lengths[i, j]):
+                continue
+            path, k = [pa], i
+            while k != j:
+                k = int(after[k, j])
+                path.append(nodes[k])
+            step = math.dist(positions[a], pa) + math.dist(positions[z], pz)
+            walks[(a, z)] = (float(lengths[i, j]) + step, (positions[a], *path, positions[z]))
+    return walks
+
+
+def _all_shortest(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Floyd-Warshall with the next node on each shortest path: (lengths, after[i, j])."""
+    n = len(matrix)
+    after = np.tile(np.arange(n), (n, 1))
+    for middle in range(n):
+        through = matrix[:, middle, None] + matrix[None, middle, :]
+        better = through < matrix
+        matrix = np.where(better, through, matrix)
+        after = np.where(better, after[:, middle, None], after)
+    return matrix, after
 
 
 def _spaces_passed(

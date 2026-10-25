@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 ia = "app.cli:main"
+run_benchmark = "app.agents.building_guide.sunday:cli"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]

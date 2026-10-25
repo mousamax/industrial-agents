@@ -34,6 +34,7 @@ from .tools import (
     move_item,
     never_crash,
     overview,
+    remove_door,
     set_closed,
     undo_last_change,
     walk_directions,
@@ -82,7 +83,17 @@ def _location_context(ctx: RunContext[Deps]) -> str:
 
 
 def _live_context(ctx: RunContext[Deps]) -> str:
-    """The clock, and whether anyone recorded changes, so "yesterday" and "what changed?" have a reference."""
+    """The clock, and whether anyone recorded changes, so "yesterday" and "what changed?" have a reference.
+    As the turn started, and the same for every model request in it: a change a tool makes during the turn
+    is in that tool's result, and listing it here too made the model think the door was there before its
+    own call (and that it had now made two)."""
+    turn = ctx.deps.turn_context
+    if turn is None or turn[0] != ctx.run_id:
+        turn = ctx.deps.turn_context = (ctx.run_id, _live_now(ctx))
+    return turn[1]
+
+
+def _live_now(ctx: RunContext[Deps]) -> str:
     state = ctx.deps.state
     now = f"It is now {_clock(state.now())}."
     if not state.edits:
@@ -93,6 +104,14 @@ def _live_context(ctx: RunContext[Deps]) -> str:
         f"{_ago(latest.at, state.now())}, by {latest.by or 'this conversation'}); tools already apply them, "
         "building_changes lists them."
     )
+
+
+CONFIRM_EDITS = load_prompt(__file__, "confirm_edits.md")
+
+
+def _confirm_context(ctx: RunContext[Deps]) -> str:
+    """Only where plan edits wait for a yes (Deps.confirm_edits, the voice call); elsewhere they apply at once."""
+    return CONFIRM_EDITS if ctx.deps.confirm_edits else ""
 
 
 def _calendar_context(ctx: RunContext[Deps]) -> str:
@@ -219,7 +238,7 @@ def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) ->
 
 
 CLAIMS_A_CHANGE = re.compile(
-    r"\bi(?:'ve|’ve| have) (?:just |now )?(?:added|applied|put in|made the change)"
+    r"\bi(?:'ve|’ve| have) (?:just |now )?(?:added|removed|applied|put in|made the change)"
     r"|\b(?:has|have) (?:now )?been (?:added|applied)|\bis now (?:added|in the plan)|\bare now in the plan",
     flags=re.IGNORECASE,
 )
@@ -248,15 +267,16 @@ def _says_only_what_was_changed(ctx: RunContext[Deps], reply: str) -> str:
         return reply
     raise ModelRetry(
         "Your reply says a change was made, but no tool changed the building in this turn (a proposal "
-        'changes nothing; only a result with "status": "done" does). If they already said yes, call the tool '
-        "again with confirmed=true; if they said to do it without asking, with apply_now=true; otherwise say "
-        "what you propose and ask them to confirm."
+        'changes nothing; only a result with "status": "done" does). Call the tool to make it; where changes '
+        "need a yes first: after their yes with confirmed=true, if they said to do it without asking with "
+        "apply_now=true, otherwise say what you propose and ask them to confirm."
     )
 
 
 CHANGES_STATE = {
     set_closed,
     add_door,
+    remove_door,
     add_wall,
     move_item,
     undo_last_change,
@@ -294,6 +314,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
     built.instructions(_live_context)
     built.instructions(_draft_context)
     built.instructions(_calendar_context)
+    built.instructions(_confirm_context)
     built.output_validator(_says_only_what_was_changed)
     built.output_validator(_answer_line_is_committed_and_grounded)
     return built

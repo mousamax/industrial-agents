@@ -103,6 +103,7 @@ function pastTurns(messages: ChatMessage[]): PastTurn[] {
  *  plan from the server so it shows what routes now use. Mirrors CHANGES_STATE in building_guide/agent.py. */
 const PLAN_EDITS = new Set([
   'add_door',
+  'remove_door',
   'add_wall',
   'move_item',
   'set_closed',
@@ -417,13 +418,17 @@ function Workspace({ phone }: { phone: boolean }) {
       setInput('')
       setLiveMode(true)
       const currentMem = useApp.getState().memory
-      void targetChat.sendMessage({
-        text: withPreferences(
-          note ? `${text} ${note}` : text,
-          currentMem.some((m) => m.stepFree),
-          currentMem.map((m) => m.text),
-        ),
-      })
+      void targetChat.sendMessage(
+        {
+          text: withPreferences(
+            note ? `${text} ${note}` : text,
+            currentMem.some((m) => m.stepFree),
+            currentMem.map((m) => m.text),
+          ),
+        },
+        // Plan edits apply at once, spoken or typed: the agent says what changed and that "undo" takes it back.
+        { body: { confirmEdits: false } },
+      )
     },
     [stopSpeech, cancelReveal, loadBuilding, clearLiveError],
   )
@@ -783,7 +788,8 @@ function Workspace({ phone }: { phone: boolean }) {
       // The change on screen, or else the latest one still waiting for a yes: shown again before it is applied.
       const waiting = result?.confirm && !applied ? null : [...shownRef.current].reverse().find((c) => c.result.confirm && !c.applied)
       const target = waiting?.result ?? result
-      if (!target?.confirm) return 'No change is waiting for confirmation. Ask the guide to propose it first.'
+      if (!target?.confirm || (target === result && applied))
+        return 'Nothing to confirm: the guide makes changes at once and already made this one. Tell them what changed; "undo" takes it back. Do not ask the guide for it again.'
       if (waiting) playResult(waiting.result, false, false)
       setApplied(true)
       return guideTurn(target.confirmPrompt ?? 'Yes, please apply that change.', true)

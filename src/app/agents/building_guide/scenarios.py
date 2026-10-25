@@ -114,6 +114,25 @@ def check(rule: dict, turn: dict) -> str | None:
     return None
 
 
+_GEOMETRY = {"points", "path", "space_path", "element_path", "highlight", "floor_id", "space_id"}
+"""Coordinates and ids the judge can't read; dropped so the facts it checks (steps, landmarks) fit the cap."""
+
+
+def _for_judge(result: str, cap: int = 4000) -> str:
+    """A tool result as the judge sees it: geometry stripped, then capped."""
+
+    def strip(o: Any) -> Any:
+        if isinstance(o, dict):
+            return {k: strip(v) for k, v in o.items() if k not in _GEOMETRY}
+        return [strip(x) for x in o] if isinstance(o, list) else o
+
+    try:
+        result = json.dumps(strip(json.loads(result)), ensure_ascii=False)
+    except (ValueError, TypeError):
+        pass
+    return result[:cap]
+
+
 def transcript(scenario: dict, turns: list[dict], deps: Deps, recorded: list[dict] | None = None) -> str:
     """What the agent knew (the building overview it gets as context) plus every turn, tool call and result."""
     out = [
@@ -129,7 +148,7 @@ def transcript(scenario: dict, turns: list[dict], deps: Deps, recorded: list[dic
         out.append(f"\n--- Turn {i}\n{speaker}: {t['user']}")
         for c in t["tool_calls"]:
             out.append(
-                f"TOOL {c['tool']}({json.dumps(c['args'], ensure_ascii=False)}) -> {c['result'][:1500]}"
+                f"TOOL {c['tool']}({json.dumps(c['args'], ensure_ascii=False)}) -> {_for_judge(c['result'])}"
             )
         out.append(f"ASSISTANT: {t['reply']}")
     out.append("\nExpectations:\n" + "\n".join(f"- {e}" for e in scenario["expect"]))

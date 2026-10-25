@@ -13,7 +13,7 @@
     uv run python -m app.agents.building_guide.bench dev --per-kind 3
     uv run python -m app.agents.building_guide.bench dev --suite warmup --per-kind 10
     uv run python -m app.agents.building_guide.bench dev --model smart --thinking medium --label opus-med
-    uv run python -m app.agents.building_guide.bench test --submission submission/team_answers.csv
+    uv run python -m app.agents.building_guide.bench test --submission evals/test_answers.csv
 
 Each run writes evals/reports/bench-<label>.jsonl (reply, tool calls, tokens per question) and prints the
 score per kind. The official sequential command in BENCHMARK.md gives the same score; this one is faster.

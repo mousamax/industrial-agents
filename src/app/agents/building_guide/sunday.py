@@ -1,5 +1,6 @@
 """Sunday benchmark: one command from Synera's input to answers.json, no manual steps (challenge PDF).
 
+    uv run run_benchmark <building_dir> <questions.json> <answers.json>      # same as the line below
     uv run python -m app.agents.building_guide.sunday <building_dir> <questions.json> <answers.json>
     ... --check                 # then check every route the way Synera scores it (invalid = 0 points)
     ... --csv answers.csv       # also write the kit's CSV (question_id, full reply)
@@ -17,13 +18,17 @@ Synera hasn't published the schema yet (PDF: "a schema and an example answer fil
     {"id": "...", "reply": "<full reply>", "answer": "<text after the last 'Answer:'>",
      "item_id": "<asset id>" | null, "space_id": "<space id>" | null, "count": int | null,
      "reachable": bool | null, "route": ["<space id>", ...] | null, "elements": ["<opening/stair/lift id>", ...] | null,
-     "length_m": float | null}
+     "length_m": float | null, "stops": ["<space id>", ...] | null,
+     "edits": [{"edit": "AddDoor", "first_space_id": ..., ...}, ...] | null}
 
 plus "error": "<exception>" when answering that question crashed (every other field null).
 
 `route` is the ordered space path (docs/synera/ROUTE_SCORING.md scores routes as spaces), `elements` the
-openings, stairs and lifts used. The structured fields come from the agent's own tool results (the last
-find/route/count call), never from parsing prose, so they are exactly what the code computed.
+openings, stairs and lifts used, `stops` a tour's stops in visiting order (start, each stop, end). The
+structured fields come from the agent's own tool results (the last find/route/plan_visits/count call),
+never from parsing prose, so they are exactly what the code computed. `edits` are the plan changes the
+agent made while answering ("add a door between X and Y, then ..."), as app.building.state edits: the
+answer holds on the building with them applied, and --check replays them before checking the route.
 
 Scaffold: tests/building/test_sunday.py drives it with a deterministic answerer (no model). The real
 answerer runs building_guide and returns its reply and tool calls, like bench.py does.
@@ -33,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -42,8 +48,10 @@ import typer
 ToolCall = dict[str, Any]
 """{"tool": name, "args": {...}, "result": the tool's JSON string}, in call order (bench.py's format)."""
 
-Answerer = Callable[[Path, dict[str, Any]], tuple[str, list[ToolCall]]]
-"""(building_dir, question) -> (full reply, tool calls)."""
+Answerer = Callable[
+    [Path, dict[str, Any]], tuple[str, list[ToolCall]] | tuple[str, list[ToolCall], list[dict[str, Any]]]
+]
+"""(building_dir, question) -> (full reply, tool calls[, plan edits made, see edits_of])."""
 
 ANSWER_INSTRUCTION = (
     "Finish with a line 'Answer: ...' giving the room, the number, or the route length in metres "
@@ -65,6 +73,7 @@ def empty_record(question_id: str) -> dict[str, Any]:
         "elements": None,
         "length_m": None,
         "stops": None,
+        "edits": None,
     }
 
 
@@ -115,26 +124,66 @@ def _joined(legs: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
     return spaces, elements
 
 
+ROUTE_ASKED = re.compile(
+    r"\b(?:route|routes|get(?:ting)?\s+(?:to|from|there|back|out)|go(?:ing)?\s+(?:to|from)|way\s+(?:to|from|out)"
+    r"|how\s+far|far\s+is|distance|walk\w*|directions?|path|reach\w*|step[-\s]?free|wheelchair|tour"
+    r"|visit\w*|via|metres?|meters?|outside|outdoors|entrances?|exits?|street|arriv\w*|out\s+of\s+the\s+building)\b",
+    re.IGNORECASE,
+)
+"""Words that make a question about getting somewhere (or from or to the outside): its route is the answer."""
+
+
+def _unasked_route_from_outside(question: dict[str, Any], record: dict[str, Any]) -> bool:
+    """A find or count question answered with a courtesy route from the nearest entrance ("where is X":
+    the agent adds how to get there from outside). Nobody asked for that route and the question gave no
+    start, so it isn't part of the answer: leave route and length empty rather than hand a judge a route
+    that starts at "outside" for a question that never mentioned it."""
+    route = record.get("route") or []
+    located = record["item_id"] or record["space_id"] or record["count"] is not None
+    text = str(question.get("text") or question.get("question") or "")
+    return bool(
+        located
+        and route
+        and route[0] == "outside"
+        and not _start(question)
+        and not (question.get("constraints") or {}).get("step_free")
+        and not ROUTE_ASKED.search(text)
+    )
+
+
 def _answer_line(reply: str) -> str | None:
     lines = [line for line in reply.splitlines() if "Answer:" in line]
     return lines[-1].split("Answer:", 1)[1].strip() if lines else None
 
 
-def to_record(question: dict[str, Any], reply: str, tool_calls: list[ToolCall]) -> dict[str, Any]:
+def to_record(
+    question: dict[str, Any],
+    reply: str,
+    tool_calls: list[ToolCall],
+    edits: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """One answers.json record (schema in the module docstring) from a reply and the tools behind it.
 
     Each structured field comes from the last call of the tool that computes it: item and room from the
     last `find` with a hit, count from the last `count_items`, route from the last `route`."""
-    record = empty_record(question["id"]) | {"reply": reply, "answer": _answer_line(reply)}
+    record = empty_record(question["id"]) | {
+        "reply": reply,
+        "answer": _answer_line(reply),
+        "edits": edits or None,
+    }
     hits = [f for f in _results(tool_calls, "find") if f.get("items") or f.get("rooms")]
     if hits:
         record["item_id"], record["space_id"] = _located(hits[-1])
     counts = [c for c in _results(tool_calls, "count_items") if "count" in c]
     if counts:
         record["count"] = counts[-1]["count"]
-    # walk_directions only exists in chats (Deps.detail="walk"), but its legs carry the same space_path and
-    # length: if a run ever has it, a route answered with it still fills the record.
-    routes = [r for r in _results(tool_calls, "route", "walk_directions") if "reachable" in r]
+    # plan_visits (tours in free order) and walk_directions (chats only, Deps.detail="walk") return the same
+    # reachable/legs/total_length_m as route, so a route answered with either still fills the record.
+    routes = [
+        r
+        for r in _results(tool_calls, "route", "plan_visits", "walk_directions")
+        if isinstance(r.get("reachable"), bool)
+    ]
     if routes:
         last = routes[-1]
         record["reachable"] = bool(last["reachable"])
@@ -144,6 +193,8 @@ def to_record(question: dict[str, Any], reply: str, tool_calls: list[ToolCall]) 
             if len(legs) > 1:  # a tour: where each leg starts, plus the end (bays may be stops, not passed)
                 record["stops"] = [leg["space_path"][0] for leg in legs] + [legs[-1]["space_path"][-1]]
             record["length_m"] = last.get("total_length_m")
+        if _unasked_route_from_outside(question, record):
+            record |= {"reachable": None, "route": None, "elements": None, "stops": None, "length_m": None}
     return record
 
 
@@ -195,8 +246,33 @@ def deps_for(building_dir: Path, question: dict[str, Any]):
     return deps
 
 
-async def agent_answer(building_dir: Path, question: dict[str, Any]) -> tuple[str, list[ToolCall]]:
-    """building_guide on one question: its reply and every tool call with its result (bench.py's way)."""
+def edits_of(deps) -> list[dict[str, Any]]:
+    """The plan edits made while answering (not the closures questions.json gave), as JSON a checker can
+    replay with replay_edits: {"edit": "AddDoor", "first_space_id": ..., "second_space_id": ..., ...}."""
+    from dataclasses import asdict
+
+    return [
+        {"edit": type(e).__name__} | asdict(e) for _, e, s in deps.state.changes() if s.by != "questions.json"
+    ]
+
+
+def replay_edits(deps, edits: list[dict[str, Any]] | None) -> None:
+    """Apply a record's `edits` to a fresh Deps (ValueError if one doesn't apply)."""
+    from typing import get_args
+
+    from app.building.state import Edit
+
+    kinds = {kind.__name__: kind for kind in get_args(Edit)}
+    for e in edits or []:
+        fields = {k: tuple(v) if isinstance(v, list) else v for k, v in e.items() if k != "edit"}
+        deps.state.apply(kinds[e["edit"]](**fields), by="answers.json")
+
+
+async def agent_answer(
+    building_dir: Path, question: dict[str, Any]
+) -> tuple[str, list[ToolCall], list[dict[str, Any]]]:
+    """building_guide on one question: its reply, every tool call with its result (bench.py's way) and the
+    plan edits it made."""
     from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 
     from app import observability
@@ -221,11 +297,13 @@ async def agent_answer(building_dir: Path, question: dict[str, Any]) -> tuple[st
         for p in m.parts
         if isinstance(p, ToolCallPart)
     ]
-    return result.output, calls
+    return result.output, calls, edits_of(deps)
 
 
-def agent_answerer(building_dir: Path, question: dict[str, Any]) -> tuple[str, list[ToolCall]]:
-    """building_guide on one question: its reply and every tool call with its result."""
+def agent_answerer(
+    building_dir: Path, question: dict[str, Any]
+) -> tuple[str, list[ToolCall], list[dict[str, Any]]]:
+    """building_guide on one question: its reply, every tool call with its result and its plan edits."""
     from app import observability
 
     observability.setup()
@@ -305,6 +383,10 @@ def check_records(
         if r.get("route"):
             question = by_id.get(r["id"], {"id": r["id"]})
             deps = deps_for(building_dir, question)
+            try:
+                replay_edits(deps, r.get("edits"))
+            except (KeyError, TypeError, ValueError) as e:
+                found.append(f"its edits don't apply: {e}")
             rules = Constraints(
                 step_free=bool((question.get("constraints") or {}).get("step_free")), closed=deps.closed
             )
@@ -371,5 +453,10 @@ def main(
             raise typer.Exit(1)
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """`uv run run_benchmark <building_dir> <questions.json> <answers.json>` (pyproject [project.scripts])."""
     typer.run(main)
+
+
+if __name__ == "__main__":
+    cli()

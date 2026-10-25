@@ -133,10 +133,10 @@ scenarios:
   persona: Facility manager editing the plan.
   turns:
   - Add a door between Seminar room 2.06 and Kitchen 2.07.
-  - Yes, do it.
+  - How far is it from Seminar room 2.06 to Kitchen 2.07 now?
   expect:
-  - Before changing the plan, says what it understood (which two rooms, on Floor 2) and what the door would change, and asks to confirm.
-  - After "Yes, do it", the door is really added to the building (later routes can use it) and it says so; it never claims a change it did not make.
+  - Turn 1 adds the door right away, without asking for confirmation, and says in a line exactly what changed (which two rooms, on Floor 2, the width) and that it can be undone.
+  - Turn 2's route goes straight through the new door; it never claims a change it did not make.
 
 - name: cross-building-wheelchair
   building: evals/datasets/sites/demo-campus

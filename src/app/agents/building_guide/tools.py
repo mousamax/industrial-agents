@@ -44,6 +44,7 @@ from app.building.state import (
     Close,
     Edit,
     MoveAsset,
+    RemoveDoor,
     Reopen,
     SplitRoom,
     Stamp,
@@ -75,6 +76,8 @@ class Deps:
         here: str | None = None,
         who: str = "",
         detail: Detail = "rooms",
+        confirm_edits: bool = False,
+        outside_walking: bool = False,
     ) -> None:
         self.state: BuildingState = state
         """Shared by every colleague in the app (one per building); one per question in the benchmark."""
@@ -90,6 +93,16 @@ class Deps:
         that doesn't say) gives routes room by room, with no walk_directions tool and no in-room `path`.
         "walk" (set by the interactive channels: the app chat, voice, `ia chat`, tricky-user scenarios)
         adds walk_directions and the drawn walk round obstacles."""
+        self.confirm_edits: bool = confirm_edits
+        """Whether plan edits (add_door, add_wall) wait for a yes. False (the default: the text chat, benchmarks,
+        the Sunday run, evals) applies them at once, undo_last_change takes them back. True only for the
+        voice call (the app sends `confirmEdits`): the first call proposes, the person's yes applies."""
+        self.outside_walking: bool = outside_walking
+        """Whether routes may go out one entrance, round the building and in through another when that's
+        shorter (Constraints.outside_walking). False (the default: benchmarks, the Sunday run, evals: the scored
+        route model has no way round the outside). True only for the app's chat and voice sessions."""
+        self.turn_context: tuple[str, str] | None = None
+        """(run id, the clock and recorded changes as that turn started): agent._live_context."""
 
     @property
     def building(self) -> Building:
@@ -496,7 +509,7 @@ def _label(b: Building, space_id: str) -> str:
 
 def _constraints(ctx: RunContext[Deps], step_free: bool, min_width_m: float | None, closed=()) -> Constraints:
     ids = {element_of(ctx.deps.building, c) for c in closed} | ctx.deps.closed
-    return Constraints(step_free=step_free, min_width_m=min_width_m, closed=frozenset(ids))
+    return Constraints(step_free, min_width_m, frozenset(ids), outside_walking=ctx.deps.outside_walking)
 
 
 def is_room(s: Space) -> bool:
@@ -916,8 +929,10 @@ def _steps(b: Building, route: Route) -> list[str]:
     if not path:
         return []
     steps = [f"start in {_label(b, path[0])}"]
-    for here, element in zip(path[1:], elements, strict=False):
-        if here == OUTSIDE:
+    for k, (here, element) in enumerate(zip(path[1:], elements, strict=False), 2):
+        if here == OUTSIDE and k < len(path):  # out and back in (Deps.outside_walking)
+            steps.append("go outside through the entrance and walk around the building")
+        elif here == OUTSIDE:
             steps.append(
                 "leave the building through the entrance" if element in b.openings else "leave the building"
             )
@@ -972,6 +987,35 @@ class _BaysPassable(RouteGraph):
         return super()._dijkstra(sources, goals, bays_are_ends=False)
 
 
+def _up_to_the_bay(b: Building, c: Constraints, stops: list[str]) -> dict[str, Any] | None:
+    """When only the production-bay rule blocks a route: how far the person can go by the rules (into the
+    first bay the way crosses, since a route may end in one) and what to tell them, so a no-route answer in a
+    conversation still leaves them a next step. None when something else (width, steps, closures) blocks it."""
+    crossing = _BaysPassable(b, c).tour(stops)
+    if crossing is None:
+        return None
+    for leg in crossing.legs:
+        inner = leg.space_path[1:-1]
+        bay = next((s for s in inner if s in b.spaces and b.spaces[s].room_type in PRODUCTION_BAYS), None)
+        if bay is None:
+            continue
+        legal = route_graph(b, c).shortest(leg.space_path[0], bay)
+        beyond = inner[inner.index(bay) + 1] if inner.index(bay) + 1 < len(inner) else leg.space_path[-1]
+        return {
+            "closest_by_the_rules": _label(b, bay),
+            "walk_m": legal.length_m if legal else None,
+            "bay_borders": _label(b, beyond),
+            "tell_them": (
+                f"Say plainly there is no route by the rules (a production bay may be a destination, never a "
+                f"shortcut), then give a next step: they can walk as far as {_label(b, bay)}, the production "
+                f"bay on the way, which opens onto {_label(b, beyond)}; to go on through it to "
+                f"{_label(b, leg.space_path[-1])} they should ask the people working in that bay, a supervisor "
+                "or facility management whether they may cross, or whether there is another way in."
+            ),
+        }
+    return None
+
+
 def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
     """Which restrictions block a route, found by lifting each one alone (and all of them together)."""
 
@@ -984,7 +1028,7 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
             s
             for leg in crossing.legs
             for s in leg.space_path[1:-1]
-            if b.spaces[s].room_type in PRODUCTION_BAYS
+            if s in b.spaces and b.spaces[s].room_type in PRODUCTION_BAYS
         }
         names = ", ".join(sorted(_label(b, s) for s in bays))
         causes.append(
@@ -1084,14 +1128,16 @@ def route(
     stops, shared_name = _stops_committed(ctx, [start, *(via or []), destination], constraints)
     tour = route_graph(b, constraints).tour(stops)
     if tour is None:
-        return _json(
-            {
-                "reachable": False,
-                "stops": [_label(b, s) for s in stops],
-                "note": "No route under these constraints. See blocked_by for why.",
-                "blocked_by": _why_no_route(b, constraints, stops),
-            }
-        )
+        blocked = {
+            "reachable": False,
+            "stops": [_label(b, s) for s in stops],
+            "note": "No route under these constraints. See blocked_by for why.",
+            "blocked_by": _why_no_route(b, constraints, stops),
+        }
+        if ctx.deps.detail == "walk" and (way_on := _up_to_the_bay(b, constraints, stops)):
+            blocked["next_step"] = way_on  # a person being guided, never a scored run
+            blocked["note"] += " Then give them next_step, so they aren't left without a way forward."
+        return _json(blocked)
     legs = [_route_result(b, leg, ctx.deps.detail == "walk") for leg in tour.legs]
     total: Counter[str] = Counter()
     for leg in legs:
@@ -1111,10 +1157,29 @@ def route(
     )
 
 
+_WALK_M = re.compile(r"walk (\d+) m")
+
+
+def _short_walk(steps: list) -> list[str]:
+    """The leg in as few sentences as it can be told without losing a turn: each step that goes straight on
+    joins the one before it, its metres added in code; every left, right, stair, lift and obstacle stays."""
+    out: list[list] = []  # [text, metres]
+    for step in steps:
+        if step.action == "straight" and out and _WALK_M.search(out[-1][0]):
+            out[-1][1] += step.distance_m
+            continue
+        out.append([step.text, step.distance_m])
+    return [
+        _WALK_M.sub(f"walk about {max(1, round(m))} m", t, count=1) if _WALK_M.search(t) else t
+        for t, m in out
+    ]
+
+
 def _directions_leg(b: Building, route: Route) -> dict:
     """One walk_directions leg: the spoken steps (each with its floor and its own polyline) and the walk."""
     steps = []
-    for step in directions(b, route):
+    walk = directions(b, route)
+    for step in walk:
         d = dataclasses.asdict(step)
         space = b.spaces.get(step.space_id)
         d["floor_id"] = space.floor_id if space is not None else None
@@ -1123,6 +1188,7 @@ def _directions_leg(b: Building, route: Route) -> dict:
     return {
         "length_m": round(route.length_m, 2),
         "space_path": route.space_path,
+        "short_walk": _short_walk(walk),
         "steps": steps,
         "path": walk_path(b, route),
     }
@@ -1146,7 +1212,9 @@ def walk_directions(
     stands in the way ("go around the printer, keeping it on your left"), plus the drawn path for the map.
     Call it together with route whenever someone asks how to get somewhere, unless they clearly know the
     building. Its steps are raw material: tell them as a short walk built on turns and landmarks, not read
-    out one by one. Same arguments as route; closures they reported are avoided.
+    out one by one. Each leg's `short_walk` is the same walk with straight stretches already joined and
+    their metres added: build short or spoken answers from it, keeping every turn it has.
+    Same arguments as route; closures they reported are avoided.
 
     Args:
         start: Where the person is: room name/number, id, item name, or "outside" (from any entrance).
@@ -1421,6 +1489,8 @@ def walk_distances(
     "which room on floor X is farthest from Y". One call ranks every room; never probe rooms one by one.
     For "how many (other) rooms can I reach within X m" pass within_m=X: the answer is `count_within`,
     counted in code (the start itself excluded, walks of exactly X m included); report it as is.
+    It lists at most 30 rooms. For ONE named room's walk out ("how far from X to get outside"), call
+    route(start=X, destination="outside") instead; with a room as start, `start_walk_out_m` is that walk.
 
     Args:
         floor: Level or floor name whose rooms to rank (for "on that floor", the start's floor).
@@ -1434,9 +1504,10 @@ def walk_distances(
     """
     b = ctx.deps.building
     origin, f = _space_id(b, start), floor_of(b, floor)
-    distances = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or [])).distances_from(
-        [origin]
-    )
+    graph = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or []))
+    distances = graph.distances_from([origin])
+    walk_out = graph.shortest(origin, OUTSIDE) if origin != OUTSIDE else None
+    start_out = {"start_walk_out_m": round(walk_out.length_m, 2)} if walk_out is not None else {}
     if room_type:
         rtype = _type_of(room_type, {s.room_type for s in b.spaces.values()}, "room type")
         rooms = [s for s in b.spaces_on(f.id) if s.room_type == rtype]
@@ -1463,6 +1534,7 @@ def walk_distances(
                     {"room": _label(b, sid), "walk_m": round(d, 2)} for d, sid in others[len(near) :][:3]
                 ],
                 "unreachable_count": sum(1 for s in rooms if s.id not in distances and s.id != origin),
+                **start_out,
                 "highlight": [sid for _, sid in near],
             }
         )
@@ -1481,12 +1553,16 @@ def walk_distances(
             "longest_first": rows[:keep],
             **({"shortest": rows[-1]} if rows else {}),
             **(
-                {"note": f"{len(rows) - keep} more rooms with shorter walks not listed."}
+                {
+                    "note": f"{len(rows) - keep} more rooms with shorter walks not listed. For one room's own "
+                    'walk, call route(start=<room>, destination=...), "outside" for its walk out.'
+                }
                 if len(rows) > keep
                 else {}
             ),
             "unreachable_count": len(rooms) - len(ranked),
             "unreachable": [_label(b, s.id) for s in rooms if s.id not in distances][:MAX_RESULTS],
+            **start_out,
             "highlight": [sid for _, sid in ranked[:1]],
         }
     )
@@ -1495,22 +1571,30 @@ def walk_distances(
 # ---- tools: changes --------------------------------------------------------------------------------------
 
 
-def with_door(b: Building, first: str, second: str, width_m: float = 0.9) -> Building:
-    """A copy of the building with a new door in the middle of the wall two spaces share."""
-    where = geometry.shared_wall_midpoint(b, first, second)
-    if where is None:
-        raise ModelRetry(
-            f"{_label(b, first)} and {_label(b, second)} don't share a wall (≥1 m) on one floor."
-        )
+def with_door(
+    b: Building,
+    first: str,
+    second: str,
+    width_m: float = 0.9,
+    step_free: bool = True,
+    position: tuple[float, float] | None = None,
+) -> Building:
+    """A copy of the building with a new door in the middle of the wall two spaces share (or at
+    `position`). With OUTSIDE as one side: a new entrance in the middle of the room's longest outside wall."""
+    if OUTSIDE not in (first, second) and position is None:
+        if geometry.shared_wall_midpoint(b, first, second) is None:
+            raise ModelRetry(
+                f"{_label(b, first)} and {_label(b, second)} don't share a wall (≥1 m) on one floor."
+            )
+    try:
+        floor_id, where = BuildingState._door_place(b, AddDoor(first, second, position=position))  # noqa: SLF001
+    except ValueError as e:
+        raise ModelRetry(f"Can't put a door there: {e}.") from None
+    pair, kind = (first, second), "door"
+    if OUTSIDE in pair:
+        pair, kind = (second, OUTSIDE) if first == OUTSIDE else pair, "entrance"
     door = Opening(
-        f"{b.id}-NEW-{first[-4:]}-{second[-4:]}",
-        b.spaces[first].floor_id,
-        (first, second),
-        "door",
-        where,
-        width_m,
-        True,
-        True,
+        f"{b.id}-NEW-{first[-4:]}-{second[-4:]}", floor_id, pair, kind, where, width_m, step_free, True
     )
     return dataclasses.replace(b, openings={**b.openings, door.id: door})
 
@@ -1654,11 +1738,14 @@ def _proposed(pending: dict[str, Any] | None, edit: Edit) -> Edit | None:
 def _propose_or_apply(
     ctx: RunContext[Deps], edit: Edit, preview: dict, confirmed: bool, apply_now: bool = False
 ) -> str:
-    """Real edits happen in two turns: propose (nothing changes) -> the person says yes -> apply. Everything
-    proposed in one turn is one batch: a single yes applies all of it, without asking again per change.
-    `apply_now`: the person said to make the change without being asked; it is applied at once."""
+    """Edits apply at once, unless the conversation asks for a yes first (Deps.confirm_edits, the voice
+    call): then they happen in two turns, propose (nothing changes) -> the person says yes -> apply.
+    Everything proposed in one turn is one batch: a single yes applies all of it, without asking again per
+    change. `apply_now`: the person said to make the change without being asked; it is applied at once."""
     d = ctx.deps
-    if apply_now:
+    if apply_now or not d.confirm_edits:
+        if edit in d.state.edits:  # the same edit asked for again (a "yes" after it was made): once only
+            return _json(preview | {"status": "done", "change": "Already in the plan; nothing added twice."})
         try:
             message = d.state.apply(edit, by=d.who)
         except ValueError as e:
@@ -1725,40 +1812,182 @@ def set_closed(ctx: RunContext[Deps], element: str, closed: bool = True) -> str:
     return _json({"element": eid, "closed": closed, "change": message, "all_closed": sorted(d.closed)})
 
 
+def _door_already_there(d: Deps, a: str, c: str) -> str | None:
+    """The answer to add_door when the two spaces already have a door: one this session added (asked for
+    again, e.g. a "yes" after it was made) is "done", one in the plan "already there". Each adds nothing."""
+    b = d.building
+    hits = [o for o in b.openings_of(a) if o.other_side(a) == c]
+    if not hits:
+        return None
+    o = hits[0]
+    names = f"{_label(b, a)} and {_label(b, c)}" if c != OUTSIDE else f"outside and {_label(b, a)}"
+    door = f"a {o.width_m:g} m {o.kind} ({o.id})"
+    if o.id not in d.state.base.openings:
+        return _json(
+            {
+                "status": "done",
+                "change": f"This door is already in the plan: {door} between {names}, added in this session; "
+                "nothing added again.",
+                "undo": "undo_last_change reverts it",
+                "highlight": [a] if c == OUTSIDE else [a, c],
+            }
+        )
+    return _json(
+        {
+            "status": "already there",
+            "change": f"Nothing added: {names} already have {door}. For a second door, call again with "
+            "another=true; for a different width, remove_door it and add the new one at its position.",
+            "highlight": [a] if c == OUTSIDE else [a, c],
+        }
+    )
+
+
 def add_door(
     ctx: RunContext[Deps],
     first: str,
     second: str,
     width_m: float = 0.9,
+    step_free: bool = True,
+    position: list[float] | None = None,
+    another: bool = False,
     confirmed: bool = False,
     apply_now: bool = False,
 ) -> str:
-    """Add a real door to the plan, in the middle of the wall two spaces share. First call proposes it and
-    shows what it would change (nothing is edited); after the person says yes, call again with confirmed=true.
-    Only a result with "status": "done" means the door is in the plan.
+    """Add a real door to the plan, in the middle of the wall two spaces share. With "outside" as `second`
+    it is a new entrance, in the middle of the room's longest outside wall (only on the ground floor or a
+    floor that already has an entrance). It is added at once and later routes use it (undo_last_change takes
+    it back); only where you are told edits need a yes first, the first call proposes it (nothing is edited)
+    and a call with confirmed=true after their yes adds it. Only a result with "status": "done" means the
+    door is in the plan.
+
+    To change an existing door's width or steps: remove_door it, then add_door between the same two spaces
+    with the new width_m (and step_free) and `position` set to the removed door's position, which
+    remove_door returns as "re_add_at". That is one change for the person: say both are done and that
+    undo_last_change twice takes it back. A wider door must fit on the wall the two spaces share: near a
+    corner it moves along the wall just enough to fit ("position" in the result is where it ended up; say
+    so if it moved), and a door wider than the wall is refused with the most that fits.
 
     Args:
         first: A room, hall or corridor.
-        second: A space that shares a wall with `first`, on the same floor.
+        second: A space that shares a wall with `first`, on the same floor, or "outside" for an entrance.
         width_m: Door width in metres.
-        confirmed: True only after the person agreed to this exact change.
-        apply_now: True when the person explicitly said to make the change without asking them first
-            ("just add it", "no need to confirm", "do it right away"): it is added at once, no proposal.
+        step_free: False for a door with steps (a stepped entrance).
+        position: [x, y] in metres, only to put it back exactly where a removed door was; omit otherwise.
+        another: True only when the person wants a second door where the two spaces already have one.
+            Otherwise nothing is added and the result names the door that is there (asking again for a
+            door that was just added is safe: it is added once).
+        confirmed: Only where edits need a yes: True after the person agreed to this exact change.
+        apply_now: Only where edits need a yes: True when the person explicitly said to make the change
+            without asking them first ("just add it", "no need to confirm"): it is added at once.
     """
     d = ctx.deps
     b = d.building
     a, c = _space_id(b, first), _space_id(b, second)
-    after = with_door(b, a, c, width_m)  # ModelRetry if they don't share a wall
-    effect = _exit_changes(
-        b, after, _constraints(ctx, False, None), _constraints(ctx, False, None), b.spaces[a].floor_id
-    )
+    if a == OUTSIDE:
+        a, c = c, a
+    where = (float(position[0]), float(position[1])) if position else None
+    if not another and where is None and (there := _door_already_there(d, a, c)):  # a re-add has a position
+        return there
+    after = with_door(b, a, c, width_m, step_free, where)  # ModelRetry if it can't go there
+    floor_id = b.spaces[a].floor_id if a in b.spaces else next(iter(b.floors))
+    effect = _exit_changes(b, after, _constraints(ctx, False, None), _constraints(ctx, False, None), floor_id)
+    (placed,) = [o for o in after.openings.values() if o.id not in b.openings]
     preview = {
-        "door_between": [_label(b, a), _label(b, c)],
+        ("entrance_into" if c == OUTSIDE else "door_between"): [_label(b, a)]
+        if c == OUTSIDE
+        else [_label(b, a), _label(b, c)],
         "width_m": width_m,
+        "step_free": step_free,
+        "position": [round(v, 3) for v in placed.position],  # where it stands: the map draws it there
         "effect_on_walks_out_on_that_floor": effect,
-        "highlight": [a, c],
+        "highlight": [a] if c == OUTSIDE else [a, c],
     }
-    return _propose_or_apply(ctx, AddDoor(a, c, width_m=width_m), preview, confirmed, apply_now)
+    edit = AddDoor(a, c, width_m=width_m, step_free=step_free, position=where)
+    return _propose_or_apply(ctx, edit, preview, confirmed, apply_now)
+
+
+def door_of(b: Building, door: str | None, between: list[str] | None) -> Opening:
+    """One door, entrance or opening: by id, or as the one between two spaces ("outside" for an entrance).
+    ModelRetry listing the ids when several join the same two spaces."""
+    if door and door.strip() in b.openings:
+        return b.openings[door.strip()]
+    if not between or len(between) != 2:
+        raise ModelRetry(
+            f"No door with id {door!r}. Name the two spaces it joins in `between`, e.g. "
+            '["Office 0.02", "Corridor 0.01"] (or "outside" for an entrance); room_details lists door ids.'
+        )
+    a, c = (_space_id(b, x) for x in between)
+    hits = [o for o in b.openings_of(a) if o.other_side(a) == c and a in o.space_ids]
+    if not hits:
+        raise ModelRetry(f"There is no door between {_label(b, a)} and {_label(b, c)}.")
+    if len(hits) > 1:
+        options = "; ".join(
+            f"{o.id} ({o.width_m:g} m at {o.position[0]:.1f}, {o.position[1]:.1f})" for o in hits
+        )
+        raise ModelRetry(
+            f"{len(hits)} doors join them: {options}. Pass the id of the one meant, or ask which."
+        )
+    return hits[0]
+
+
+def remove_door(
+    ctx: RunContext[Deps],
+    door: str | None = None,
+    between: list[str] | None = None,
+    confirmed: bool = False,
+    apply_now: bool = False,
+) -> str:
+    """Take a door, opening or entrance out of the plan for good ("brick up the door between X and Y",
+    "remove that entrance"). For a door that is only shut for now, use set_closed. It is removed at once and
+    later routes no longer use it (undo_last_change puts it back); only where you are told edits need a yes
+    first, the first call proposes it and a call with confirmed=true after their yes removes it. The result
+    says which rooms it leaves with no way in at all: tell the person.
+
+    To change a door's width or steps ("make the door between X and Y 1.5 m wide"), remove it, then call
+    add_door with the two spaces, the new width_m, step_free and position from "re_add_at" in this result.
+
+    Args:
+        door: The door's id (from room_details or a route), if known.
+        between: Otherwise the two spaces it joins, e.g. ["Office 0.02", "Corridor 0.01"]; "outside" for an
+            entrance.
+        confirmed: Only where edits need a yes: True after the person agreed to this exact change.
+        apply_now: Only where edits need a yes: True when the person explicitly said to make the change
+            without asking them first: it is removed at once.
+    """
+    d = ctx.deps
+    b = d.building
+    if door and door.strip() not in b.openings and RemoveDoor(door.strip()) in d.state.edits:
+        return _json(  # asked for again (a "yes" after it was made): removed once only
+            {
+                "door": door.strip(),
+                "status": "done",
+                "change": f"{door.strip()} is already removed from the "
+                "plan in this session; nothing changed again.",
+                "undo": "undo_last_change puts it back",
+            }
+        )
+    o = door_of(b, door, between)
+    after = dataclasses.replace(b, openings={k: v for k, v in b.openings.items() if k != o.id})
+    c = _constraints(ctx, False, None)
+    before_out, after_out = (
+        route_graph(b, c).distances_from([OUTSIDE]),
+        route_graph(after, c).distances_from([OUTSIDE]),
+    )
+    cut_off = [sid for sid in before_out if sid in b.spaces and sid not in after_out]
+    rooms = [sid for sid in o.space_ids if sid != OUTSIDE]
+    first, second = o.space_ids
+    preview = {
+        "door": o.id,
+        ("entrance_into" if OUTSIDE in o.space_ids else "door_between"): [_label(b, sid) for sid in rooms],
+        "width_m": o.width_m,
+        "step_free": o.step_free,
+        "re_add_at": {"first": first, "second": second, "position": list(o.position)},
+        "effect_on_walks_out_on_that_floor": _exit_changes(b, after, c, c, o.floor_id),
+        "no_way_in_any_more": [_label(b, sid) for sid in cut_off[:MAX_RESULTS]],
+        "no_way_in_count": len(cut_off),
+        "highlight": rooms + [sid for sid in cut_off if sid not in rooms],
+    }
+    return _propose_or_apply(ctx, RemoveDoor(o.id), preview, confirmed, apply_now)
 
 
 def _neighbour_id(b: Building, text: str, room_id: str) -> str:
@@ -1784,17 +2013,18 @@ def add_wall(
     sides give a diagonal one. The room becomes two rooms with their own numbers, "Office 2.03-1 (west half)" and
     "Office 2.03-2 (east half)"; its doors and
     items go to the half they are in. The new wall has no door: if a half is left without one, say so and
-    offer add_door (between the two halves, or to a neighbour). First call proposes it and shows the halves
-    (nothing is edited); after the person says yes, call again with confirmed=true. Only a result with
+    offer add_door (between the two halves, or to a neighbour). It is built at once (undo_last_change takes it
+    back); only where you are told edits need a yes first, the first call proposes it and shows the halves
+    (nothing is edited) and a call with confirmed=true after their yes builds it. Only a result with
     "status": "done" means the wall is in the plan.
 
     Args:
         room: The room to split.
         from_room: A space sharing the wall where the new wall starts (same floor).
         to_room: A space sharing the wall where it ends, on a different side of the room.
-        confirmed: True only after the person agreed to this exact change.
-        apply_now: True when the person explicitly said to make the change without asking them first
-            ("just do it", "no need to confirm"): it is built at once, no proposal.
+        confirmed: Only where edits need a yes: True after the person agreed to this exact change.
+        apply_now: Only where edits need a yes: True when the person explicitly said to make the change
+            without asking them first ("just do it", "no need to confirm"): it is built at once.
     """
     d = ctx.deps
     b = d.building
@@ -1884,6 +2114,7 @@ KINDS = {
     Close: "closed",
     Reopen: "reopened",
     AddDoor: "door added",
+    RemoveDoor: "door removed",
     MoveAsset: "moved",
     AddAsset: "arrived",
     SplitRoom: "wall added",
@@ -1927,8 +2158,9 @@ def building_changes(ctx: RunContext[Deps], since: str | None = None, until: str
 
 
 def undo_last_change(ctx: RunContext[Deps]) -> str:
-    """Undo the most recent change made in this conversation (a closure, reopening, new door, moved or
-    delivered item). Colleagues' changes stay."""
+    """Undo the most recent change made in this conversation (a closure, reopening, new or removed door,
+    wall, moved or delivered item). Colleagues' changes stay. A width change (remove_door + add_door) is two
+    changes: undo twice."""
     d = ctx.deps
     edit = d.state.undo(by=d.who) if d.who else d.state.undo()
     return _json(
@@ -1985,6 +2217,7 @@ TOOLS = [
     calculate,
     set_closed,
     add_door,
+    remove_door,
     add_wall,
     move_item,
     item_history,

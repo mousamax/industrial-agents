@@ -26,6 +26,7 @@ CHANGES = {
     "set_closed",
     "add_door",
     "add_wall",
+    "remove_door",
     "move_item",
     "undo_last_change",
     "draft_building",

@@ -17,7 +17,9 @@ from __future__ import annotations
 import copy
 import dataclasses
 import functools
+import itertools
 import math
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -43,12 +45,25 @@ class Reopen:
 
 @dataclass(frozen=True)
 class AddDoor:
+    """A new door between two spaces on one floor, or a new entrance when one side is OUTSIDE (in the
+    middle of the room's longest outside wall, on a floor that has entrances already)."""
+
     first_space_id: str
     second_space_id: str
     width_m: float = 0.9
     step_free: bool = True
     position: XY | None = None
     """None = the middle of the wall the two spaces share (geometry.shared_wall_midpoint)."""
+    door_id: str | None = field(default=None, compare=False)
+    """The new door's id, `<floor>-O-new<k>`: given by apply() and kept for the door's lifetime (undoing or
+    removing other doors never renumbers it). Not part of equality: the same door is the same edit."""
+
+
+@dataclass(frozen=True)
+class RemoveDoor:
+    """A door, opening or entrance taken out of the plan for good (Close is temporary)."""
+
+    element_id: str
 
 
 @dataclass(frozen=True)
@@ -84,8 +99,8 @@ class SplitRoom:
     to_space_id: str | None = None
 
 
-Edit = Close | Reopen | AddDoor | MoveAsset | AddAsset | SplitRoom
-STRUCTURAL = (AddDoor, MoveAsset, AddAsset, SplitRoom)
+Edit = Close | Reopen | AddDoor | RemoveDoor | MoveAsset | AddAsset | SplitRoom
+STRUCTURAL = (AddDoor, RemoveDoor, MoveAsset, AddAsset, SplitRoom)
 
 
 def _now() -> datetime:
@@ -125,9 +140,25 @@ class BuildingState:
     """Colleagues share one state (the API keeps one per building) and tools run in worker threads: every
     read and write of edits/stamps holds this, so a write is atomic and a reader never sees half of one."""
 
+    _doors_made: int = field(default=0, init=False, repr=False, compare=False)
+    """The highest k of a `-O-new<k>` door id ever given out: never reused, even after an undo."""
+
     def __post_init__(self) -> None:
         since_ever = Stamp(datetime.min.replace(tzinfo=UTC))
         self.stamps = [since_ever] * (len(self.edits) - len(self.stamps)) + self.stamps
+        for e in self.edits:  # ids a replayed record carries are taken; edits without one number on
+            self._doors_made += isinstance(e, AddDoor)
+            if isinstance(e, AddDoor) and e.door_id and (m := re.search(r"-O-new(\d+)$", e.door_id)):
+                self._doors_made = max(self._doors_made, int(m.group(1)))
+
+    def _with_door_id(self, edit: AddDoor, floor_id: str) -> AddDoor:
+        """The AddDoor with its lifetime id: a new number, or the one it carries (a replayed record)."""
+        if edit.door_id is None:
+            self._doors_made += 1
+            return dataclasses.replace(edit, door_id=f"{floor_id}-O-new{self._doors_made}")
+        if (m := re.search(r"-O-new(\d+)$", edit.door_id)) is not None:
+            self._doors_made = max(self._doors_made, int(m.group(1)))
+        return edit
 
     # ---- reading the building at a moment ---------------------------------------------------------------
 
@@ -150,7 +181,7 @@ class BuildingState:
         active = tuple(i for i in self._active(when) if isinstance(self.edits[i], STRUCTURAL))
         if not active:
             return self.base
-        key = tuple((i, self.edits[i]) for i in active)
+        key = tuple((i, self.edits[i], getattr(self.edits[i], "door_id", None)) for i in active)
         if key not in self._views:
             if len(self._views) > 32:
                 self._views.clear()
@@ -226,10 +257,29 @@ class BuildingState:
                     raise ValueError(f"{name} isn't closed")
                 message = f"Reopened {name}."
             case AddDoor():
-                _, position = self._door_place(b, edit)
+                floor_id, position = self._door_place(b, edit)
+                if edit.door_id is not None and edit.door_id in b.openings:
+                    raise ValueError(f"door id {edit.door_id!r} is already in use")
+                ends = f"at ({position[0]:.1f}, {position[1]:.1f})"
+                if OUTSIDE in (edit.first_space_id, edit.second_space_id):
+                    room = edit.second_space_id if edit.first_space_id == OUTSIDE else edit.first_space_id
+                    message = f"Added a {edit.width_m:g} m entrance from outside into {b.label(room)} {ends}."
+                else:
+                    message = (
+                        f"Added a {edit.width_m:g} m door between {b.label(edit.first_space_id)} and "
+                        f"{b.label(edit.second_space_id)} {ends}."
+                    )
+                edit = self._with_door_id(edit, floor_id)
+                message = message[:-1] + f" (id {edit.door_id})."
+            case RemoveDoor(element_id):
+                if element_id not in b.openings:
+                    raise ValueError(
+                        f"no door {element_id!r} in the plan (stairs, lifts and rooms can only be closed)"
+                    )
+                o = b.openings[element_id]
                 message = (
-                    f"Added a {edit.width_m:g} m door between {b.label(edit.first_space_id)} and "
-                    f"{b.label(edit.second_space_id)} at ({position[0]:.1f}, {position[1]:.1f})."
+                    f"Removed {self._describe(b, element_id)} ({o.width_m:g} m wide, at "
+                    f"({o.position[0]:.1f}, {o.position[1]:.1f}))."
                 )
             case MoveAsset(asset_id, space_id):
                 if asset_id not in b.assets:
@@ -281,7 +331,7 @@ class BuildingState:
         and delivered assets (raw untouched). An edit whose room an undone edit made is skipped."""
         b, doors = self.base, 0
         for i, e in enumerate(self.edits):
-            doors += isinstance(e, AddDoor)
+            doors += isinstance(e, AddDoor)  # the old numbering, for an AddDoor put in edits by hand
             if i not in active:
                 continue
             if isinstance(e, SplitRoom):
@@ -295,11 +345,21 @@ class BuildingState:
                 except ValueError:
                     continue
                 pair = (e.first_space_id, e.second_space_id)
-                door_id = f"{floor_id}-O-new{doors}"
+                kind = "door"
+                if OUTSIDE in pair:  # an entrance, the kit's way: [room, "outside"]
+                    pair, kind = (pair[1], OUTSIDE) if pair[0] == OUTSIDE else pair, "entrance"
+                door_id = e.door_id or f"{floor_id}-O-new{doors}"
+                if door_id in b.openings:
+                    continue
                 door = Opening(
-                    door_id, floor_id, pair, "door", _rounded(position), e.width_m, e.step_free, True
+                    door_id, floor_id, pair, kind, _rounded(position), e.width_m, e.step_free, True
                 )
                 b = dataclasses.replace(b, openings={**b.openings, door.id: door})
+            elif isinstance(e, RemoveDoor):
+                if e.element_id in b.openings:
+                    b = dataclasses.replace(
+                        b, openings={k: o for k, o in b.openings.items() if k != e.element_id}
+                    )
             elif isinstance(e, MoveAsset):
                 space = b.spaces.get(e.space_id)
                 old = b.assets.get(e.asset_id)
@@ -345,6 +405,7 @@ class BuildingState:
         spaces = {s["id"]: s for s in raw["spaces"]}
         if spaces.keys() != b.spaces.keys():  # a room was split: its halves replace it
             raw["spaces"] = [spaces.get(s.id) or _space_json(s) for s in b.spaces.values()]
+        raw["openings"] = [o for o in raw["openings"] if o["id"] in b.openings]  # removed doors go
         known = set()
         for o in raw["openings"]:
             known.add(o["id"])
@@ -410,6 +471,8 @@ class BuildingState:
     def _door_place(b: Building, edit: AddDoor) -> tuple[str, XY]:
         """(floor id, position) of a new door, or ValueError if it can't go there."""
         first, second = edit.first_space_id, edit.second_space_id
+        if OUTSIDE in (first, second):
+            return BuildingState._entrance_place(b, edit)
         for sid in (first, second):
             if sid not in b.spaces or sid == OUTSIDE:
                 raise ValueError(f"unknown space {sid!r}")
@@ -421,7 +484,101 @@ class BuildingState:
         position = edit.position or geometry.shared_wall_midpoint(b, first, second)
         if position is None:
             raise ValueError(f"{b.label(first)} and {b.label(second)} don't share a wall")
-        return floor_id, position
+        stretches = _straight_shared(b.spaces[first], b.spaces[second])
+        where = f"the wall between {b.label(first)} and {b.label(second)}"
+        return floor_id, _fit_door(stretches, position, edit.width_m, where)
+
+    @staticmethod
+    def _entrance_place(b: Building, edit: AddDoor) -> tuple[str, XY]:
+        """A new entrance: the middle of the room's longest outside wall (outline shared with no space on
+        its floor). Only on a floor that already has an entrance, as the kit's data does (the ground floor;
+        an upper one on a slope): elsewhere a door to the outside would open into the air."""
+        room_id = edit.second_space_id if edit.first_space_id == OUTSIDE else edit.first_space_id
+        if room_id == OUTSIDE or room_id not in b.spaces:
+            raise ValueError("a door to the outside needs a room on the other side")
+        room = b.spaces[room_id]
+        floor = b.floors[room.floor_id]
+        if floor.level != 0 and not any(o.floor_id == floor.id for o in b.openings_of(OUTSIDE)):
+            raise ValueError(
+                f"{floor.name} has no entrance: a door to the outside there would open into the air. Add it "
+                "on the ground floor (or a floor that has an entrance)"
+            )
+        walls = [
+            (a, c)
+            for piece in _shared_stretches(b, room, OUTSIDE)
+            for a, c in itertools.pairwise(piece.coords)
+            if math.dist(a, c) > 1e-6
+        ]  # straight pieces: a door never wraps round a corner
+        a, c = max(walls, key=lambda w: math.dist(*w))
+        position = edit.position or ((a[0] + c[0]) / 2, (a[1] + c[1]) / 2)
+        where = f"the outside wall of {b.label(room_id)}"
+        return room.floor_id, _fit_door(walls, position, edit.width_m, where)
+
+
+DOOR_MARGIN_M = 0.1
+"""A new door keeps this far from the ends of its wall where the wall is long enough."""
+
+
+def _straight_shared(first: Space, second: Space) -> list[tuple[XY, XY]]:
+    """The straight stretches of `first`'s outline that run along `second`'s (parallel edges at most
+    WALL_TOLERANCE_M apart, overlapping), each as its two ends on `first`'s outline."""
+    tolerance = geometry.WALL_TOLERANCE_M
+    ring_a = list(_outline(first).exterior.coords)
+    ring_b = list(_outline(second).exterior.coords)
+    out = []
+    for a0, a1 in itertools.pairwise(ring_a):
+        length = math.dist(a0, a1)
+        if length < 1e-6:
+            continue
+        ux, uy = (a1[0] - a0[0]) / length, (a1[1] - a0[1]) / length
+        cuts = []
+        for b0, b1 in itertools.pairwise(ring_b):
+            # both ends of b's edge within tolerance of a's line, and b parallel to a
+            off = [(q[0] - a0[0]) * -uy + (q[1] - a0[1]) * ux for q in (b0, b1)]
+            if max(abs(o) for o in off) > tolerance or math.dist(b0, b1) < 1e-6:
+                continue
+            along = sorted((q[0] - a0[0]) * ux + (q[1] - a0[1]) * uy for q in (b0, b1))
+            lo, hi = max(0.0, along[0]), min(length, along[1])
+            if hi - lo > 1e-3:
+                cuts.append((lo, hi))
+        merged: list[list[float]] = []
+        for lo, hi in sorted(cuts):
+            if merged and lo <= merged[-1][1] + 1e-3:
+                merged[-1][1] = max(merged[-1][1], hi)
+            else:
+                merged.append([lo, hi])
+        out += [((a0[0] + ux * lo, a0[1] + uy * lo), (a0[0] + ux * hi, a0[1] + uy * hi)) for lo, hi in merged]
+    return out
+
+
+def _fit_door(walls: list[tuple[XY, XY]], position: XY, width_m: float, where: str) -> XY:
+    """`position` moved along the nearest straight wall just enough that the whole door width lies on it
+    (DOOR_MARGIN_M from its ends where there is room). ValueError when the wall is shorter than the door.
+    The offset across the wall is kept (thick walls: a door stands between the two outlines)."""
+    if not walls:
+        raise ValueError(f"there is no straight stretch of {where} for a door")
+
+    def gap(w: tuple[XY, XY]) -> float:
+        return LineString(w).distance(Point(position))
+
+    a, c = min(walls, key=lambda w: (gap(w), -math.dist(*w)))
+    length = math.dist(a, c)
+    ux, uy = (c[0] - a[0]) / length, (c[1] - a[1]) / length
+    t = (position[0] - a[0]) * ux + (position[1] - a[1]) * uy
+    if width_m > length + 1e-6:
+        raise ValueError(
+            f"{where} is only {length:.2f} m long, so a door there can be at most {math.floor(length * 10) / 10:g} m "
+            f"wide (asked for {width_m:g} m)"
+        )
+    margin = min(DOOR_MARGIN_M, (length - width_m) / 2)
+    lo, hi = width_m / 2 + margin, length - width_m / 2 - margin
+    fitted = min(max(t, lo), hi)
+    across = (position[0] - a[0]) * -uy + (position[1] - a[1]) * ux
+    if abs(across) > geometry.WALL_TOLERANCE_M:  # a point off the wall: onto it
+        across = 0.0
+    if abs(fitted - t) < 1e-9 and across == (position[0] - a[0]) * -uy + (position[1] - a[1]) * ux:
+        return position
+    return (a[0] + ux * fitted - uy * across, a[1] + uy * fitted + ux * across)
 
 
 def _rounded(xy: XY) -> XY:

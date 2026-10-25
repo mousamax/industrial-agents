@@ -41,7 +41,7 @@ from shapely.geometry.polygon import orient
 from shapely.ops import nearest_points, substring, unary_union
 
 from app.building.model import OUTSIDE, XY, Asset, Building
-from app.building.routing import DOOR_PREFIX, Route, RouteGraph
+from app.building.routing import DOOR_PREFIX, Route, RouteGraph, outside_walks
 
 __all__ = ["Action", "Direction", "directions", "walk_in_space", "walk_path"]
 
@@ -140,6 +140,8 @@ def walk_path(b: Building, route: Route) -> list[dict[str, Any]]:
     for k, leg in enumerate(legs):
         if leg.kind == "walk" and leg.pa is not None and leg.pz is not None:
             add(_floor_of(b, leg.space, leg.a), _leg_walk(b, leg))
+        elif leg.kind == "around":  # out one entrance and round the building to another
+            add(_floor_of(b, OUTSIDE, leg.a), list(leg.points))
         elif leg.kind == "ride":  # one ride per connector: its first and last stop, not the floors passed
             ends = [leg.a] if k == 0 or legs[k - 1].via != leg.via else []
             ends += [leg.z] if k + 1 == len(legs) or legs[k + 1].via != leg.via else []
@@ -368,6 +370,15 @@ def directions(b: Building, route: Route) -> list[Direction]:
             space, heading = rides[-1].z, None
             i += 1
             continue
+        if leg.kind == "around":
+            text = (
+                f"Go outside through {_entrance(b, leg.a)}, walk {_m(leg.length)} around the building to "
+                f"{_entrance(b, leg.z)}."
+            )
+            steps.append(Direction("leave", text, OUTSIDE, leg.length, points=list(leg.points)))
+            space, heading, started = OUTSIDE, None, True
+            i += 1
+            continue
         if leg.kind == "walkway":
             w = b.walkways[leg.via]
             text = f"Follow {w.name or 'the walkway'} for {_m(leg.length)} to the next building."
@@ -525,11 +536,13 @@ class _Leg:
     a: str
     z: str
     length: float
-    kind: Literal["walk", "ride", "walkway", "outside"]
+    kind: Literal["walk", "ride", "walkway", "outside", "around"]
     space: str = ""
     via: str = ""
     pa: XY | None = None
     pz: XY | None = None
+    points: tuple[XY, ...] = ()
+    """An "around" leg (Constraints.outside_walking): the walk round the building, entrance to entrance."""
 
 
 _GRAPHS: dict[int, tuple[Building, RouteGraph]] = {}
@@ -563,6 +576,10 @@ def _legs(b: Building, route: Route) -> list[_Leg]:
             continue
         options = [e for e in edges.get(a, ()) if e[0] == z]
         fitting = [e for e in options if (not e[2] or e[2] in used) and (not e[3] or e[3] in spaces)]
+        around = _around(b, a, z) if OUTSIDE in route.space_path[1:-1] else None
+        if around is not None and all(around.length < e[1] for e in fitting):
+            legs.append(around)
+            continue
         if not (fitting or options):  # not in the unconstrained graph (shouldn't happen): straight line
             pa, pz = _position(b, a), _position(b, z)
             length = math.dist(pa, pz) if pa and pz else 0.0
@@ -577,6 +594,22 @@ def _legs(b: Building, route: Route) -> list[_Leg]:
         else:
             legs.append(_Leg(a, z, length, "walk", space, "", _position(b, a), _position(b, z)))
     return legs
+
+
+def _around(b: Building, a: str, z: str) -> _Leg | None:
+    """The walk round the outside from entrance node a to entrance node z, if the two are joined so."""
+    first, second = a.removeprefix(DOOR_PREFIX), z.removeprefix(DOOR_PREFIX)
+    walk = outside_walks(b).get((min(first, second), max(first, second)))
+    if walk is None or not (a.startswith(DOOR_PREFIX) and z.startswith(DOOR_PREFIX)):
+        return None
+    length, points = walk
+    return _Leg(a, z, round(length, 3), "around", OUTSIDE, points=points if first < second else points[::-1])
+
+
+def _entrance(b: Building, node: str) -> str:
+    """'the entrance of Office 0.01': entrances have no names of their own."""
+    o = b.openings[node.removeprefix(DOOR_PREFIX)]
+    return f"the entrance of {_name(b, o.other_side(OUTSIDE))}"
 
 
 def _leg_walk(b: Building, leg: _Leg) -> list[XY]:
@@ -611,7 +644,7 @@ def _at(b: Building, space_id: str) -> list[XY]:
 
 def _leaves(legs: list[_Leg], i: int) -> bool:
     """The walk after leg i goes out of the building."""
-    return i + 1 < len(legs) and legs[i + 1].kind == "outside"
+    return i + 1 < len(legs) and legs[i + 1].kind in ("outside", "around")
 
 
 # ---- turns, rides, obstacles, landmarks ------------------------------------------------------------------

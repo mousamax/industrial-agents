@@ -164,7 +164,7 @@ rows:
   pytest: [test_largest_room, test_floor_area_total, test_shared_walls_count, test_room_stacked, test_straight_line_3d, test_errand, test_wide_delivery_count, test_step_free_reachable_count, test_what_if_door]
 - id: todo-open-questions
   part: Health
-  what: 'Open questions to settle with a teammate: a strict-xfail reminder per question in tests/building/test_todo.py (now: ask Mousa about the closure miss on rooms that share a name)'
+  what: 'Open questions to settle with a teammate: a strict-xfail reminder per question in tests/building/test_todo.py (none open now)'
   owners: [A]
   stake: 0
   pytest: [test_todo_]

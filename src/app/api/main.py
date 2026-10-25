@@ -308,6 +308,12 @@ _sessions: dict[tuple[str, str], Any] = {}
 turns; the building state itself is the shared live one."""
 
 
+def _new_session(building_id: str, chat_id: str) -> Deps:
+    """A person in the app (text chat and voice call): walking directions, and routes may go round the
+    outside when that's shorter. Never used for anything scored (the benchmark and Sunday run use Deps.load)."""
+    return Deps(live_state(building_id), who=f"chat {chat_id[:8]}", detail="walk", outside_walking=True)
+
+
 @app.post("/buildings/{building_id}/chat")
 async def building_chat(
     building_id: str, request: Request, location: str | None = None, who: str | None = None
@@ -317,17 +323,18 @@ async def building_chat(
     The SDK sends the whole message history every turn; the pending edit and location are kept per chat
     `id` from the request body, the building state is shared with every colleague. `?location=<space id or
     room name>` tells the agent where the user is (QR code at a door, a tap on the map); send it whenever it
-    changes. `?who=<name>` is stamped on the changes this person reports (default: the chat id)."""
+    changes. `?who=<name>` is stamped on the changes this person reports (default: the chat id). Plan edits
+    apply at once; a turn whose body has `"confirmEdits": true` (the voice call) proposes them for a yes."""
     card = _entry("building_guide").card
     assert isinstance(card, AgentCard) and card.deps_from_input
-    chat_id = str((await request.json()).get("id") or "default")  # Starlette caches the body for dispatch
+    body = await request.json()  # Starlette caches the body for dispatch
+    chat_id = str(body.get("id") or "default")
     key = (building_id, chat_id)
     if key not in _sessions:
-        _sessions[key] = Deps(
-            live_state(building_id), who=f"chat {chat_id[:8]}", detail="walk"
-        )  # app and voice
+        _sessions[key] = _new_session(building_id, chat_id)
     if who:
         _sessions[key].who = who
+    _sessions[key].confirm_edits = bool(body.get("confirmEdits"))  # per turn: the voice call asks first
     if location:
         try:
             _sessions[key].here = _space_id(_sessions[key].building, location)

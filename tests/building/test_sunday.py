@@ -92,11 +92,29 @@ def answers(tmp_path_factory) -> dict[str, dict[str, Any]]:
 
 
 def test_sunday_command_is_documented():
-    if "building_guide.sunday" not in (ROOT / "BENCHMARK.md").read_text(encoding="utf-8"):
-        message = "not implemented yet: document the Sunday command in BENCHMARK.md"
+    doc = ROOT / "SUBMISSION" / "BENCHMARK.md"
+    if not doc.exists() or "run_benchmark" not in doc.read_text(encoding="utf-8"):
+        message = "not implemented yet: document the Sunday command in SUBMISSION/BENCHMARK.md"
         if STRICT:
             pytest.fail(message)
         pytest.skip(message)
+
+
+def test_sunday_submission_folder_holds_only_the_two_graded_files():
+    """Organizers: a folder named exactly SUBMISSION with exactly BENCHMARK.md and answers.json in it.
+    os.listdir gives the real case even on macOS's case-insensitive disk."""
+    import os
+
+    assert "SUBMISSION" in os.listdir(ROOT), sorted(n for n in os.listdir(ROOT) if n.lower() == "submission")
+    names = {n for n in os.listdir(ROOT / "SUBMISSION") if n != ".DS_Store"}
+    assert "BENCHMARK.md" in names and names <= {"BENCHMARK.md", "answers.json"}, names
+
+
+def test_run_benchmark_entry_point_is_the_sunday_command():
+    import tomllib
+
+    scripts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
+    assert scripts["run_benchmark"] == "app.agents.building_guide.sunday:cli"
 
 
 @pytest.mark.parametrize("q", [pytest.param(q, id=q["id"]) for q in GOLDEN if q["kind"] == "locate"])
@@ -191,3 +209,87 @@ def test_sunday_route_from_walk_directions_still_fills_the_record():
     r = to_record({"id": q["id"]}, "Answer: 1", [{"tool": "walk_directions", "args": {}, "result": result}])
     assert r["reachable"] and route_length_ok(r["length_m"], a["optimal_length_m"]), r
     assert (r["route"][0], r["route"][-1]) == (a["from_space_id"], a["to_space_id"]), r
+
+
+def test_sunday_tour_from_plan_visits_fills_the_record():
+    """A free-order tour answered with plan_visits (what the agent calls for "in any order") still gives
+    the joined route, its stops and length, and the route is valid leg by leg."""
+    from app.agents.building_guide.sunday import _split, to_record
+    from app.agents.building_guide.tools import plan_visits
+
+    q = next(q for q in GOLDEN if q["kind"] == "tour" and q["answer"].get("reachable") is not False)
+    stops = q["answer"]["stops"]
+    deps = Deps.load(building_dir(BUILDING_ID))
+    result = plan_visits(SimpleNamespace(deps=deps, run_id="1"), stops[0], rooms=stops[1:-1], end=stops[-1])
+    r = to_record({"id": q["id"]}, "Answer: 1", [{"tool": "plan_visits", "args": {}, "result": result}])
+    assert r["reachable"] is True and r["length_m"] == json.loads(result)["total_length_m"], r
+    assert (r["route"][0], r["route"][-1]) == (stops[0], stops[-1]) and r["stops"][0] == stops[0], r
+    b = load_building(BUILDING_ID)
+    assert all(validate_route(b, leg, Constraints()) == [] for leg in _split(r["route"], r["stops"])), r
+
+
+def test_sunday_edit_then_route_records_the_edit_and_checks_against_it():
+    """ "Add a door, then how far is it?": the record lists the edit (so a checker can replay it), and
+    --check validates the route on the edited building, not the original one."""
+    from app.agents.building_guide.sunday import check_records, deps_for, edits_of, to_record
+    from app.agents.building_guide.tools import add_door
+
+    where, q = building_dir("proc-campus-dev-000"), {"id": "edit-1"}
+    deps = deps_for(where, q)
+    ctx = SimpleNamespace(deps=deps, run_id="1")
+    calls = [{"tool": "add_door", "args": {}, "result": add_door(ctx, "Office 0.02", "Kitchen 0.03")}]
+    calls.append({"tool": "route", "args": {}, "result": route(ctx, "Office 0.02", "Kitchen 0.03")})
+    r = to_record(q, "Answer: 4.17", calls, edits_of(deps))
+    assert r["length_m"] == pytest.approx(4.17, abs=0.01), r
+    assert [e["edit"] for e in r["edits"]] == ["AddDoor"], r
+    assert check_records(where, [q], [r]) == {}
+    assert check_records(where, [q], [r | {"edits": None}]), "without the edit the new door is unknown"
+
+
+def test_sunday_records_removed_doors_and_new_entrances_and_replays_them_with_the_same_ids():
+    """A width change (remove + re-add) and a new entrance survive edits_of -> replay_edits: same door ids,
+    so a closure recorded on a new door still closes that door on the replayed building."""
+    from app.agents.building_guide.sunday import deps_for, edits_of, replay_edits
+    from app.agents.building_guide.tools import add_door, remove_door, set_closed, undo_last_change
+
+    where, q = building_dir("proc-campus-dev-000"), {"id": "edit-2"}
+    deps = deps_for(where, q)
+    ctx = SimpleNamespace(deps=deps, run_id="1")
+    add_door(ctx, "Office 0.02", "Kitchen 0.03")
+    add_door(ctx, "Seminar room 0.17", "outside")
+    undo_last_change(ctx)
+    add_door(ctx, "Seminar room 0.17", "outside")  # gets a new number: the undone one is never reused
+    again = json.loads(remove_door(ctx, between=["Office 0.02", "Corridor 0.01"]))["re_add_at"]
+    add_door(ctx, again["first"], again["second"], width_m=1.5, position=again["position"])
+    entrance = next(o.id for o in deps.building.openings.values() if o.kind == "entrance" and o.synthetic)
+    set_closed(ctx, entrance)
+    edits = json.loads(json.dumps(edits_of(deps)))
+    assert [e["edit"] for e in edits] == ["AddDoor", "AddDoor", "RemoveDoor", "AddDoor", "Close"]
+
+    fresh = deps_for(where, q)
+    replay_edits(fresh, edits)
+    assert fresh.state.export() == deps.state.export()
+    assert fresh.closed == deps.closed == {entrance}
+
+
+def test_sunday_find_question_drops_the_courtesy_route_from_outside():
+    """ "Where is X?" with no start: the agent also routes from the nearest entrance to say how to get
+    there. That route was never asked and starts at "outside", so answers.json leaves route and length
+    empty (the located ids stay). The same route on a question about getting there is kept."""
+    from app.agents.building_guide.sunday import to_record
+
+    q = next(q for q in GOLDEN if q["kind"] == "locate")
+    a, deps = q["answer"], Deps.load(building_dir(BUILDING_ID))
+    c = SimpleNamespace(deps=deps, run_id="1")
+    name = deps.building.assets[a["asset_id"]].name
+    calls = [
+        {"tool": "find", "args": {"query": name}, "result": find(c, name)},
+        {"tool": "route", "args": {}, "result": route(c, "outside", a["space_id"])},
+    ]
+    found = to_record({"id": q["id"], "text": q["question"]}, "Answer: x", calls)
+    assert (found["item_id"], found["space_id"]) == (a["asset_id"], a["space_id"]), found
+    assert found["route"] is found["length_m"] is found["reachable"] is found["elements"] is None, found
+
+    asked = to_record({"id": q["id"], "text": f"How do I get to the {name}?"}, "Answer: x", calls)
+    assert asked["route"][0] == "outside" and asked["route"][-1] == a["space_id"], asked
+    assert asked["length_m"] is not None, asked
