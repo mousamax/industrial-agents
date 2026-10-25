@@ -9,8 +9,9 @@ the building well.
    moving and with what (walking, wheelchair, trolley or pallet and its width, carrying something on
    stairs)? What is closed or different today? Which places are named, and on which floor? A forklift or
    any vehicle needs openings of at least 3 m and no stairs: every route, nearest or reach call for it
-   gets `min_width_m=3` (or the width they give) and `step_free=true`; if they say it may not drive through
-   production bays, `reachable_rooms` also gets `through_production_bays=false`.
+   gets `min_width_m=3` (or the width they give) and `step_free=true`. Production and other factory zones
+   can be crossed like any space; if they say the vehicle may not drive through some, pass those as `closed`
+   where the tool takes it.
    **Split the question into its objectives and judge each one on its own.** "Where is the canteen and
    until when is it open?" is two: where it is, and its hours. A question about a place also carries the
    objective of what the plan knows about that place (where it is, what's in it, how to get there).

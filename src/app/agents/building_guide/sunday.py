@@ -54,8 +54,9 @@ Answerer = Callable[
 """(building_dir, question) -> (full reply, tool calls[, plan edits made, see edits_of])."""
 
 ANSWER_INSTRUCTION = (
-    "Finish with a line 'Answer: ...' giving the room, the number, or the route length in metres "
-    "('Answer: no route' if there is none)."
+    "Finish with a line 'Answer: ...' giving what was asked: the room (for where something is, not the "
+    "walk there), the number (how many, how big, how far), or the route length in metres (how to get "
+    "somewhere; 'Answer: no route' if there is none)."
 )
 
 

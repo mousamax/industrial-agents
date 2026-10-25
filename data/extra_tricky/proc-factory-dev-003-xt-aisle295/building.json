@@ -55,7 +55,8 @@
      0.0
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-003-F0-S002",
@@ -82,7 +83,8 @@
      17.1
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-003-F0-S003",
@@ -109,7 +111,8 @@
      34.2
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-003-F0-S004",
@@ -136,7 +139,8 @@
      51.3
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-003-F0-S005",
@@ -12650,5 +12654,5 @@
    "source": "generated"
   }
  ],
- "extra_tricky_modification": "Opening proc-factory-dev-003-F0-O0014 between Main aisle H-B3 (F0-S008) and Main aisle H-B4 (F0-S009) narrowed from 14.6 m to 2.95 m."
+ "extra_tricky_modification": "Opening proc-factory-dev-003-F0-O0014 between Main aisle H-B3 (F0-S008) and Main aisle H-B4 (F0-S009) narrowed from 14.6 m to 2.95 m. Every production, assembly and additive zone marked \"through\": false (Synera's flag: a route may start or end in one, never pass through it)."
 }

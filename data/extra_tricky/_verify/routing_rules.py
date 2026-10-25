@@ -22,7 +22,6 @@ from pathlib import Path
 from app.building.model import Building, load_building
 from app.building.routing import (
     FORKLIFT,
-    PRODUCTION_BAYS,
     WALKING,
     Constraints,
     Route,
@@ -36,8 +35,13 @@ class RouteGraph(_RouteGraph):
     scripts apply the bay rule themselves (closing every bay but a leg's ends), so expected answers follow
     ROUTE_SCORING.md, and the naive bay-crossing shortcut each trap asserts stays computable."""
 
-    def _dijkstra(self, sources, goals=None, *, bays_are_ends=False):
-        return super()._dijkstra(sources, goals, bays_are_ends=False)
+    def _dijkstra(self, sources, goals=None, *, cross_no_through=True):
+        return super()._dijkstra(sources, goals, cross_no_through=True)
+
+
+PRODUCTION_BAYS = frozenset({"production_zone", "assembly_zone", "additive_zone"})
+"""The room types these cases treat as no-through. Synera (Sun 25 Oct) made it a per-space flag instead
+(`"through": false`); the cases that need it run on `-xt-nothrough` copies that set it on these types."""
 
 ROOT = Path(__file__).resolve().parents[3]
 OUT = ROOT / "data/extra_tricky/_staging/routing_rules.jsonl"
@@ -161,7 +165,7 @@ def case(n: int):
 
 @case(1)
 def c01():
-    bid = "proc-factory-dev-005"
+    bid = "proc-factory-dev-005-xt-nothrough"
     b = B(bid)
     s, t = resolve1(b, "Meeting room 0.56 (Ground floor)"), resolve1(b, "Warehouse zone H-C5 (Ground floor)")
     naive, r = best(b, s, t, avoid_bays=False), best(b, s, t)
@@ -194,7 +198,7 @@ def c01():
 
 @case(2)
 def c02():
-    bid = "proc-factory-dev-005"
+    bid = "proc-factory-dev-005-xt-nothrough"
     b = B(bid)
     s = resolve1(b, "Kitchen 2.36 (Floor 2)")
     holders = sorted({a.space_id for a in b.assets_of_type("cnc_mill")})
@@ -202,7 +206,7 @@ def c02():
     t = holders[0]
     naive, r = best(b, s, t, avoid_bays=False), best(b, s, t)
     assert bays_passed(b, naive) and not bays_passed(b, r)
-    lift = best(b, s, t, Constraints(closed=frozenset({f"{bid}-V01"})))
+    lift = best(b, s, t, Constraints(closed=frozenset({"proc-factory-dev-005-V01"})))
     return dict(
         building_id=bid,
         kind="route",
@@ -231,7 +235,7 @@ def c02():
 
 @case(3)
 def c03():
-    bid = "proc-factory-dev-005"
+    bid = "proc-factory-dev-005-xt-nothrough"
     b = B(bid)
     s, t = resolve1(b, "Meeting room 0.26 (Ground floor)"), resolve1(b, "Warehouse zone H-C3 (Ground floor)")
     closed = resolve1(b, "Hall access 0.22 (Ground floor)")
@@ -270,7 +274,7 @@ def c03():
 
 @case(4)
 def c04():
-    bid = "proc-factory-train-015"
+    bid = "proc-factory-train-015-xt-nothrough"
     b = B(bid)
     s, t = resolve1(b, "Office 0.29 (Ground floor)"), resolve1(b, "Production zone H-A2 (Ground floor)")
     naive, r = best(b, s, t, avoid_bays=False), best(b, s, t)
@@ -302,7 +306,7 @@ def c04():
 
 @case(5)
 def c05():
-    bid = "proc-factory-train-010"
+    bid = "proc-factory-train-010-xt-nothrough"
     b = B(bid)
     s, t = resolve1(b, "Office 1.14 (Floor 1)"), resolve1(b, "Logistics zone H-C1 (Ground floor)")
     naive, r = best(b, s, t, avoid_bays=False), best(b, s, t)
@@ -380,7 +384,7 @@ def c06():
 
 @case(7)
 def c07():
-    bid = "proc-factory-dev-008"
+    bid = "proc-factory-dev-008-xt-nothrough"
     b = B(bid)
     s = resolve1(b, "Office 0.29 (Ground floor)")
     holders = sorted({a.space_id for a in b.assets_of_type("assembly_station")})
@@ -881,7 +885,7 @@ def c19():
 
 @case(20)
 def c20():
-    bid = "proc-factory-train-006"
+    bid = "proc-factory-train-006-xt-nothrough"
     b = B(bid)
     stops = [resolve1(b, x) for x in ("Quality lab 0.24 (Ground floor)", "Assembly zone H-A2 (Ground floor)", "Logistics zone H-C2 (Ground floor)", "Quality lab 0.24 (Ground floor)")]
     legs = [best(b, a, z) for a, z in zip(stops, stops[1:])]

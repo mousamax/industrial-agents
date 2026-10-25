@@ -36,7 +36,7 @@ from shapely.ops import unary_union
 from app.building import geometry, queries
 from app.building.directions import directions, walk_path
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
-from app.building.routing import PRODUCTION_BAYS, Constraints, Route, RouteGraph
+from app.building.routing import Constraints, Route, RouteGraph
 from app.building.state import (
     AddAsset,
     AddDoor,
@@ -980,21 +980,22 @@ def _route_result(b: Building, route: Route, walk: bool = False) -> dict:
     } | ({"path": walk_path(b, route)} if walk else {})  # the walk for the map: [{floor_id, points}]
 
 
-class _BaysPassable(RouteGraph):
-    """RouteGraph with the production-bay rule off. Only used to explain a missing route, never to give one."""
+class _ThroughAllowed(RouteGraph):
+    """RouteGraph that may cross `"through": false` spaces. Only used to explain a missing route, never to
+    give one."""
 
-    def _dijkstra(self, sources, goals=None, *, bays_are_ends=False):
-        return super()._dijkstra(sources, goals, bays_are_ends=False)
+    def _dijkstra(self, sources, goals=None, *, cross_no_through=True):
+        return super()._dijkstra(sources, goals, cross_no_through=True)
 
 
-BAY, NARROW, STEPS, CLOSED = (
-    "the way on crosses a production bay",
+NO_THROUGH, NARROW, STEPS, CLOSED = (
+    "the way on crosses an area marked no through traffic",
     "the way on has openings too narrow for this load",
     "the way on has stairs or steps",
     "the way on uses something reported closed",
 )
 OPENS_A_WAY = {
-    BAY: "whoever runs that production area letting them cross it, or bringing what they need out of it",
+    NO_THROUGH: "whoever runs that area letting them cross it, or bringing what they need out of it",
     NARROW: "a narrower load, or a smaller vehicle",
     STEPS: "help on the stairs; the plan has no step-free way",
     CLOSED: "the closed part reopening",
@@ -1006,9 +1007,9 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> tuple[list[s
     """Which restrictions block a route, found by lifting each one alone (and all of them together), and for
     each, how far toward the goal the rules still let the person go: the last place on that way they can
     reach under every rule. A route there is valid, so a person who is stuck still gets somewhere useful
-    (the edge of the bay, the foot of the stairs) without anyone breaking a rule."""
+    (the edge of a no-through area, the foot of the stairs) without anyone breaking a rule."""
     graph = route_graph(b, c)
-    allowed = graph.reachable(stops[0], through_production_bays=False) | {stops[0]}
+    allowed = graph.reachable(stops[0]) | {stops[0]}
     closest: list[dict] = []
 
     def found(relaxed: RouteGraph, rule: str | None = None):
@@ -1033,17 +1034,17 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> tuple[list[s
         return tour
 
     causes = []
-    if crossing := found(_BaysPassable(b, c), BAY):
-        bays = {
+    if crossing := found(_ThroughAllowed(b, c), NO_THROUGH):
+        crossed = {
             s
             for leg in crossing.legs
             for s in leg.space_path[1:-1]
-            if s in b.spaces and b.spaces[s].room_type in PRODUCTION_BAYS
+            if s in b.spaces and not b.spaces[s].through
         }
-        names = ", ".join(sorted(_label(b, s) for s in bays))
+        names = ", ".join(sorted(_label(b, s) for s in crossed))
         causes.append(
-            f"production bays: a route meeting every other restriction exists only by passing through {names}; "
-            "a route may end in a production bay but never cross one"
+            f"no through traffic: a route meeting every other restriction exists only by passing through {names}, "
+            "which the plan marks as no through traffic; a route may start or end there but never cross it"
         )
     if c.min_width_m and (
         wider := found(
@@ -1069,10 +1070,10 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> tuple[list[s
     ):
         causes.append(f"closures: the reported closures block it ({', '.join(sorted(c.closed))})")
     if not causes:
-        if found(_BaysPassable(b, Constraints())):
+        if found(_ThroughAllowed(b, Constraints())):
             causes.append(
                 "a combination: no single restriction is the cause; only lifting several at once "
-                "(width, steps, closures, production bays) gives a route"
+                "(width, steps, closures, no-through areas) gives a route"
             )
         else:
             causes.append(_not_connected(b, stops))
@@ -1082,7 +1083,7 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> tuple[list[s
 def _not_connected(b: Building, stops: list[str]) -> str:
     """What the plan is missing between stops no rule can join: a room with no door at all, a floor no stairs
     or lift stops at, or else how small the cut-off part is. Facts from the plan, so nobody has to guess."""
-    free = _BaysPassable(b, Constraints())
+    free = _ThroughAllowed(b, Constraints())
     for a, z in itertools.pairwise(stops):
         if z in free.reachable(a):
             continue
@@ -1123,9 +1124,10 @@ def route(
     one entrance and back in through another is not a route, so never combine legs to and from "outside".
 
     No route rarely has a single obvious cause. Several restrictions apply at once: openings narrower than
-    min_width_m, stairs and stepped doors when step_free, reported closures, and production bays (production,
-    assembly and additive zones), which a route may start or end in but never pass through, even when the
-    bay is wide and step-free. So a path that is wide enough can still be ruled out. When reachable=false,
+    min_width_m, stairs and stepped doors when step_free, reported closures, and areas the plan marks as no
+    through traffic, which a route may start or end in but never pass through. Production, assembly,
+    warehouse and logistics zones are crossed like any other space unless the plan marks them. So a path
+    that is wide enough can still be ruled out. When reachable=false,
     `blocked_by` says which restrictions block it, found by lifting each one in turn. Explain the trip
     with those causes. Don't name a single narrow opening, step or closure as the reason unless
     `blocked_by` shows it alone is enough, and don't call a place unreachable when it's only these rules.
@@ -1438,7 +1440,6 @@ def reachable_rooms(
     closed: list[str] | None = None,
     scope: Scope = "rooms",
     room_type: str | None = None,
-    through_production_bays: bool = True,
 ) -> str:
     """Rooms on a floor that can be reached from a start (deliveries, wheelchair access, a forklift's
     reach), and how many.
@@ -1453,40 +1454,27 @@ def reachable_rooms(
         scope: Which spaces count: "rooms" (rooms only, what a count of rooms means), "rooms_and_halls"
             (also halls such as factory zones), or "all_spaces".
         room_type: Only spaces of this type, whatever the scope, e.g. "warehouse_zone", "office".
-        through_production_bays: Keep the default (true) for delivery and access counts ("how many rooms
-            can it be delivered to / reach"): those may pass through production bays. Set false when the
-            person says a vehicle or forklift may not drive through production bays, or asks where a route
-            can actually go: then a production bay can be a destination but is never crossed, and
-            `dropped_by_production_bay_rule` lists what only a way through a bay would reach.
     """
     b = ctx.deps.building
     origin, f = _space_id(b, start), floor_of(b, floor)
     graph = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or []))
-    via_bays = graph.reachable(origin)
-    reached = via_bays if through_production_bays else graph.reachable(origin, through_production_bays=False)
+    reached = graph.reachable(origin)
     if room_type:
         rtype = _type_of(room_type, {s.room_type for s in b.spaces.values()}, "room type")
         rooms = [s for s in b.spaces_on(f.id) if s.room_type == rtype]
     else:
         rooms = [s for s in b.spaces_on(f.id) if SCOPES[scope](s)]
     yes = [s.id for s in rooms if s.id in reached]
-    dropped = [s.id for s in rooms if s.id in via_bays and s.id not in reached]
     return _json(
         {
             "floor": f.name,
             "scope": None if room_type else scope,
             "room_type": room_type,
             "floor_spaces_by_kind": _kinds(b, f.id),
-            "through_production_bays": through_production_bays,
             "reachable_count": len(yes),
             "unreachable_count": len(rooms) - len(yes),
             "reachable": [_label(b, s) for s in yes[:MAX_RESULTS]],
             "unreachable": [_label(b, s.id) for s in rooms if s.id not in reached][:MAX_RESULTS],
-            **(
-                {"dropped_by_production_bay_rule": [_label(b, s) for s in dropped[:MAX_RESULTS]]}
-                if not through_production_bays
-                else {}
-            ),
             "highlight": yes,
         }
     )

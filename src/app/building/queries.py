@@ -162,7 +162,7 @@ def plan_visits(
     (a generalised TSP). A fixed room to visit is a group of one; "a room with a coffee machine" is the group
     of all its holders. One room may settle several groups (a makerspace with a 3D printer and a laser cutter).
     The trip starts at `start` and ends at `end`, back at start (`return_to_start`), or wherever the last
-    stop is. Legs are shortest routes under `constraints` (production bays only as stops, closures avoided).
+    stop is. Legs are shortest routes under `constraints` (no-through spaces only as stops, closures avoided).
     Returns a plan with `unreachable_groups` set (and no stops) when some group has no reachable room, and
     None when the end can't be reached at all."""
     import numpy as np

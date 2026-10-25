@@ -32,7 +32,7 @@ each item's real status (read from this file: keep the `**id**` and the backtick
 - [ ] **3.5** `export() -> dict`: kit-format building.json with the edits · tests: `test_a3_5_export_round_trips`
 
 ## 4. Synera's scoring rule (`docs/synera/ROUTE_SCORING.md`)
-- [ ] **4.1** Production bays are destinations only: never pass through one · tests: `test_a4_1_no_shortcut_through_production_bay`
+- [ ] **4.1** Spaces marked `"through": false` are destinations only: never pass through one (Synera, Sun 25 Oct: room type never decides it) · tests: `test_a4_1_no_shortcut_through_a_no_through_space`
 - [ ] **4.2** Forklift: openings 3 m or wider only · tests: `test_a4_2_forklift_uses_wide_openings_only`
 - [ ] **4.3** Stairs 2 m per metre climbed, lift 15 m + 1 m per metre (marked xfail until adopted, so it never blocks a push) · tests: `test_a4_3_stairs_and_lift_cost_per_metre`
 - [ ] **4.4** Door-to-door distance about 15 cm off the walls. No automatic test: check a few routes by hand.

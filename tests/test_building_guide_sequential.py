@@ -78,4 +78,6 @@ def test_a_route_in_the_same_turn_waits_for_a_slow_closure(monkeypatch):
         if isinstance(p, ToolReturnPart)
     }
     assert "Closed Hall access 0.22" in returns["set_closed"]
-    assert '"reachable":false' in returns["route"], returns["route"][:300]
+    # The closed hall was the short way; the route that saw the closure goes round it (through the
+    # production zones, which may be crossed) and reports it as avoided.
+    assert 'avoided":["proc-factory-dev-005-F0-S022"]' in returns["route"], returns["route"][:300]

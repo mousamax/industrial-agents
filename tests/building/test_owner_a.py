@@ -8,11 +8,12 @@ to-do progress printed at the end of the run is built in conftest.py.
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 
 import pytest
 
-from app.building import queries, routing
+from app.building import queries
 from app.building.model import OUTSIDE, load_building, parse_building
 from app.building.routing import FORKLIFT, WALKING, Constraints, RouteGraph, validate_route
 from app.building.state import AddDoor, BuildingState, Close, MoveAsset, Reopen
@@ -20,7 +21,6 @@ from app.building.state import AddDoor, BuildingState, Close, MoveAsset, Reopen
 from .test_golden import BENCHMARK, WARMUP, call, cases, route_length_ok
 
 FORKLIFT_MIN_WIDTH_M = 3.0
-PRODUCTION_BAY = "production_zone"
 LIFT_WAIT_M = 15.0  # Synera: 15 m plus 1 m per metre of height
 LIFT_PER_M = 1.0
 STAIRS_PER_M = 2.0  # Synera: 2 m of walking per metre climbed
@@ -193,12 +193,14 @@ def test_a3_5_export_round_trips():
 
 
 @pytest.mark.parametrize("q", _reachable_routes())
-def test_a4_1_no_shortcut_through_production_bay(q):
+def test_a4_1_no_shortcut_through_a_no_through_space(q):
+    """Synera: only spaces marked "through": false are destinations; no kit space is, so every golden route
+    stays reachable (production zones are crossed like any space). The flag itself: tests/building/test_no_through.py."""
     b, a = load_building(q["building_id"]), q["answer"]
     route = call(call(RouteGraph, b, WALKING).shortest, a["from_space_id"], a["to_space_id"])
     assert route is not None
-    through = [s for s in route.space_path[1:-1] if s in b.spaces and b.spaces[s].room_type == PRODUCTION_BAY]
-    assert not through, f"passes through production bays: {[b.label(s) for s in through]}"
+    through = [s for s in route.space_path[1:-1] if s in b.spaces and not b.spaces[s].through]
+    assert not through, f"passes through no-through spaces: {[b.label(s) for s in through]}"
 
 
 @pytest.mark.parametrize("building_id", ROUTE_BUILDINGS)
@@ -256,7 +258,7 @@ def test_a4_6_validator_accepts_golden_routes(q):
 
 
 @pytest.mark.parametrize("q", _reachable_routes())
-def test_a4_6_validator_rejects_invalid_routes(q, monkeypatch):
+def test_a4_6_validator_rejects_invalid_routes(q):
     b, a = load_building(q["building_id"]), q["answer"]
     path, elements = a["space_path"], a["element_path"]
     assert call(validate_route, b, path, WALKING) == []
@@ -285,8 +287,9 @@ def test_a4_6_validator_rejects_invalid_routes(q, monkeypatch):
     if len(path) >= 3:
         middle = b.spaces.get(path[1])
         if middle is not None:
-            monkeypatch.setattr(routing, "PRODUCTION_BAYS", frozenset({middle.room_type}))
-            assert any("production bay" in p for p in validate_route(b, path, WALKING))
-            assert not any("production bay" in p for p in validate_route(b, path[:2], WALKING)), (
+            spaces = {**b.spaces, middle.id: dataclasses.replace(middle, through=False)}
+            flagged = dataclasses.replace(b, spaces=spaces)
+            assert any("no-through" in p for p in validate_route(flagged, path, WALKING))
+            assert not any("no-through" in p for p in validate_route(flagged, path[:2], WALKING)), (
                 "may end in one"
             )

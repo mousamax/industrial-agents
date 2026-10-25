@@ -1,5 +1,5 @@
 {
- "extra_tricky_modification": "Opening proc-factory-dev-008-F0-O0027 (Main aisle H-C3 <-> Main aisle H-C4) narrowed from 19.3 m to 2.9 m (a rack blocks most of the aisle); opening proc-factory-dev-008-F0-O0035 (Logistics zone H-D3 <-> Logistics zone H-D4) narrowed from 19.3 m to exactly 3.0 m. Nothing else changed.",
+ "extra_tricky_modification": "Opening proc-factory-dev-008-F0-O0027 (Main aisle H-C3 <-> Main aisle H-C4) narrowed from 19.3 m to 2.9 m (a rack blocks most of the aisle); opening proc-factory-dev-008-F0-O0035 (Logistics zone H-D3 <-> Logistics zone H-D4) narrowed from 19.3 m to exactly 3.0 m. Every production, assembly and additive zone marked \"through\": false (Synera's flag: a route may start or end in one, never pass through it). Nothing else changed.",
  "building": {
   "id": "proc-factory-dev-008-xt-narrow",
   "name": "Werk Süd 32",
@@ -56,7 +56,8 @@
      19.2
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S002",
@@ -83,7 +84,8 @@
      19.2
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S003",
@@ -110,7 +112,8 @@
      19.2
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S004",
@@ -137,7 +140,8 @@
      19.2
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S005",
@@ -164,7 +168,8 @@
      19.2
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S006",
@@ -218,7 +223,8 @@
      38.4
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S008",
@@ -245,7 +251,8 @@
      38.4
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S009",
@@ -272,7 +279,8 @@
      38.4
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S010",
@@ -299,7 +307,8 @@
      38.4
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S011",
@@ -326,7 +335,8 @@
      38.4
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S012",
@@ -353,7 +363,8 @@
      38.4
     ]
    ],
-   "synthetic": false
+   "synthetic": false,
+   "through": false
   },
   {
    "id": "proc-factory-dev-008-F0-S013",

@@ -25,7 +25,7 @@ from pathlib import Path
 from app.building import geometry, queries
 from app.building.build import validate
 from app.building.model import OUTSIDE, Building, Opening, load_building, parse_building
-from app.building.routing import PRODUCTION_BAYS, WALKING, Constraints, validate_route
+from app.building.routing import WALKING, Constraints, validate_route
 from app.building.routing import RouteGraph as _RouteGraph
 
 
@@ -34,8 +34,13 @@ class RouteGraph(_RouteGraph):
     scripts apply the bay rule themselves (closing every bay but a leg's ends), so expected answers follow
     ROUTE_SCORING.md, and the naive bay-crossing shortcut each trap asserts stays computable."""
 
-    def _dijkstra(self, sources, goals=None, *, bays_are_ends=False):
-        return super()._dijkstra(sources, goals, bays_are_ends=False)
+    def _dijkstra(self, sources, goals=None, *, cross_no_through=True):
+        return super()._dijkstra(sources, goals, cross_no_through=True)
+
+
+PRODUCTION_BAYS = frozenset({"production_zone", "assembly_zone", "additive_zone"})
+"""The room types these cases treat as no-through. Synera (Sun 25 Oct) made it a per-space flag instead
+(`"through": false`); the cases that need it run on `-xt-nothrough` copies that set it on these types."""
 
 ROOT = Path(__file__).resolve().parents[3]
 KIT = ROOT / "synera-kit" / "data"
@@ -119,6 +124,24 @@ def narrowlab(raw, rows):
     assert door["width_m"] == 1.2
     door["width_m"] = 0.8
     return rows
+
+
+def no_through(raw, rows):
+    """Synera's flag (Sun 25 Oct): a route may start or end in the space, never pass through it."""
+    for space in raw["spaces"]:
+        if space["room_type"] in PRODUCTION_BAYS:
+            space["through"] = False
+    return rows
+
+
+NO_THROUGH_TEXT = (
+    'Every production, assembly and additive zone marked "through": false (Synera\'s flag: a route may start '
+    "or end in one, never pass through it)."
+)
+
+
+def aisle295_no_through(raw, rows):
+    return no_through(raw, aisle295(raw, rows))
 
 
 def aisle295(raw, rows):
@@ -210,10 +233,21 @@ ALTERATIONS = {
     ),
     "proc-factory-dev-003-xt-aisle295": (
         "proc-factory-dev-003",
-        aisle295,
+        aisle295_no_through,
         "Opening proc-factory-dev-003-F0-O0014 between Main aisle H-B3 (F0-S008) and Main aisle H-B4 "
-        "(F0-S009) narrowed from 14.6 m to 2.95 m.",
+        "(F0-S009) narrowed from 14.6 m to 2.95 m. " + NO_THROUGH_TEXT,
     ),
+    **{
+        f"{source}-xt-nothrough": (source, no_through, NO_THROUGH_TEXT + " Nothing else changed.")
+        for source in (
+            "proc-factory-dev-003",
+            "proc-factory-dev-005",
+            "proc-factory-dev-008",
+            "proc-factory-train-006",
+            "proc-factory-train-010",
+            "proc-factory-train-015",
+        )
+    },
     "resplan-15179-xt-newdoor": (
         "resplan-15179",
         newdoor,
@@ -438,7 +472,7 @@ def cases() -> None:
     assert rf is None and close(rf0.length_m, 71.47)
     naive = RouteGraph(b, Constraints(step_free=True, min_width_m=3.0)).shortest(a, z)
     bad = validate_route(b, naive.space_path, Constraints(step_free=True, min_width_m=3.0))
-    assert bad and all("production bay" in p for p in bad)
+    assert bad and all("no-through" in p for p in bad)
     check("15", answer=None, original=rf0.length_m, naive=naive.length_m,
           naive_spaces=naive.space_path, naive_problems=bad)
     zones = sorted(s.id for s in b.spaces.values() if s.room_type == "warehouse_zone")

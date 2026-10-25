@@ -31,6 +31,7 @@ from app.agents.building_guide.tools import (
 from app.settings import ROOT
 
 FACTORY, CAMPUS = "proc-factory-dev-003", "proc-campus-dev-000"
+NO_THROUGH = ROOT / "data/extra_tricky/proc-factory-dev-003-xt-nothrough"  # FACTORY, zones "through": false
 
 
 def ctx(deps: Deps, run_id: str = "turn-1") -> SimpleNamespace:
@@ -517,7 +518,7 @@ def test_what_if_counts_a_room_that_gets_its_first_way_out():
 
 
 def test_no_route_names_every_restriction_that_blocks_it() -> None:
-    """A forklift blocked by a narrow opening AND by production bays must hear both, not just the opening."""
+    """A forklift blocked by a narrow opening AND by "through": false zones must hear both, not just the opening."""
     altered = ROOT / "data" / "extra_tricky" / "proc-factory-dev-003-xt-aisle295"
     if not altered.exists():
         pytest.skip("data/extra_tricky not present")
@@ -531,22 +532,36 @@ def test_no_route_names_every_restriction_that_blocks_it() -> None:
     )
     assert r["reachable"] is False
     causes = " | ".join(r["blocked_by"])
-    assert "production bays" in causes and "2.95 m opening" in causes
+    assert "no through traffic" in causes and "2.95 m opening" in causes
 
 
-def test_a_machine_moved_behind_a_production_bay_gets_no_route_and_a_next_step() -> None:
+def test_a_machine_moved_behind_a_production_zone_is_routed_through_it() -> None:
     """Scenario live-moved-machine: the drill press moves from Production zone H-A1 into Assembly zone H-A2.
-    From the office wing the only way in crosses H-A1, so there is no route by the bay rule, but the result
-    says how far the rules let them go (into the bay on the way), so the person still gets a next step."""
+    From the office wing the only way in crosses H-A1, which is allowed (Synera: only "through": false spaces
+    can't be crossed, and the kit marks none)."""
     from app.agents.building_guide.tools import move_item
 
     deps = Deps.load(FACTORY, detail="walk")
     call(move_item, ctx(deps), "Drill press H-A1", "Assembly zone H-A2")
     r = call(route, ctx(deps), "Kitchen 0.28", "Drill press H-A1")
+    assert r["reachable"] is True and r["stops"][-1].startswith("Assembly zone H-A2")
+    assert any("Production zone H-A1" in s for leg in r["legs"] for s in map(str, leg["steps"]))
+
+
+def test_a_machine_moved_behind_a_no_through_zone_gets_no_route_and_a_next_step() -> None:
+    """Same move where the plan marks the zones "through": false: no route, but the result says how far the
+    rules let them go (into Production zone H-A1, on the way), so the person still gets a next step."""
+    from app.agents.building_guide.tools import move_item
+
+    if not NO_THROUGH.exists():
+        pytest.skip("data/extra_tricky not present")
+    deps = Deps.load(NO_THROUGH, detail="walk")
+    call(move_item, ctx(deps), "Drill press H-A1", "Assembly zone H-A2")
+    r = call(route, ctx(deps), "Kitchen 0.28", "Drill press H-A1")
     assert r["reachable"] is False
     assert r["stops"][-1].startswith("Assembly zone H-A2") and "Production zone H-A1" in r["blocked_by"][0]
     (step,) = r["as_far_as_the_rules_allow"]
-    assert step["place"].startswith("Production zone H-A1") and "production bay" in step["beyond_it"]
+    assert step["place"].startswith("Production zone H-A1") and "no through traffic" in step["beyond_it"]
     assert step["route_there"]["length_m"] > 0
     # ending in the bay itself is a route, and so is leaving the bay you stand in
     assert call(route, ctx(deps), "Kitchen 0.28", "Production zone H-A1")["reachable"] is True
@@ -581,9 +596,9 @@ def test_plan_visits_picks_rooms_and_order_for_a_free_order_round_trip():
     assert fixed["total_length_m"] == pytest.approx(133.18, abs=0.01)
 
 
-def test_reachable_rooms_can_apply_the_production_bay_rule() -> None:
-    """Default reach may cross production bays (Synera's delivery counts do); opted out, a forklift that may
-    not drive through bays reaches only what a route can, and the tool names what the rule dropped."""
+def test_reachable_rooms_follows_the_no_through_flag() -> None:
+    """Counts follow the route rule (Synera): a forklift reaches only what a route can, so zones behind a
+    "through": false zone drop out. Without the flag (the kit) the same zones are crossed and counted."""
     from app.agents.building_guide.tools import reachable_rooms
 
     altered = ROOT / "data" / "extra_tricky" / "proc-factory-dev-003-xt-aisle295"
@@ -592,12 +607,10 @@ def test_reachable_rooms_can_apply_the_production_bay_rule() -> None:
     c = ctx(Deps.load(altered))
     args = ("Logistics zone H-C5", "0")
     kw = {"step_free": True, "min_width_m": 3, "room_type": "warehouse_zone"}
-    default = call(reachable_rooms, c, *args, **kw)
-    assert default["reachable_count"] == 5 and "dropped_by_production_bay_rule" not in default
-    ruled = call(reachable_rooms, c, *args, **kw, through_production_bays=False)
-    names = {r.split(" (")[0] for r in ruled["reachable"]}
-    assert names == {"Warehouse zone H-A5", "Warehouse zone H-C4"}
-    assert len(ruled["dropped_by_production_bay_rule"]) == 3
+    ruled = call(reachable_rooms, c, *args, **kw)
+    assert {r.split(" (")[0] for r in ruled["reachable"]} == {"Warehouse zone H-A5", "Warehouse zone H-C4"}
+    kit = call(reachable_rooms, ctx(Deps.load(FACTORY)), *args, **kw)
+    assert kit["reachable_count"] == 5
 
 
 def test_walk_distances_ranks_every_room_by_its_walk_out() -> None:
@@ -868,9 +881,11 @@ def test_an_ambiguous_place_still_gets_one_number_in_the_answer_line():
 
 
 def test_a_blocked_route_names_how_far_the_rules_allow_and_gives_no_way_through():
-    deps = Deps.load(FACTORY)
+    if not NO_THROUGH.exists():
+        pytest.skip("data/extra_tricky not present")
+    deps = Deps.load(NO_THROUGH)
     blocked = call(route, ctx(deps), "Kitchen 0.28", "Assembly zone H-A2")  # only via Production zone H-A1
     assert blocked["reachable"] is False and "legs" not in blocked
     edge = blocked["as_far_as_the_rules_allow"][0]
-    assert "Production zone H-A1" in edge["place"] and "production bay" in edge["beyond_it"]
+    assert "Production zone H-A1" in edge["place"] and "no through traffic" in edge["beyond_it"]
     assert call(route, ctx(deps), "Kitchen 0.28", edge["id"])["reachable"]  # a valid route takes them there

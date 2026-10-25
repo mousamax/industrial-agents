@@ -25,6 +25,11 @@ for every route answer; build and test routing against it.
 - **Forklift:** forklift aisles and openings only (3 m or wider). Pedestrian walkways don't count.
 - **Closed or blocked** areas must be avoided.
 - **Production bays** are destinations: a route may end in one, but never pass through one as a shortcut.
+  **Clarified by Synera on Sun 25 Oct:** a "bay" is any space marked `"through": false` in `building.json`,
+  never a room type. No kit building sets the flag, so production, assembly, warehouse and logistics zones
+  are crossed like any other space (the expected hall-to-office routes go through them). Delivery and
+  reachability counts follow the same rule. `RouteGraph` honours the flag wherever it appears
+  (`Space.through`); `data/extra_tricky/*-xt-nothrough` are kit factories with the flag set, for testing.
 - **No route** under the rules (e.g. upstairs without stairs and no lift): the correct answer is to say so.
 
 ## Scoring
@@ -79,7 +84,7 @@ representative point.
 1. Where does a route start and end inside the first and last room: a fixed point (which?), the nearest
    door, or the item's position for "to the machine" questions?
 2. Is walking outside between entrances measured, and how?
-3. Which spaces are **forklift aisles** (the data has 112 corridors named "aisle", no aisle type) and which
+3. ~~Answered Sun 25 Oct: bays are `"through": false` spaces, see above.~~ Which spaces are **forklift aisles** (the data has 112 corridors named "aisle", no aisle type) and which
    are **production bays** (`production_zone`, `assembly_zone`, `additive_zone`, `warehouse_zone`,
    `logistics_zone`?)? Can a pedestrian route pass through a bay, or only a forklift one?
 4. "Without stairs: lifts, ramps and doors only." Is there ramp data, or are ramps just openings marked

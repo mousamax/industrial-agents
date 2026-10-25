@@ -53,6 +53,9 @@ class Space:
     ref: str
     polygon: tuple[XY, ...]
     synthetic: bool
+    through: bool = True
+    """False when building.json marks the space `"through": false` (Synera, Sun 25 Oct): a route or a reach
+    count may start or end in it, never pass through it. Absent means true; room_type never decides it."""
 
     @cached_property
     def shape(self) -> Polygon:
@@ -290,6 +293,7 @@ def parse_building(raw: dict[str, Any]) -> Building:
                 s["ref"],
                 tuple((float(x), float(y)) for x, y in s["polygon"]),
                 s["synthetic"],
+                s.get("through", True) is not False,
             )
             for s in raw["spaces"]
         },
