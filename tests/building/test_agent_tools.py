@@ -25,7 +25,7 @@ from app.agents.building_guide.tools import (
 )
 from app.building.model import load_building
 
-from .test_golden import BENCHMARK, cases, close_to
+from .test_golden import BENCHMARK, WARMUP, cases, close_to, route_length_ok
 
 
 def ctx(building_id: str) -> SimpleNamespace:
@@ -81,6 +81,22 @@ def test_errand(q):
     target = run(list_rooms, q, level(q, i["floor_id"]), i["room_type"])["rooms"][0]["id"]
     assert target == a["target"], b.label(target)
     assert close_to(run(route, q, i["start"], target, via=[pickup])["total_length_m"], a)
+
+
+@pytest.mark.parametrize("q", cases(WARMUP, "route_step_free"))
+def test_route_tool_step_free(q):
+    """The route tool with step_free=True: the golden length, end to end, and nothing with a step on it."""
+    a, b = q["answer"], load_building(q["building_id"])
+    got = run(route, q, a["from_space_id"], a["to_space_id"], step_free=True)
+    if a.get("reachable") is False:
+        assert got["reachable"] is False, got
+        return
+    assert got["reachable"] and route_length_ok(got["total_length_m"], a["optimal_length_m"]), got
+    (leg,) = got["legs"]
+    assert leg["space_path"][0] == a["from_space_id"] and leg["space_path"][-1] == a["to_space_id"]
+    for element in leg["element_path"]:
+        thing = b.openings.get(element) or b.connectors.get(element)
+        assert thing is not None and thing.step_free, f"{element} is not step-free"
 
 
 @pytest.mark.parametrize("q", cases(BENCHMARK, "wide_delivery_count"))

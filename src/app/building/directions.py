@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import threading
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Literal
@@ -154,6 +155,17 @@ def walk_path(b: Building, route: Route) -> list[dict[str, Any]]:
     return [{"floor_id": floor_id, "points": _compact(points)} for floor_id, points in segments]
 
 
+_PREPARED = threading.Lock()
+"""A prepared geometry builds its search indexes lazily on first use and GEOS does not guard that: two
+threads asking the same cached `_Free.cover` at once can corrupt it and crash the process. Every predicate
+on a cover takes this lock (tools run in worker threads, many conversations at once)."""
+
+
+def _covers(cover: Any, lines: Any) -> Any:
+    with _PREPARED:
+        return shapely.covers(cover, lines)
+
+
 @dataclass(frozen=True)
 class _Free:
     """Where a person can walk in one room: the outline, inset off the walls, minus obstacle clearances."""
@@ -194,7 +206,8 @@ def _free(outline: tuple[XY, ...], obstacles: tuple[tuple[XY, ...], ...]) -> _Fr
                 ) < -1e-12:
                     corners.append((here[0], here[1]))
     cover = area.buffer(1e-6)
-    shapely.prepare(cover)
+    with _PREPARED:
+        shapely.prepare(cover)
     return _Free(area, cover, np.array(corners, dtype=float).reshape(-1, 2))
 
 
@@ -209,7 +222,7 @@ def _snap(free: _Free, p: XY) -> XY:
 def _shortest(free: _Free, a: XY, z: XY) -> list[XY] | None:
     """Shortest walk from a to z (both inside the free area) over the visibility graph of its corners: A*
     that looks for visible corners only from the nodes it expands, many segments at a time."""
-    if a == z or shapely.covers(free.cover, LineString([a, z])):
+    if a == z or _covers(free.cover, LineString([a, z])):
         return [a, z]
     nodes = np.vstack([np.array([a, z], dtype=float), free.corners])
     goal = nodes[1]
@@ -234,7 +247,7 @@ def _shortest(free: _Free, a: XY, z: XY) -> list[XY] | None:
         lines = shapely.linestrings(
             np.stack([np.repeat(nodes[i][None, :], len(candidates), axis=0), nodes[candidates]], axis=1)
         )
-        for k in candidates[shapely.covers(free.cover, lines)]:
+        for k in candidates[_covers(free.cover, lines)]:
             g[k] = g[i] + step[k]
             prev[k] = i
             heapq.heappush(heap, (g[k] + to_goal[k], int(k)))

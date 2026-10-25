@@ -205,7 +205,9 @@ def test_a4_1_no_shortcut_through_production_bay(q):
 def test_a4_2_forklift_uses_wide_openings_only(building_id):
     b = load_building(building_id)
     graph = call(RouteGraph, b, Constraints(step_free=True, min_width_m=FORKLIFT_MIN_WIDTH_M))
-    for target in call(graph.reachable, OUTSIDE):
+    # Every space a forklift has a route to (distances_from applies the production-bay rule; reachable
+    # doesn't, like Synera's counts).
+    for target in call(graph.distances_from, [OUTSIDE]):
         route = graph.shortest(OUTSIDE, target)
         assert route is not None
         narrow = [o.id for o in _used_openings(b, route) if o.width_m < FORKLIFT_MIN_WIDTH_M]

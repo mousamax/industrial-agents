@@ -1,7 +1,7 @@
 """Deps and tools for building_guide, on the shared domain interfaces (src/app/building/).
 
 Tools are small building blocks the agent composes: look things up (find, room_details, list_rooms,
-count_items), move through the building (route, nearest, reachable_rooms, distance_3d), derive numbers
+count_items), move through the building (route, nearest, reachable_rooms, walk_distances, distance_3d), derive numbers
 (calculate), and change the building (what_if simulates; set_closed, add_door, move_item, undo_last_change
 edit the session's BuildingState, plan edits only after the person confirms), and follow it over time
 (item_history, building_changes: the Level 5 "live building", where colleagues and scanners report what
@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import difflib
+import functools
 import json
 import math
 import operator
@@ -27,12 +28,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import ApprovalRequired, CallDeferred, ModelRetry, RunContext
+from shapely.ops import unary_union
 
-from app.building import geometry
+from app.building import geometry, queries
 from app.building.directions import directions, walk_path
 from app.building.model import OUTSIDE, Building, Floor, Opening, Space, load_building
-from app.building.routing import Constraints, Route
+from app.building.routing import PRODUCTION_BAYS, Constraints, Route, RouteGraph
 from app.building.state import AddAsset, AddDoor, BuildingState, Close, Edit, MoveAsset, Reopen, Stamp
 
 from .graph import route_graph
@@ -117,10 +119,28 @@ def floor_of(b: Building, floor: str | int) -> Floor:
     raise ModelRetry(f"No floor {floor!r}. Floors: {names}.")
 
 
+def _number_forms(text: str) -> list[str]:
+    """How a room number said with one decimal is written on plans: "1.3" -> ["1.03", "1.30"]."""
+    m = re.fullmatch(
+        r"(?:(?:the\s+)?(?:room|space|no\.?|number)\s+)?([A-Za-z]*-?\d+)\.(\d)", text.strip(), re.I
+    )
+    return [f"{m[1]}.0{m[2]}", f"{m[1]}.{m[2]}0"] if m else []
+
+
+def _missing_room(asset) -> ModelRetry:
+    return ModelRetry(
+        f"{asset.name} ({asset.type}) is recorded in room {asset.space_id}, but that room is not on the floor "
+        "plan (no such space, no door to it), so there is no route to it and no area. Tell the person the "
+        "building data is inconsistent: the item's room is missing from the plan."
+    )
+
+
 def _spaces_named(b: Building, text: str, floor: str | int | None) -> list[Space]:
     floor_id = floor_of(b, floor).id if floor is not None else None
     hits = b.resolve(text, floor_id)
     if not hits and (asset := _asset_named(b, text)):
+        if asset.space_id not in b.spaces:
+            raise _missing_room(asset)
         hits = [b.spaces[asset.space_id]]
     if not hits and (
         m := re.fullmatch(r"(.+?)\s+(\S+)\s*(?:\(([^()]*)\))?", text.strip())
@@ -130,6 +150,8 @@ def _spaces_named(b: Building, text: str, floor: str | int | None) -> list[Space
     if not hits:  # "Room 2.03" when the ref is "2.03", "the Main lobby"
         bare = re.sub(r"^(the|room|space)\s+", "", text.strip(), flags=re.I)
         hits = b.resolve(bare, floor_id) if bare != text.strip() else []
+    if not hits:  # "room 1.3": plans write 1.03 or 1.30; both existing means the person must say which
+        hits = [s for form in _number_forms(text) for s in b.resolve(form, floor_id)]
     return hits
 
 
@@ -276,23 +298,35 @@ def report_item(
     }
 
 
+OUTSIDE_WORDS = re.compile(
+    r"^(?:the\s+)?(?:outside|outdoors|exterior|street|(?:any|an|every|all|the\s+building'?s?)\s+entrances?|entrances)\b"
+)
+"""What people call the outside of the building: a route from there starts at the nearest open entrance."""
+
+
 def space_of(b: Building, text: str, floor: str | int | None = None) -> Space | str:
     """One space, or OUTSIDE. Raises ModelRetry with suggestions if nothing matches or several do."""
-    if text.strip().casefold() in ("outside", OUTSIDE):
+    said = text.strip().casefold()
+    if said in ("outside", OUTSIDE):
         return OUTSIDE
     hits = _spaces_named(b, text, floor)
+    if not hits and OUTSIDE_WORDS.match(said):  # "outside (any step-free entrance)", "the street"
+        return OUTSIDE
     if len(hits) == 1:
         return hits[0]
     if hits:
-        options = "; ".join(f"{b.label(s.id)} [{s.id}]" for s in hits[:MAX_RESULTS])
+        options = "; ".join(f"{_label(b, s.id)} [{s.id}]" for s in hits[:MAX_RESULTS])
         raise ModelRetry(
-            f"{text!r} matches {len(hits)} spaces: {options}. Pass the id or add the floor; if the person's "
-            "words don't settle it, ask them which one."
+            f"Ambiguous: {text!r} matches {len(hits)} spaces: {options}. Pass the id or add the floor; if the "
+            "person's words don't settle it, don't pick one: ask which, or give the result for each."
         )
     labels = [b.label(s.id) for s in b.spaces.values()]
     close = difflib.get_close_matches(text, labels, n=5, cutoff=0.5)
     hint = f" Did you mean: {'; '.join(close)}?" if close else " Use find to search."
-    raise ModelRetry(f"No room or item called {text!r}.{hint}")
+    raise ModelRetry(
+        f"No room or item called {text!r}.{hint} For the outside of the building (from or to any entrance) "
+        'pass "outside".'
+    )
 
 
 def _space_id(b: Building, text: str, floor: str | int | None = None) -> str:
@@ -332,6 +366,8 @@ def _label(b: Building, space_id: str) -> str:
     OSM names repeat; the number is what tells rooms apart (and what the scorer accepts)."""
     if space_id == OUTSIDE:
         return OUTSIDE
+    if space_id not in b.spaces:  # an item recorded in a room the plan doesn't have
+        return f"{space_id} (not on the floor plan)"
     s = b.spaces[space_id]
     if s.ref and s.ref.casefold() not in s.name.casefold():
         return f"{s.name} {s.ref} ({b.floors[s.floor_id].name})"
@@ -428,17 +464,38 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
     hit = _matcher(query)
     reports, now = _last_reports(ctx.deps.state), ctx.deps.state.now()
 
-    rooms = [
-        {"room": _label(b, s.id), "id": s.id, "type": s.room_type}
-        for s in b.spaces.values()
-        if (floor_id is None or s.floor_id == floor_id) and hit(s.name, s.ref, s.room_type)
-    ]
+    on_floor = [s for s in b.spaces.values() if floor_id is None or s.floor_id == floor_id]
+    said = query.strip().casefold()
+    notes = []
+    named = [s for s in on_floor if said in (s.name.casefold(), (s.ref or "").casefold())]
+    forms = [] if named else _number_forms(query)
+    variants = [s for s in on_floor if (s.ref or "").casefold() in forms]
+    if variants:  # "1.3" is no room number here: plans write it 1.03 or 1.30
+        named = variants
+        notes.append(
+            f"No room is numbered {query!r}; it could be written {' or '.join(forms)}: these are the "
+            "rooms with those numbers."
+        )
+    if len(named) > 1:
+        notes.append(
+            f"Ambiguous: {len(named)} rooms are called {query!r}. Unless the person's words settle it, don't "
+            "pick one: ask which, or give the result for each."
+        )
+    first = {s.id for s in named}
+    rest = [] if variants else [s for s in on_floor if s.id not in first and hit(s.name, s.ref, s.room_type)]
+    rooms = [{"room": _label(b, s.id), "id": s.id, "type": s.room_type} for s in [*named, *rest]]
     items = [
         {"item": a.name, "id": a.id, "type": a.type, "in": _label(b, a.space_id), "space_id": a.space_id}
         | ({"reported": _reported(reports[a.id], now)} if a.id in reports else {})
+        | ({"room_missing": True} if a.space_id not in b.spaces else {})
         for a in b.assets.values()
         if (floor_id is None or a.floor_id == floor_id) and hit(a.name, a.type)
     ]
+    if any(i.get("room_missing") for i in items):
+        notes.append(
+            "An item marked room_missing is recorded in a room that is not on the floor plan (no such space, no "
+            "door): say so plainly; there is no route to it."
+        )
     if not rooms and not items:
         vocabulary = sorted({a.type for a in b.assets.values()} | {s.room_type for s in b.spaces.values()})
         return _json(
@@ -455,11 +512,34 @@ def find(ctx: RunContext[Deps], query: str, floor: str | None = None) -> str:
             "items": items[:MAX_RESULTS],
             "items_total": len(items),
             "items_by_type": dict(Counter(i["type"] for i in items).most_common()),
+            **({"notes": notes} if notes else {}),
             "highlight": sorted(
-                {r["id"] for r in rooms[:MAX_RESULTS]} | {i["space_id"] for i in items[:MAX_RESULTS]}
+                {r["id"] for r in rooms[:MAX_RESULTS]}
+                | {i["space_id"] for i in items[:MAX_RESULTS] if i["space_id"] in b.spaces}
             ),
         }
     )
+
+
+NEAR_TIE = 0.9
+"""Two rooms overlapping a room's outline this nearly equally both sit "directly" above (or below) it."""
+
+
+def _stack_tie(b: Building, s: Space, direction: Literal["above", "below"]) -> dict | None:
+    """When two spaces on the next floor cover this one almost equally, both with their overlap."""
+    floor_id = geometry.adjacent_floor(b, s.floor_id, direction)
+    if floor_id is None:
+        return None
+    overlaps = sorted(
+        ((s.shape.intersection(o.shape).area, o.id) for o in b.spaces_on(floor_id)), reverse=True
+    )[:2]
+    if len(overlaps) < 2 or overlaps[0][0] <= 0 or overlaps[1][0] < NEAR_TIE * overlaps[0][0]:
+        return None
+    return {
+        "rooms": [{"room": _label(b, sid), "overlap_m2": round(a, 2)} for a, sid in overlaps],
+        "note": f"Ambiguous: these two cover this room almost equally (of its {s.area:.2f} m²). Don't name "
+        "just one as directly " + direction + ": name both (the first one first), or ask which part.",
+    }
 
 
 def room_details(ctx: RunContext[Deps], room: str) -> str:
@@ -475,6 +555,7 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
         raise ModelRetry("'outside' is not a room.")
     above, below = geometry.stacked(b, s.id, "above"), geometry.stacked(b, s.id, "below")
     walls = geometry.shared_wall_rooms(b, s.id)
+    ties = {d: _stack_tie(b, s, d) for d in ("above", "below")}
     return _json(
         {
             "room": _label(b, s.id),
@@ -505,6 +586,7 @@ def room_details(ctx: RunContext[Deps], room: str) -> str:
             "directly_below": below and _label(b, below),
             "directly_above_id": above,
             "directly_below_id": below,
+            **{f"directly_{d}_ambiguous": t for d, t in ties.items() if t},
             "highlight": [s.id],
         }
     )
@@ -541,9 +623,43 @@ def list_rooms(
             "rooms": [
                 {"room": _label(b, s.id), "id": s.id, "area_m2": round(a, 2)} for s, a in ranked[:MAX_RESULTS]
             ],
+            **_area_tie(b, ranked),
+            **_overlap(ranked),
             "highlight": [s.id for s, _ in ranked[:MAX_RESULTS]],
         }
     )
+
+
+def _overlap(ranked: list[tuple[Space, float]]) -> dict:
+    """Spaces drawn inside or over others (OSM concourses around shops): the area they cover, counting each
+    square metre once, differs from the sum. Only reported when it does, by more than 0.5 %."""
+    total = sum(a for _, a in ranked)
+    if len(ranked) < 2 or total <= 0:
+        return {}
+    covered = unary_union([s.shape if s.shape.is_valid else s.shape.buffer(0) for s, _ in ranked]).area
+    if total - covered <= 0.005 * total:
+        return {}
+    return {
+        "covered_area_m2": round(covered, 2),
+        "overlap_note": f"These spaces overlap (some are drawn inside others): together they cover {covered:.2f} "
+        f"m², counting overlaps once; total_area_m2 counts {total - covered:.2f} m² twice. For the ground or "
+        "floor area covered, use covered_area_m2.",
+    }
+
+
+def _area_tie(b: Building, ranked: list[tuple[Space, float]]) -> dict:
+    """The largest is a tie when the next ones are within 1 % of its area: then no single room is largest."""
+    if len(ranked) < 2:
+        return {}
+    top = ranked[0][1]
+    tied = [s for s, a in ranked if a >= 0.99 * top]
+    if len(tied) < 2:
+        return {}
+    return {
+        "largest_is_a_tie": [_label(b, s.id) for s in tied],
+        "note": f"Ambiguous: {len(tied)} rooms are the largest within 1 % of each other. Don't name just one: "
+        "name them all (the first listed first), with the area.",
+    }
 
 
 def count_items(ctx: RunContext[Deps], item_type: str, floor: str | None = None) -> str:
@@ -618,14 +734,86 @@ def _steps(b: Building, route: Route) -> list[str]:
     return steps
 
 
+def _passes(b: Building, elements: list[str]) -> dict[str, int]:
+    """What a walk goes through, counted: doorways (doors and open archways between two spaces), building
+    entrances, stairs and lifts taken (each once, however many floors), outdoor walkways."""
+    counts: Counter[str] = Counter()
+    for e in elements:
+        if e in b.openings:
+            o = b.openings[e]
+            counts["entrances" if OUTSIDE in o.space_ids else "doorways"] += 1
+            if OUTSIDE not in o.space_ids:
+                counts[f"doorways_of_kind_{o.kind}"] += 1
+        elif e in b.connectors:
+            counts["lifts_taken" if b.connectors[e].kind == "lift" else "stairs_taken"] += 1
+        elif e in b.walkways:
+            counts["walkways"] += 1
+    return {"doorways": 0, **counts}
+
+
 def _route_result(b: Building, route: Route) -> dict:
     return {
         "length_m": round(route.length_m, 2),
+        "passes": _passes(b, route.element_path),
         "steps": _steps(b, route),
         "space_path": route.space_path,
         "element_path": list(dict.fromkeys(route.element_path)),
         "path": walk_path(b, route),  # the walk for the map: [{floor_id, points}], round walls and obstacles
     }
+
+
+class _BaysPassable(RouteGraph):
+    """RouteGraph with the production-bay rule off. Only used to explain a missing route, never to give one."""
+
+    def _dijkstra(self, sources, goals=None, *, bays_are_ends=False):
+        return super()._dijkstra(sources, goals, bays_are_ends=False)
+
+
+def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
+    """Which restrictions block a route, found by lifting each one alone (and all of them together)."""
+
+    def found(graph: RouteGraph):
+        return graph.tour(stops)
+
+    causes = []
+    if crossing := found(_BaysPassable(b, c)):
+        bays = {
+            s
+            for leg in crossing.legs
+            for s in leg.space_path[1:-1]
+            if b.spaces[s].room_type in PRODUCTION_BAYS
+        }
+        names = ", ".join(sorted(_label(b, s) for s in bays))
+        causes.append(
+            f"production bays: a route meeting every other restriction exists only by passing through {names}; "
+            "a route may end in a production bay but never cross one"
+        )
+    if c.min_width_m and (wider := found(route_graph(b, dataclasses.replace(c, min_width_m=None)))):
+        narrow = [
+            f"{b.openings[e].width_m} m opening between {' and '.join(_label(b, s) for s in b.openings[e].space_ids)}"
+            for leg in wider.legs
+            for e in dict.fromkeys(leg.element_path)
+            if e in b.openings and b.openings[e].width_m < c.min_width_m
+        ]
+        causes.append(
+            f"width: without the {c.min_width_m} m limit a route exists, through "
+            + (", ".join(narrow) or "narrow lifts or stairs")
+        )
+    if c.step_free and found(route_graph(b, dataclasses.replace(c, step_free=False))):
+        causes.append("steps: a route exists only with stairs or stepped doors")
+    if c.closed and found(route_graph(b, dataclasses.replace(c, closed=frozenset()))):
+        causes.append(f"closures: the reported closures block it ({', '.join(sorted(c.closed))})")
+    if not causes:
+        if found(_BaysPassable(b, Constraints())):
+            causes.append(
+                "a combination: no single restriction is the cause; only lifting several at once "
+                "(width, steps, closures, production bays) gives a route"
+            )
+        else:
+            causes.append(
+                "not connected: no door, stairs or lift joins these places on the plan, under any rule"
+            )
+    return causes
 
 
 def route(
@@ -636,34 +824,53 @@ def route(
     step_free: bool = False,
     min_width_m: float | None = None,
 ) -> str:
-    """Shortest route between places, in order through any `via` stops, with its length in metres and a
-    skeleton of steps (rooms, doors, lifts, stairs). Closures the person reported are always avoided.
+    """Shortest route between places, in order through any `via` stops, with its length in metres, a
+    skeleton of steps (rooms, doors, lifts, stairs) and `passes`: how many doorways (doors and open
+    archways between two spaces), entrances, stairs and lifts it goes through, per leg and in total.
+    Closures the person reported are always avoided. reachable=false means there is no route: going out
+    one entrance and back in through another is not a route, so never combine legs to and from "outside".
+
+    No route rarely has a single obvious cause. Several restrictions apply at once: openings narrower than
+    min_width_m, stairs and stepped doors when step_free, reported closures, and production bays (production,
+    assembly and additive zones), which a route may start or end in but never pass through, even when the
+    bay is wide and step-free. So a path that is wide enough can still be ruled out. When reachable=false,
+    `blocked_by` says which restrictions block it, found by lifting each one in turn. Explain the trip
+    with those causes. Don't name a single narrow opening, step or closure as the reason unless
+    `blocked_by` shows it alone is enough, and don't call a place unreachable when it's only these rules.
 
     Args:
-        start: Where the person is: room name/number, id, item name, or "outside".
-        destination: Where they go (room, item name, "outside").
-        via: Stops to visit in order on the way, e.g. a room to pick something up from.
+        start: Where the person is: room name/number, id, item name, or "outside" (from the street: the
+            route starts at the best open entrance).
+        destination: The last place visited (room, item name, "outside").
+        via: Stops visited in order before the destination, e.g. a room to pick something up from. For
+            "visit A, then B": via=["A"], destination="B".
         step_free: No stairs or steps (wheelchair, pram, trolley, crutches, "no stairs"). Lifts are fine.
-        min_width_m: Every door passed must be at least this wide (moving a wide load; a forklift needs
-            3 m and goes step-free, unless the person gives its width).
+        min_width_m: Every door, lift and opening passed must be at least this wide (a wide load). A
+            forklift or other vehicle: always min_width_m=3 (unless they give its width) and step_free=true,
+            so lifts with narrow doors are out.
     """
     b = ctx.deps.building
     stops = [_space_id(b, p) for p in [start, *(via or []), destination]]
-    graph = route_graph(b, _constraints(ctx, step_free, min_width_m))
-    tour = graph.tour(stops)
+    constraints = _constraints(ctx, step_free, min_width_m)
+    tour = route_graph(b, constraints).tour(stops)
     if tour is None:
         return _json(
             {
                 "reachable": False,
                 "stops": [_label(b, s) for s in stops],
-                "note": "No route under these constraints.",
+                "note": "No route under these constraints. See blocked_by for why.",
+                "blocked_by": _why_no_route(b, constraints, stops),
             }
         )
     legs = [_route_result(b, leg) for leg in tour.legs]
+    total: Counter[str] = Counter()
+    for leg in legs:
+        total.update(leg["passes"])
     return _json(
         {
             "reachable": True,
             "total_length_m": round(tour.length_m, 2),
+            "passes_in_total": dict(total),
             "stops": [_label(b, s) for s in stops],
             "legs": legs,
             "closed_avoided": sorted(ctx.deps.closed),
@@ -703,11 +910,11 @@ def walk_directions(
     after or instead of route. Same arguments as route; closures they reported are avoided.
 
     Args:
-        start: Where the person is: room name/number, id, item name, or "outside".
-        destination: Where they go (room, item name, "outside").
-        via: Stops to visit in order on the way.
+        start: Where the person is: room name/number, id, item name, or "outside" (from any entrance).
+        destination: The last place visited (room, item name, "outside").
+        via: Stops visited in order before the destination.
         step_free: No stairs or steps. Lifts are fine.
-        min_width_m: Every door passed must be at least this wide.
+        min_width_m: Every door passed must be at least this wide (a forklift or vehicle: 3, step_free).
     """
     b = ctx.deps.building
     stops = [_space_id(b, p) for p in [start, *(via or []), destination]]
@@ -740,14 +947,21 @@ def nearest(
     item_type: str | None = None,
     room_type: str | None = None,
     step_free: bool = False,
+    min_width_m: float | None = None,
+    then_to: str | None = None,
 ) -> str:
-    """The closest rooms by walking distance that hold an item type, or are of a room type.
+    """The closest rooms by walking distance that hold an item type, or are of a room type, nearest first,
+    and how many such rooms there are in all.
 
     Args:
-        start: Where the person is.
+        start: Where the person is, or "outside" (from any entrance).
         item_type: An item type from the overview, e.g. "coffee_machine", "office_chair".
         room_type: Or a room type, e.g. "toilet", "kitchen".
         step_free: Walk without stairs or steps.
+        min_width_m: Every door passed must be at least this wide (a forklift or vehicle: 3, step_free).
+        then_to: Where they carry it afterwards, when they may pick it up in whichever room is best ("any
+            printer on the way", "whichever is best for them"): rooms are then ranked by the whole walk,
+            start to room to then_to. Leave it out when they want the one closest to them.
     """
     b = ctx.deps.building
     if not item_type and not room_type:
@@ -759,14 +973,129 @@ def nearest(
     else:
         rtype = _type_of(room_type or "", {s.room_type for s in b.spaces.values()}, "room type")
         targets = {s.id for s in b.spaces.values() if s.room_type == rtype}
-    distances = route_graph(b, _constraints(ctx, step_free, None)).distances_from([origin])
-    ranked = sorted((distances[t], t) for t in targets if t in distances)
+    graph = route_graph(b, _constraints(ctx, step_free, min_width_m))
+    distances = graph.distances_from([origin])
+    if then_to:  # the whole errand: start -> room, then room -> destination (walks are symmetric)
+        goal = _space_id(b, then_to)
+        onward = graph.distances_from([goal])
+        ranked = sorted((distances[t] + onward[t], t) for t in targets if t in distances and t in onward)
+        rows = [
+            {"room": _label(b, t), "id": t, "walk_m": round(distances[t], 2), "then_to_m": round(onward[t], 2),
+             "total_m": round(d, 2)}
+            for d, t in ranked[:5]
+        ]  # fmt: skip
+    else:
+        ranked = sorted((distances[t], t) for t in targets if t in distances)
+        rows = [{"room": _label(b, t), "id": t, "walk_m": round(d, 2)} for d, t in ranked[:5]]
     return _json(
         {
             "from": _label(b, origin),
-            "nearest": [{"room": _label(b, t), "id": t, "walk_m": round(d, 2)} for d, t in ranked[:5]],
+            **({"then_to": _label(b, goal), "ranked_by": "total_m, the whole walk"} if then_to else {}),
+            "nearest": rows,
+            "rooms_in_all": len(targets),
             "unreachable": len(targets) - len(ranked),
             "highlight": [t for _, t in ranked[:5]],
+        }
+    )
+
+
+def plan_visits(
+    ctx: RunContext[Deps],
+    start: str,
+    rooms: list[str] | None = None,
+    item_types: list[str] | None = None,
+    room_types: list[str] | None = None,
+    end: str | None = None,
+    return_to_start: bool = False,
+    step_free: bool = False,
+    min_width_m: float | None = None,
+) -> str:
+    """The shortest trip through several stops when the ORDER is free, and, for "a room with X", which room
+    to use: tries every order and every choice of room, so never compare orders or rooms yourself. Use it
+    for "visit A, B and C in any order", "in whatever order is best", "pick up X, Y and Z", "I need a room
+    with a printer, then a kitchen...", with or without coming back. A room holding several of the items
+    counts for each. For stops in a GIVEN order ("first A, then B"), use route with via instead.
+
+    Returns the order, what each stop is for, the total and per-leg walks (steps, spaces, doors, lifts, like
+    route). exact=true means proven shortest. greedy_total_m is the naive nearest-next-stop trip, for comparison.
+
+    Args:
+        start: Where the person is: room name/number, id, or "outside".
+        rooms: Specific rooms that must all be visited, e.g. ["Office 1.02", "Lab 2.17"].
+        item_types: Item types from the overview; one room holding each is visited, whichever is best,
+            e.g. ["coffee_machine", "3d_printer"].
+        room_types: Room types; one room of each is visited, whichever is best, e.g. ["toilet"].
+        end: Where the trip must finish, if somewhere other than the last stop.
+        return_to_start: Come back to start at the end (a round trip).
+        step_free: No stairs or steps. Lifts are fine.
+        min_width_m: Every door passed must be at least this wide (a forklift or vehicle: 3, step_free).
+    """
+    b = ctx.deps.building
+    origin = _space_id(b, start)
+    finish = _space_id(b, end) if end else None
+    if return_to_start and finish not in (None, origin):
+        raise ModelRetry("Give end or return_to_start=true, not both.")
+    groups: list[list[str]] = []
+    names: list[str] = []
+    for room in rooms or []:
+        groups.append([_space_id(b, room)])
+        names.append(_label(b, groups[-1][0]))
+    known_items = {a.type for a in b.assets.values()}
+    for item in item_types or []:
+        itype = _type_of(item, known_items, "item type")
+        groups.append(
+            sorted({a.space_id for a in b.assets.values() if a.type == itype and a.space_id in b.spaces})
+        )
+        names.append(f"a room with a {itype}")
+    known_rooms = {s.room_type for s in b.spaces.values()}
+    for rt in room_types or []:
+        rtype = _type_of(rt, known_rooms, "room type")
+        groups.append(sorted(s.id for s in b.spaces.values() if s.room_type == rtype))
+        names.append(f"a {rtype}")
+    if not groups:
+        raise ModelRetry("Give the stops: rooms, item_types or room_types.")
+    graph = route_graph(b, _constraints(ctx, step_free, min_width_m))
+    plan = queries.plan_visits(b, origin, groups, end=finish, return_to_start=return_to_start, graph=graph)
+    if plan is None or plan.unreachable_groups:
+        missing = [names[g] for g in plan.unreachable_groups] if plan else [_label(b, finish or "")]
+        return _json(
+            {
+                "reachable": False,
+                "unreachable": missing,
+                "note": "No trip under these constraints reaches these.",
+            }
+        )
+    stops = [origin, *plan.stops] + ([plan.end] if plan.end is not None else [])
+    tour = graph.tour(stops)
+    if tour is None:  # can't happen: the plan's legs are shortest routes on the same graph
+        return _json({"reachable": False, "note": "No route under these constraints."})
+    return _json(
+        {
+            "reachable": True,
+            "total_length_m": round(tour.length_m, 2),
+            "exact": plan.exact,
+            "order": [_label(b, s) for s in stops],
+            "stops": [
+                {"room": _label(b, s), "id": s, "for": [names[g] for g in covers]}
+                for s, covers in zip(plan.stops, plan.covers, strict=True)
+            ],
+            **(
+                {"settled_at_start_or_end": [names[g] for g in plan.start_covers]}
+                if plan.start_covers
+                else {}
+            ),
+            "greedy_total_m": plan.greedy_total_m,
+            **(
+                {
+                    "note": "Many rooms qualified; only those nearest the start, end and fixed stops were compared "
+                    f"for: {', '.join(names[g] for g in plan.pruned_groups)}."
+                }
+                if plan.pruned_groups
+                else {}
+            ),
+            "legs": [_route_result(b, leg) for leg in tour.legs],
+            "closed_avoided": sorted(ctx.deps.closed),
+            "highlight": stops,
         }
     )
 
@@ -779,33 +1108,117 @@ def reachable_rooms(
     min_width_m: float | None = None,
     closed: list[str] | None = None,
     scope: Scope = "rooms",
+    room_type: str | None = None,
+    through_production_bays: bool = True,
 ) -> str:
-    """Rooms on a floor that can be reached from a start (deliveries, wheelchair access), and how many.
+    """Rooms on a floor that can be reached from a start (deliveries, wheelchair access, a forklift's
+    reach), and how many.
 
     Args:
-        start: Where the person or load comes in, e.g. the room an entrance leads into.
+        start: Where the person or load comes in: a room, or "outside" for in from the street through any
+            open entrance (the union of all entrances; step_free keeps only step-free ones).
         floor: Level or floor name to count rooms on.
         step_free: No stairs or steps (wheelchair, trolley, pallet). Lifts are fine.
-        min_width_m: Every door passed must be at least this wide.
+        min_width_m: Every door passed must be at least this wide (a forklift or vehicle: 3, step_free).
         closed: Extra lifts, stairs, doors or rooms out of service for this question only.
         scope: Which spaces count: "rooms" (rooms only, what a count of rooms means), "rooms_and_halls"
             (also halls such as factory zones), or "all_spaces".
+        room_type: Only spaces of this type, whatever the scope, e.g. "warehouse_zone", "office".
+        through_production_bays: Keep the default (true) for delivery and access counts ("how many rooms
+            can it be delivered to / reach"): those may pass through production bays. Set false when the
+            person says a vehicle or forklift may not drive through production bays, or asks where a route
+            can actually go: then a production bay can be a destination but is never crossed, and
+            `dropped_by_production_bay_rule` lists what only a way through a bay would reach.
     """
     b = ctx.deps.building
     origin, f = _space_id(b, start), floor_of(b, floor)
-    reached = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or [])).reachable(origin)
-    rooms = [s for s in b.spaces_on(f.id) if SCOPES[scope](s)]
+    graph = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or []))
+    via_bays = graph.reachable(origin)
+    reached = via_bays if through_production_bays else graph.reachable(origin, through_production_bays=False)
+    if room_type:
+        rtype = _type_of(room_type, {s.room_type for s in b.spaces.values()}, "room type")
+        rooms = [s for s in b.spaces_on(f.id) if s.room_type == rtype]
+    else:
+        rooms = [s for s in b.spaces_on(f.id) if SCOPES[scope](s)]
     yes = [s.id for s in rooms if s.id in reached]
+    dropped = [s.id for s in rooms if s.id in via_bays and s.id not in reached]
     return _json(
         {
             "floor": f.name,
-            "scope": scope,
+            "scope": None if room_type else scope,
+            "room_type": room_type,
             "floor_spaces_by_kind": _kinds(b, f.id),
+            "through_production_bays": through_production_bays,
             "reachable_count": len(yes),
             "unreachable_count": len(rooms) - len(yes),
             "reachable": [_label(b, s) for s in yes[:MAX_RESULTS]],
             "unreachable": [_label(b, s.id) for s in rooms if s.id not in reached][:MAX_RESULTS],
+            **(
+                {"dropped_by_production_bay_rule": [_label(b, s) for s in dropped[:MAX_RESULTS]]}
+                if not through_production_bays
+                else {}
+            ),
             "highlight": yes,
+        }
+    )
+
+
+def walk_distances(
+    ctx: RunContext[Deps],
+    floor: str,
+    start: str = "outside",
+    step_free: bool = False,
+    min_width_m: float | None = None,
+    closed: list[str] | None = None,
+    scope: Scope = "rooms",
+    room_type: str | None = None,
+) -> str:
+    """Every room on a floor with its walking distance from a start, LONGEST FIRST. With the default start
+    "outside" that is each room's walk out of the building to its nearest entrance: use it for fire drills
+    and evacuation, "which room is farthest from / closest to an exit", worst or average walk out, or
+    "which room on floor X is farthest from Y". One call ranks every room; never probe rooms one by one.
+
+    Args:
+        floor: Level or floor name whose rooms to rank.
+        start: "outside" (nearest entrance, the default) or a room or place to measure from.
+        step_free: No stairs or steps. Lifts are fine.
+        min_width_m: Every door passed must be at least this wide (a forklift or vehicle: 3, step_free).
+        closed: Extra lifts, stairs, doors or rooms out of service for this question only.
+        scope: Which spaces count: "rooms" (default), "rooms_and_halls" or "all_spaces".
+        room_type: Only spaces of this type, whatever the scope, e.g. "office".
+    """
+    b = ctx.deps.building
+    origin, f = _space_id(b, start), floor_of(b, floor)
+    distances = route_graph(b, _constraints(ctx, step_free, min_width_m, closed or [])).distances_from(
+        [origin]
+    )
+    if room_type:
+        rtype = _type_of(room_type, {s.room_type for s in b.spaces.values()}, "room type")
+        rooms = [s for s in b.spaces_on(f.id) if s.room_type == rtype]
+    else:
+        rooms = [s for s in b.spaces_on(f.id) if SCOPES[scope](s)]
+    ranked = sorted(((distances[s.id], s.id) for s in rooms if s.id in distances), key=lambda t: -t[0])
+    keep = 2 * MAX_RESULTS
+    rows = [{"room": _label(b, sid), "id": sid, "walk_m": round(d, 2)} for d, sid in ranked]
+    return _json(
+        {
+            "from": "the nearest entrance (walk out of the building)"
+            if origin == OUTSIDE
+            else _label(b, origin),
+            "floor": f.name,
+            "scope": None if room_type else scope,
+            "room_type": room_type,
+            "rooms_compared": len(rooms),
+            "longest_first": rows[:keep],
+            **({"shortest": rows[-1]} if rows else {}),
+            **(
+                {"note": f"{len(rows) - keep} more rooms with shorter walks not listed."}
+                if len(rows) > keep
+                else {}
+            ),
+            "unreachable_count": len(rooms) - len(ranked),
+            "unreachable": [_label(b, s.id) for s in rooms if s.id not in distances][:MAX_RESULTS],
+            "highlight": [sid for _, sid in ranked[:1]],
         }
     )
 
@@ -848,7 +1261,10 @@ def _exit_changes(
         (s.id, before.get(s.id), after.get(s.id)) for s in before_b.spaces_on(floor_id) if SCOPES[scope](s)
     ]
     both = [(sid, d0, d1) for sid, d0, d1 in rows if d0 is not None and d1 is not None]
-    shorter = sorted(((sid, d0 - d1) for sid, d0, d1 in both if d0 - d1 > MIN_GAIN_M), key=lambda t: -t[1])
+    newly = [sid for sid, d0, d1 in rows if d0 is None and d1 is not None]  # no way out before: gains most
+    shorter = [(sid, math.inf) for sid in newly] + sorted(
+        ((sid, d0 - d1) for sid, d0, d1 in both if d0 - d1 > MIN_GAIN_M), key=lambda t: -t[1]
+    )
     longer = sorted(((sid, d1 - d0) for sid, d0, d1 in both if d1 - d0 > MIN_GAIN_M), key=lambda t: -t[1])
     cut_off = [sid for sid, d0, d1 in rows if d0 is not None and d1 is None]
     b = before_b
@@ -859,7 +1275,11 @@ def _exit_changes(
         f"shorter_by_more_than_{MIN_GAIN_M:g}_m": len(shorter),
         f"longer_by_more_than_{MIN_GAIN_M:g}_m": len(longer),
         "no_longer_reachable": len(cut_off),
-        "shorter": [{"room": _label(b, sid), "saves_m": round(g, 1)} for sid, g in shorter[:MAX_RESULTS]],
+        "shorter": [
+            {"room": _label(b, sid)}
+            | ({"saves_m": round(g, 1)} if g < math.inf else {"before": "no way out at all, now has one"})
+            for sid, g in shorter[:MAX_RESULTS]
+        ],
         "longer": [{"room": _label(b, sid), "adds_m": round(g, 1)} for sid, g in longer[:MAX_RESULTS]],
         "cut_off": [_label(b, sid) for sid in cut_off[:MAX_RESULTS]],
         "highlight": [sid for sid, _ in shorter] + cut_off,
@@ -876,6 +1296,8 @@ def what_if(
 ) -> str:
     """Simulate a change without making it: how each room's walk out of the building (to its nearest
     entrance) changes on a floor if a door is added in the middle of a shared wall, or things close.
+    Lists only what changes; for each room's walk out as it is now (farthest room from an exit), use
+    walk_distances.
 
     Args:
         floor: Level or floor name whose rooms to compare (may differ from the door's floor).
@@ -1124,6 +1546,34 @@ def undo_last_change(ctx: RunContext[Deps]) -> str:
     )
 
 
+def never_crash(tool):
+    """A tool that never ends the run: a ModelRetry on its last allowed attempt, or any bug or data error
+    (a room the plan lacks), comes back to the model as a result it can explain, not as a crash."""
+
+    @functools.wraps(tool)
+    def safe(ctx: RunContext[Deps], *args, **kwargs):
+        try:  # sync tools run in worker threads, concurrently: what they share must be thread-safe
+            return tool(ctx, *args, **kwargs)
+        except (ApprovalRequired, CallDeferred):
+            raise
+        except ModelRetry as e:
+            if not ctx.last_attempt:
+                raise
+            return _json(
+                {"error": e.message, "note": "Stop retrying this; answer with what you know or ask."}
+            )
+        except Exception as e:  # noqa: BLE001 (any data error is reported, never a crash)
+            return _json(
+                {
+                    "error": f"{type(e).__name__}: {e}",
+                    "note": "The building data doesn't support this lookup. Tell the person what couldn't be "
+                    "checked and why; don't guess.",
+                }
+            )
+
+    return safe
+
+
 TOOLS = [
     find,
     room_details,
@@ -1133,7 +1583,9 @@ TOOLS = [
     route,
     walk_directions,
     nearest,
+    plan_visits,
     reachable_rooms,
+    walk_distances,
     what_if,
     calculate,
     set_closed,

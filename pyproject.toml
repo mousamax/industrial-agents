@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.161",
     "langfuse>=4",
-    "pydantic-ai-slim[ag-ui,anthropic,mcp,openrouter,web]==2.60.0",
+    "pydantic-ai-slim[ag-ui,anthropic,cli,mcp,openrouter,web]==2.60.0",
     "pydantic-evals==2.60.0",
     "pydantic-settings>=2.16.1",
     "python-dotenv>=1.2.4",

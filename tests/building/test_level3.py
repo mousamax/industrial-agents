@@ -65,9 +65,10 @@ def test_level3_step_free_avoids_the_stepped_entrance(site):
     walking = RouteGraph(site).shortest(a, z)
     step_free = RouteGraph(site, Constraints(step_free=True)).shortest(a, z)
     assert W2 in walking.element_path  # right next door on foot
-    assert (
-        step_free is not None and W1 in step_free.element_path and CORRIDOR_DOOR not in step_free.element_path
-    )
+    # Step-free, the stepped entrance is out, and the only other way in (walkway W1, then the factory's office
+    # side) reaches the aisle only through Production zone H-A4: a bay is a destination, never a shortcut
+    # (ROUTE_SCORING.md), so the scored answer is "no route".
+    assert step_free is None
 
 
 def test_level3_closed_or_narrow_walkways_are_avoided(site):

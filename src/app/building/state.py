@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import functools
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -83,6 +85,17 @@ class Stamp:
     said: str = ""
 
 
+def _locked(method):
+    """Run a BuildingState method holding the state's lock (re-entrant: methods call each other)."""
+
+    @functools.wraps(method)
+    def locked(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return locked
+
+
 @dataclass
 class BuildingState:
     base: Building
@@ -91,6 +104,9 @@ class BuildingState:
     """One per edit, same order. Edits given without stamps hold since forever."""
     clock: Callable[[], datetime] = field(default=_now, repr=False, compare=False)
     _views: dict[tuple, Building] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False, compare=False)
+    """Colleagues share one state (the API keeps one per building) and tools run in worker threads: every
+    read and write of edits/stamps holds this, so a write is atomic and a reader never sees half of one."""
 
     def __post_init__(self) -> None:
         since_ever = Stamp(datetime.min.replace(tzinfo=UTC))
@@ -111,6 +127,7 @@ class BuildingState:
         """The base plus every structural edit that holds now (added doors, moved or delivered assets)."""
         return self.view()
 
+    @_locked
     def view(self, when: datetime | None = None) -> Building:
         """The building as it was (or will be) at `when`. Cached per set of structural edits."""
         active = tuple(i for i in self._active(when) if isinstance(self.edits[i], STRUCTURAL))
@@ -123,6 +140,7 @@ class BuildingState:
             self._views[key] = self._apply_structural(active)
         return self._views[key]
 
+    @_locked
     def closed(self, when: datetime | None = None) -> frozenset[str]:
         """Element ids closed at `when`, default now (Close and Reopen replayed in order)."""
         out: set[str] = set()
@@ -138,6 +156,7 @@ class BuildingState:
         """`base` plus every currently closed element."""
         return base.with_closed(*self.closed())
 
+    @_locked
     def changes(
         self, since: datetime | None = None, until: datetime | None = None
     ) -> list[tuple[int, Edit, Stamp]]:
@@ -150,11 +169,13 @@ class BuildingState:
         ]
         return sorted(out, key=lambda ies: ies[2].at)
 
+    @_locked
     def asset_id(self, index: int) -> str:
         """The id an AddAsset at edits[index] gives its new asset (stable however later edits go)."""
         n = sum(isinstance(e, AddAsset) for e in self.edits[: index + 1])
         return f"{self.base.id}-A-new{n}"
 
+    @_locked
     def timeline(self, asset_id: str) -> list[tuple[Stamp | None, str]]:
         """Every place an asset was put, oldest first: (None, plan space) for where the plan has it, then
         (stamp, space id) for each report, future ones included."""
@@ -169,6 +190,7 @@ class BuildingState:
 
     # ---- changing it ------------------------------------------------------------------------------------
 
+    @_locked
     def apply(self, edit: Edit, *, at: datetime | None = None, by: str = "", source: str = "chat") -> str:
         """Validate and record an edit that holds from `at` (default now; later = expected); return a
         one-line description for the agent and UI. Raise ValueError with a human-readable reason if invalid
@@ -210,6 +232,7 @@ class BuildingState:
         self.stamps.append(Stamp(at, by, source, message))
         return message
 
+    @_locked
     def undo(self, by: str | None = None) -> Edit | None:
         """Take back the most recent edit (only `by`'s own, when given: colleagues share a state)."""
         mine = [i for i, s in enumerate(self.stamps) if by is None or s.by == by]
@@ -279,6 +302,7 @@ class BuildingState:
                 out.append((i, new))
         return out
 
+    @_locked
     def export(self, active: tuple[int, ...] | None = None) -> dict:
         """building.json (kit format) with the edits that hold now applied: for saving and for Level 4."""
         if active is None:

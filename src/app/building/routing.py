@@ -16,6 +16,10 @@ The route model is the one the judges grade with (synera-kit 1.1.0, README secti
   only a start or an end (distances_from([OUTSIDE]) = walk to the nearest entrance), never passed through.
 - Step-free drops stairs and openings with step_free False; closed openings, connectors and spaces are
   dropped; ours adds min_width_m (openings narrower than the load are dropped).
+- Production bays (PRODUCTION_BAYS) are destinations (Synera's rule): shortest, tour and distances_from
+  start or end a leg in one, never pass through (no walk door to door across a bay, a bay's centre is not
+  walked on from unless it's the start). reachable ignores the rule: the golden reachability counts
+  (wide_delivery_count) reach rooms behind bays only through them.
 - Level 3 sites (model.load_site): a walkway joins an entrance of one building to an entrance of another
   at its length, under the same constraints; it is the only way between buildings.
 The geometry of walking inside one space is the kit's own reference code (starter_agent.building_map:
@@ -88,7 +92,7 @@ FORKLIFT = Constraints(step_free=True, min_width_m=3.0)
 
 PRODUCTION_BAYS = frozenset({"production_zone", "assembly_zone", "additive_zone"})
 """Room types a route may end in but never pass through. Our reading of Synera's rule (open question 3 in
-ROUTE_SCORING.md); checked by validate_route, not used to rank routes (the graded answers don't)."""
+ROUTE_SCORING.md). RouteGraph only starts or ends a leg in one; validate_route rejects passing through."""
 
 
 @dataclass(frozen=True)
@@ -172,6 +176,7 @@ class RouteGraph:
         b, c = self.building, self.constraints
         open_spaces = {sid: s for sid, s in b.spaces.items() if sid not in c.closed}
         self._nodes = set(open_spaces)
+        self._bays = {sid for sid, s in open_spaces.items() if s.room_type in PRODUCTION_BAYS}
         open_doors = {o.id for o in b.openings.values() if _usable(o, c)}
         self._exits = {
             DOOR_PREFIX + o.id for o in b.openings.values() if o.is_entrance and o.id in open_doors
@@ -206,13 +211,18 @@ class RouteGraph:
         return [node] if node in self._nodes else []
 
     def _dijkstra(
-        self, sources: Iterable[str], goals: set[str] | None = None
+        self, sources: Iterable[str], goals: set[str] | None = None, *, bays_are_ends: bool = False
     ) -> tuple[dict[str, float], dict[str, tuple[str, tuple[str, float, str, str]]], str | None]:
-        """Distances and predecessor edge for every node reached; stops early at the first goal reached."""
+        """Distances and predecessor edge for every node reached; stops early at the first goal reached.
+        With bays_are_ends, a production bay can only start or end a leg: no walk door to door across a
+        bay, and a bay's centre that isn't a source is reached but not walked on from."""
+        sources = list(dict.fromkeys(sources))
+        bays = self._bays if bays_are_ends else set()
+        dead_ends = bays.difference(sources)
         dist: dict[str, float] = {}
         prev: dict[str, tuple[str, tuple[str, float, str, str]]] = {}
         counter = itertools.count()
-        heap = [(0.0, next(counter), s) for s in dict.fromkeys(sources)]
+        heap = [(0.0, next(counter), s) for s in sources]
         best = {s: 0.0 for _, _, s in heap}
         heapq.heapify(heap)
         while heap:
@@ -222,8 +232,12 @@ class RouteGraph:
             dist[node] = d
             if goals and node in goals:
                 return dist, prev, node
+            if node in dead_ends:
+                continue
             for edge in self._edges.get(node, ()):
                 other, weight = edge[0], edge[1]
+                if edge[3] in bays and node != edge[3] and other != edge[3]:
+                    continue  # door to door across a production bay
                 nd = d + weight
                 if other not in dist and nd < best.get(other, math.inf):
                     best[other] = nd
@@ -236,8 +250,8 @@ class RouteGraph:
         sources, goals = self._sources(start), set(self._sources(goal))
         if not sources or not goals or start == goal == OUTSIDE:
             return None
-        dist, prev, reached = self._dijkstra(sources, goals)
-        if reached is None:
+        dist, prev, reached = self._dijkstra(sources, goals, bays_are_ends=True)
+        if reached is None:  # also when the only way passes through a production bay: "no route" scores
             return None
         nodes, edges = [reached], []
         while nodes[-1] in prev:
@@ -273,12 +287,15 @@ class RouteGraph:
         """Multi-source Dijkstra: shortest distance from the nearest source to every reachable space.
         `distances_from([OUTSIDE])` = walk to the nearest entrance (what_if_door)."""
         starts = [n for s in sources for n in self._sources(s)]
-        dist, _, _ = self._dijkstra(starts)
+        dist, _, _ = self._dijkstra(starts, bays_are_ends=True)
         return {n: d for n, d in dist.items() if not n.startswith(DOOR_PREFIX)}
 
-    def reachable(self, start: str) -> set[str]:
-        """Space ids reachable from `start` under the constraints (wide_delivery, step_free counts)."""
-        return set(self.distances_from([start]))
+    def reachable(self, start: str, *, through_production_bays: bool = True) -> set[str]:
+        """Space ids reachable from `start` under the constraints (wide_delivery, step_free counts).
+        By default passing through production bays is allowed: Synera's reachability counts do. With
+        through_production_bays=False, the route rule applies: a bay can be reached but not driven across."""
+        dist, _, _ = self._dijkstra(self._sources(start), bays_are_ends=not through_production_bays)
+        return {n for n in dist if not n.startswith(DOOR_PREFIX)}
 
 
 def _spaces_passed(
@@ -337,7 +354,11 @@ def validate_route(b: Building, space_path: list[str], constraints: Constraints 
 def _step_allowed(b: Building, a: str, z: str, c: Constraints) -> bool:
     if a == z:
         return False
-    return any(_usable(element, c) for element in _connections(b).get(frozenset((a, z)), ()))
+    return any(
+        _usable(element, c)
+        and (not isinstance(element, Walkway) or all(_usable(b.openings[o], c) for o in element.opening_ids))
+        for element in _connections(b).get(frozenset((a, z)), ())
+    )
 
 
 def _usable(element: Opening | Connector | Walkway, c: Constraints) -> bool:
@@ -350,15 +371,15 @@ def _usable(element: Opening | Connector | Walkway, c: Constraints) -> bool:
     return element.width_m >= c.min_width_m
 
 
-_CONNECTIONS: dict[int, tuple[Building, dict[frozenset[str], list[Opening | Connector]]]] = {}
+_CONNECTIONS: dict[int, tuple[Building, dict[frozenset[str], list[Opening | Connector | Walkway]]]] = {}
 
 
-def _connections(b: Building) -> dict[frozenset[str], list[Opening | Connector]]:
+def _connections(b: Building) -> dict[frozenset[str], list[Opening | Connector | Walkway]]:
     """Openings and connectors by the pair of spaces they join, built once per building (edits make a new one)."""
     hit = _CONNECTIONS.get(id(b))
     if hit is not None and hit[0] is b:
         return hit[1]
-    pairs: dict[frozenset[str], list[Opening | Connector]] = defaultdict(list)
+    pairs: dict[frozenset[str], list[Opening | Connector | Walkway]] = defaultdict(list)
     for o in b.openings.values():
         pairs[frozenset(o.space_ids)].append(o)
     for k in b.connectors.values():

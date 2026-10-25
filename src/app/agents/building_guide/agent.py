@@ -8,20 +8,33 @@ cached context (floors, room and item types, lifts, entrances), and a code check
 from __future__ import annotations
 
 import json
+import re
 
 from benchmark.score import committed_answer, numbers_in
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import Caching, Thinking
-from pydantic_ai.messages import ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelRequest, RetryPromptPart, ToolReturnPart
 
 from app.core import AgentCard, load_prompt
 from app.models import model
 from app.settings import get_settings
 
-from .drafting import DRAFT_TOOLS, draft_of
+from .drafting import DRAFT_TOOLS, accept_guesses, draft_building, draft_of, fix_draft
 from .room_calendar import calendar, calendar_context
-from .tools import TOOLS, Deps, _ago, _clock, _label, overview
+from .tools import (
+    TOOLS,
+    Deps,
+    _ago,
+    _clock,
+    _label,
+    add_door,
+    move_item,
+    never_crash,
+    overview,
+    set_closed,
+    undo_last_change,
+)
 
 
 class Question(BaseModel):
@@ -112,34 +125,94 @@ def _grounded(value: float, known: list[float]) -> bool:
     return any(abs(value - k) <= max(0.006 * abs(k), 0.06) for k in known)
 
 
+def _ambiguity_flagged(ctx: RunContext[Deps]) -> bool:
+    """A tool said the question's place is ambiguous (several rooms with that name, a tie): then one value
+    per option ("28.0 or 23.9") is the honest Answer line."""
+    for message in ctx.messages:
+        if isinstance(message, ModelRequest):
+            for part in message.parts:
+                if isinstance(part, ToolReturnPart | RetryPromptPart) and "Ambiguous:" in str(part.content):
+                    return True
+    return False
+
+
+FORM = re.compile(r"Answer:\s*([^'\"\n]*<[^'\"\n]*)")
+NUMERIC = re.compile(
+    r"number|percent|metres|meters|minutes|m²|m2|\bper\b|\bdb\b|count|area|length|distance|°c"
+)
+NOT_NUMERIC = re.compile(r"room|name|floor|space|time|type|door|route")
+NO_ROUTE_SAID = re.compile(
+    r"\bno\b[\w\s-]{0,25}\b(?:route|path)\b|unreachable|not reachable|can(?:no|')t reach"
+)
+
+
+def _form(prompt: str) -> tuple[str, list[str]]:
+    """The Answer form the question asks for and its <placeholders>."""
+    m = FORM.search(prompt)
+    form = m[1] if m else ""
+    return form, re.findall(r"<([^>]+)>", form)
+
+
+def _one_number(placeholders: list[str]) -> bool:
+    """One placeholder and it is a quantity: <number>, <percent>, <total metres>, <items per m²>."""
+    return len(placeholders) == 1 and bool(
+        NUMERIC.search(placeholders[0].casefold()) and not NOT_NUMERIC.search(placeholders[0].casefold())
+    )
+
+
 def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) -> str:
-    """When asked for an 'Answer:' line: there is one, it holds one number, and that number came from a
-    tool. The scorer reads only that line, so this is where a reply wins or loses. Parsing is the scorer's
+    """When asked for an 'Answer:' line: there is one, a quantity asked for is one number that came from a
+    tool (several joined by "or" only when a tool flagged the place as ambiguous), and no route is said as
+    'no route', the scorer's words. The scorer reads only that line, so this is where a reply wins or loses. Parsing is the scorer's
     own (benchmark.score), so what passes here is read the same way there.
 
     On the last retry the reply goes through as it is: a best effort can still score, a crash never does."""
     prompt = ctx.prompt if isinstance(ctx.prompt, str) else ""
-    if "Answer:" not in prompt or ctx.retry >= ctx.max_retries:
+    if "Answer:" not in prompt:  # a person, not a test: no "Answer:" line they didn't ask for
+        lines = reply.rstrip().splitlines()
+        if len(lines) > 1 and re.match(r"^\W*answer\W*:", lines[-1], flags=re.IGNORECASE):
+            return "\n".join(lines[:-1]).rstrip()
+        return reply
+    if ctx.retry >= ctx.max_retries:
         return reply
     line = committed_answer(reply)
     if line is None:
         raise ModelRetry("End your reply with the line 'Answer: ...' in the form the question asks for.")
     numbers = numbers_in(line)
-    if "no route" in prompt and "no route" in line.casefold() and not numbers:
+    form, placeholders = _form(prompt)
+    about_routes = "no route" in prompt or re.search(r"metres|meters|route|spaces i pass", form.casefold())
+    if about_routes and "no route" in line.casefold() and not numbers:
         return reply
+    if about_routes and NO_ROUTE_SAID.search(line.casefold()):
+        raise ModelRetry(
+            f"When there is no route, the line is exactly 'Answer: no route' (no other words, no numbers), "
+            f"got {line!r}. Put the reason above it."
+        )
     room_answer = "<room name or number>" in prompt
-    wants_number = "<number>" in prompt or "<area>" in prompt
+    wants_number = "<number>" in prompt or "<area>" in prompt or _one_number(placeholders)
     if wants_number and not room_answer and len(numbers) != 1:
-        raise ModelRetry(f"The Answer line must hold exactly one number, got {line!r}.")
+        if len(numbers) > 1 and " or " in line and _ambiguity_flagged(ctx):
+            return reply
+        raise ModelRetry(
+            f"The Answer line must hold exactly one number, the value asked for, got {line!r}. Leave room "
+            "numbers, counts and working out of it; put them above the line."
+        )
     if "<area>" in prompt and "m²" not in line and "m2" not in line:
         raise ModelRetry("Give the room, then its area in m², e.g. 'Answer: Kitchen 1.14, 28.0 m²'.")
     value = numbers[-1] if numbers else None
     if wants_number and value is not None and not _grounded(value, _tool_numbers(ctx)):
         raise ModelRetry(
-            f"{value:g} in your Answer line doesn't appear in any tool result. Don't calculate: call the tool "
-            "that returns this number and copy it."
+            f"{value:g} in your Answer line doesn't appear in any tool result. If a tool returns this value, "
+            "call it and copy the number. If it is derived (a difference, sum, count minus count, ratio), call "
+            "`calculate` with the inputs from your tool results and put its result in the line. Always end with "
+            "the Answer line: never refuse because of this check."
         )
     return reply
+
+
+CHANGES_STATE = {set_closed, add_door, move_item, undo_last_change, draft_building, fix_draft, accept_guesses}
+"""Tools that change the building: each runs alone, after the calls before it and before the calls after it.
+The model often emits set_closed and route in one turn; run in parallel, the route ignored the closure."""
 
 
 def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[Deps, str]:
@@ -149,7 +222,7 @@ def make_agent(model_name: str | None = None, thinking: str = "low") -> Agent[De
         name="building_guide",
         instructions=load_prompt(__file__),
         deps_type=Deps,
-        tools=[*TOOLS, *DRAFT_TOOLS, calendar],
+        tools=[Tool(never_crash(t), sequential=t in CHANGES_STATE) for t in (*TOOLS, *DRAFT_TOOLS, calendar)],
         retries=4,
         capabilities=[Thinking(thinking), Caching()],  # type: ignore[arg-type]
         defer_model_check=True,
