@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520">
+<rect width="1200" height="520" fill="#fbfaf5"/>
+<rect x="14" y="14" width="1172" height="492" fill="none" stroke="#3a3a3a" stroke-width="1.5"/>
+<polygon points="106.3,40.0 106.3,107.8 40.0,107.8 40.0,40.0 106.3,40.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="79.8" y="67.1" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="106.3,107.8 106.3,180.1 40.0,180.1 40.0,107.8 106.3,107.8" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="79.8" y="136.8" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="94.6,180.1 94.6,251.3 40.0,251.3 40.0,180.1 94.6,180.1" fill="#e9e7df" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="188.7,40.0 188.7,91.2 123.4,91.2 123.4,40.0 188.7,40.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="162.6" y="60.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="188.7,91.2 188.7,140.1 123.4,140.1 123.4,91.2 188.7,91.2" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="162.6" y="110.7" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="188.7,140.1 188.7,222.4 123.4,222.4 123.4,140.1 188.7,140.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="162.6" y="173.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="188.7,251.3 188.7,371.4 40.0,371.4 40.0,251.3 188.7,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="129.2" y="299.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="188.7,113.4 370.6,113.4 370.6,222.4 188.7,222.4 214.4,213.5 288.1,213.5 288.1,183.5 214.4,183.5 214.4,213.5 188.7,222.4 188.7,113.4" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="288.1,183.5 288.1,213.5 214.4,213.5 214.4,183.5 288.1,183.5" fill="#e9e7df" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="281.8,251.3 281.8,371.4 188.7,371.4 188.7,251.3 281.8,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="244.6" y="299.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="358.8,251.3 358.8,371.4 281.8,371.4 281.8,251.3 358.8,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="328.0" y="299.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Tech-Lab</text>
+<polygon points="436.8,251.3 436.8,371.4 358.8,371.4 358.8,251.3 436.8,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="405.6" y="299.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Tech-Lab</text>
+<polygon points="488.2,251.3 488.2,371.4 436.8,371.4 436.8,251.3 488.2,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="467.7" y="299.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="535.3,251.3 535.3,371.4 488.2,371.4 488.2,251.3 535.3,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="517.1,104.5 517.1,161.2 370.6,161.2 370.6,104.5 517.1,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="458.5" y="127.2" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Küche</text>
+<polygon points="581.3,104.5 581.3,161.2 517.1,161.2 517.1,104.5 581.3,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="555.6" y="127.2" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="651.8,104.5 651.8,161.2 581.3,161.2 581.3,104.5 651.8,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="623.6" y="127.2" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="722.5,104.5 722.5,161.2 651.8,161.2 651.8,104.5 722.5,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="694.2" y="127.2" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="799.5,104.5 799.5,161.2 722.5,161.2 722.5,104.5 799.5,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="768.7" y="127.2" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Besprechung</text>
+<polygon points="420.8,180.1 420.8,222.4 371.7,222.4 371.7,180.1 420.8,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="401.2" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Think Tank</text>
+<polygon points="465.8,180.1 465.8,222.4 439.0,222.4 439.0,180.1 465.8,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="455.0" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Lager</text>
+<polygon points="485.0,180.1 485.0,222.4 465.8,222.4 465.8,180.1 485.0,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="477.3" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Putzraum</text>
+<polygon points="513.9,180.1 513.9,222.4 485.0,222.4 485.0,180.1 513.9,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="502.3" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">EDV</text>
+<polygon points="545.9,180.1 545.9,222.4 513.9,222.4 513.9,180.1 545.9,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="533.1" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">ELT-Verteiler</text>
+<polygon points="627.2,180.1 627.2,222.4 545.9,222.4 545.9,180.1 627.2,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="594.7" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">WC</text>
+<polygon points="711.8,180.1 711.8,222.4 645.5,222.4 645.5,180.1 711.8,180.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="685.3" y="197.0" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">WC</text>
+<polygon points="748.1,180.1 748.1,222.4 718.2,222.4 718.2,180.1 748.1,180.1" fill="#e9e7df" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="123.4,40.0 123.4,222.4 420.8,222.4 439.0,222.4 627.2,222.4 627.2,180.1 439.0,180.1 439.0,222.4 420.8,222.4 420.8,180.1 370.6,180.1 370.6,161.2 754.6,161.2 754.6,180.1 748.1,180.1 645.5,180.1 645.5,222.4 748.1,222.4 748.1,180.1 754.6,180.1 754.6,222.4 754.6,251.3 94.6,251.3 94.6,222.4 94.6,180.1 106.3,180.1 106.3,40.0 123.4,40.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="703.2,251.3 703.2,293.6 601.6,293.6 601.6,251.3 703.2,251.3" fill="#e9e7df" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="754.6,251.3 754.6,371.4 703.2,371.4 703.2,251.3 754.6,251.3" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="799.5,104.5 863.7,104.5 863.7,161.2 863.7,222.4 1024.2,222.4 1024.2,289.1 863.7,289.1 851.9,283.6 851.9,243.5 828.3,243.5 828.3,283.6 851.9,283.6 863.7,289.1 754.6,289.1 754.6,161.2 799.5,161.2 799.5,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="851.9,243.5 851.9,283.6 828.3,283.6 828.3,243.5 851.9,243.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="842.5" y="259.6" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Think Tank</text>
+<polygon points="863.7,104.5 1024.2,104.5 1024.2,222.4 863.7,222.4 867.9,216.8 940.7,216.8 940.7,203.5 880.8,203.5 880.8,111.2 867.9,111.2 867.9,216.8 863.7,222.4 863.7,104.5" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="867.9,111.2 880.8,111.2 880.8,203.5 940.7,203.5 940.7,216.8 867.9,216.8 867.9,111.2" fill="#e9e7df" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="1024.2,289.1 1024.2,308.0 754.6,308.0 754.6,289.1 1024.2,289.1" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="843.4,308.0 843.4,371.4 754.6,371.4 754.6,308.0 843.4,308.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="807.9" y="333.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="890.4,308.0 890.4,371.4 843.4,371.4 843.4,308.0 890.4,308.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="871.6" y="333.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="922.5,308.0 922.5,371.4 890.4,371.4 890.4,308.0 922.5,308.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="909.7" y="333.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="984.6,308.0 984.6,371.4 922.5,371.4 922.5,308.0 984.6,308.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="959.8" y="333.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="1024.2,308.0 1024.2,371.4 984.6,371.4 984.6,308.0 1024.2,308.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<text x="1008.4" y="333.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444" text-anchor="middle">Büro</text>
+<polygon points="1024.2,40.0 1126.9,40.0 1126.9,85.6 1160.0,85.6 1160.0,371.4 1024.2,371.4 1024.2,40.0" fill="none" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<polygon points="1160.0,40.0 1160.0,85.6 1126.9,85.6 1126.9,40.0 1160.0,40.0" fill="#e9e7df" stroke="#222" stroke-width="2.2" stroke-linejoin="miter"/>
+<circle cx="1142.9" cy="85.6" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="106.3" cy="84.5" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="106.3" cy="156.8" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="123.4" cy="73.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="123.4" cy="123.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="123.4" cy="173.5" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="94.6" cy="236.9" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="147.0" cy="251.3" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="243.2" cy="251.3" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="328.8" cy="251.3" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="398.4" cy="251.3" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="462.5" cy="251.3" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="203.7" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="478.5" cy="161.2" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="564.2" cy="161.2" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="628.4" cy="161.2" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="692.5" cy="161.2" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="740.7" cy="161.2" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="406.9" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="451.9" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="475.4" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="500.0" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="529.9" cy="180.1" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="585.5" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="676.5" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="733.1" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="799.5" cy="308.0" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="866.9" cy="308.0" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="906.5" cy="308.0" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="953.6" cy="308.0" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="1003.8" cy="308.0" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="959.9" cy="222.4" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<circle cx="828.3" cy="268.0" r="2.6" fill="#fbfaf5" stroke="#222" stroke-width="1"/>
+<g font-family="Helvetica, Arial, sans-serif" fill="#2a2a2a">
+<rect x="870" y="428" width="316" height="78" fill="#fbfaf5" stroke="#3a3a3a" stroke-width="1.2"/>
+<text x="882" y="454" font-size="15" font-weight="700">Grundriss Floor 2</text>
+<text x="882" y="474" font-size="12">Floor 2 (2. Obergeschoss)</text>
+<text x="882" y="492" font-size="10" fill="#666">Munich Urban Colab · Freddie-Mercury-Str. 5 · M 1:200</text>
+</g></svg>
