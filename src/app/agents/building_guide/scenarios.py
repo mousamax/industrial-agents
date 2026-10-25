@@ -98,18 +98,21 @@ def _passes(v: Verdict) -> bool:
     return rubric and all(e.met for e in v.expectations)
 
 
-def check(rule: dict, turn: dict) -> str | None:
-    """None if the rule holds for this turn, else what went wrong."""
-    calls = turn["tool_calls"]
+def check(rule: dict, turns: list[dict]) -> str | None:
+    """None if the rule holds, else what went wrong. `turn` is one turn or a list (any of them may make
+    the call: an agent can rightly do the work a turn early); `tool` is one name or a list of equivalents."""
+    picked = [turns[t - 1] for t in (rule["turn"] if isinstance(rule["turn"], list) else [rule["turn"]])]
+    calls = [c for t in picked for c in t["tool_calls"]]
     if "tool" in rule:
+        names = rule["tool"] if isinstance(rule["tool"], list) else [rule["tool"]]
         wanted = rule.get("args", {})
         if not any(
-            c["tool"] == rule["tool"] and all(c["args"].get(k) == v for k, v in wanted.items()) for c in calls
+            c["tool"] in names and all(c["args"].get(k) == v for k, v in wanted.items()) for c in calls
         ):
-            return f"turn {rule['turn']}: no {rule['tool']} call with {wanted or 'any args'}"
+            return f"turn {rule['turn']}: no {' or '.join(names)} call with {wanted or 'any args'}"
     if "no_tool" in rule and any(c["tool"] == rule["no_tool"] for c in calls):
         return f"turn {rule['turn']}: called {rule['no_tool']}, shouldn't have"
-    if "max_words" in rule and (n := len(turn["reply"].split())) > rule["max_words"]:
+    if "max_words" in rule and (n := max(len(t["reply"].split()) for t in picked)) > rule["max_words"]:
         return f"turn {rule['turn']}: {n} words, max {rule['max_words']}"
     return None
 
@@ -195,7 +198,7 @@ async def _play(agent, scenario: dict, tmp: Path) -> dict:
             except Exception as e:
                 reply = f"[crash: {type(e).__name__}: {e}]"
                 turns.append({"who": who, "user": text, "reply": reply, "tool_calls": []})
-    failed_checks = [f for rule in scenario.get("checks", []) if (f := check(rule, turns[rule["turn"] - 1]))]
+    failed_checks = [f for rule in scenario.get("checks", []) if (f := check(rule, turns))]
     text = transcript(scenario, turns, deps, recorded)
     verdicts = [v.output for v in await asyncio.gather(*(judge.run(text) for _ in range(JUDGES)))]
     passes = [_passes(v) for v in verdicts]

@@ -601,3 +601,34 @@ def test_highlight_rooms_is_offered_only_to_people_with_a_map():
 
     assert "highlight_rooms" in asyncio.run(offered("walk"))  # app and voice chats
     assert "highlight_rooms" not in asyncio.run(offered("rooms"))  # benchmark
+
+
+def test_an_ambiguous_place_still_gets_one_number_in_the_answer_line():
+    """The judges' scorer wants exactly one number ("hedging doesn't earn credit"), so "A or B" is retried
+    even after a tool flagged the place as ambiguous."""
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+    from app.agents.building_guide.agent import _answer_line_is_committed_and_grounded
+
+    flagged = ModelRequest(
+        parts=[ToolReturnPart("find", "Ambiguous: 2 rooms are called 'Kitchen': 28.0 23.9", "c1")]
+    )
+    c = SimpleNamespace(
+        prompt="How big is the kitchen? Finish with a line 'Answer: <number>'.",
+        retry=0,
+        max_retries=4,
+        messages=[flagged],
+        deps=Deps.load(FACTORY),
+    )
+    with pytest.raises(ModelRetry, match="commit to the most plausible"):
+        _answer_line_is_committed_and_grounded(c, "Two kitchens fit.\nAnswer: 28.0 or 23.9")
+    assert _answer_line_is_committed_and_grounded(c, "I took the first.\nAnswer: 28.0").endswith("28.0")
+
+
+def test_a_blocked_route_names_how_far_the_rules_allow_and_gives_no_way_through():
+    deps = Deps.load(FACTORY)
+    blocked = call(route, ctx(deps), "Kitchen 0.28", "Assembly zone H-A2")  # only via Production zone H-A1
+    assert blocked["reachable"] is False and "legs" not in blocked
+    edge = blocked["as_far_as_the_rules_allow"][0]
+    assert "Production zone H-A1" in edge["place"] and "production bay" in edge["beyond_it"]
+    assert call(route, ctx(deps), "Kitchen 0.28", edge["id"])["reachable"]  # a valid route takes them there

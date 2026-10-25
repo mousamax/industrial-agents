@@ -14,7 +14,7 @@ from benchmark.score import committed_answer, numbers_in
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import Caching, Thinking
-from pydantic_ai.messages import ModelRequest, RetryPromptPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 
 from app.core import AgentCard, load_prompt
 from app.models import model
@@ -129,17 +129,6 @@ def _grounded(value: float, known: list[float]) -> bool:
     return any(abs(value - k) <= max(0.006 * abs(k), 0.06) for k in known)
 
 
-def _ambiguity_flagged(ctx: RunContext[Deps]) -> bool:
-    """A tool said the question's place is ambiguous (several rooms with that name, a tie): then one value
-    per option ("28.0 or 23.9") is the honest Answer line."""
-    for message in ctx.messages:
-        if isinstance(message, ModelRequest):
-            for part in message.parts:
-                if isinstance(part, ToolReturnPart | RetryPromptPart) and "Ambiguous:" in str(part.content):
-                    return True
-    return False
-
-
 FORM = re.compile(r"Answer:\s*([^'\"\n]*<[^'\"\n]*)")
 NUMERIC = re.compile(
     r"number|percent|metres|meters|minutes|m²|m2|\bper\b|\bdb\b|count|area|length|distance|°c"
@@ -168,8 +157,9 @@ def _one_number(placeholders: list[str]) -> bool:
 
 def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) -> str:
     """When asked for an 'Answer:' line: there is one, a quantity asked for is one number that came from a
-    tool (several joined by "or" only when a tool flagged the place as ambiguous), and no route is said as
-    'no route', the scorer's words. The scorer reads only that line, so this is where a reply wins or loses. Parsing is the scorer's
+    tool, and no route is said as 'no route', the scorer's words. One number even when a tool flagged the
+    place as ambiguous: the scorer gives no credit to "A or B" (it wants exactly one number), so the reply
+    commits to its best reading and puts the other options above the line. The scorer reads only that line, so this is where a reply wins or loses. Parsing is the scorer's
     own (benchmark.score), so what passes here is read the same way there.
 
     On the last retry the reply goes through as it is: a best effort can still score, a crash never does."""
@@ -199,11 +189,11 @@ def _answer_line_is_committed_and_grounded(ctx: RunContext[Deps], reply: str) ->
     room_answer = "<room name or number>" in prompt
     wants_number = "<number>" in prompt or "<area>" in prompt or _one_number(placeholders)
     if wants_number and not room_answer and len(numbers) != 1:
-        if len(numbers) > 1 and " or " in line and _ambiguity_flagged(ctx):
-            return reply
         raise ModelRetry(
             f"The Answer line must hold exactly one number, the value asked for, got {line!r}. Leave room "
-            "numbers, counts and working out of it; put them above the line."
+            "numbers, counts and working out of it; put them above the line. If several places fit the "
+            "question, commit to the most plausible one (the first a tool listed when nothing in the question "
+            "settles it), say above the line which you took and give the others' values there."
         )
     if "<area>" in prompt and "m²" not in line and "m2" not in line:
         raise ModelRetry("Give the room, then its area in m², e.g. 'Answer: Kitchen 1.14, 28.0 m²'.")

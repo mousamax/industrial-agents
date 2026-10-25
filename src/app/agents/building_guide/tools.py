@@ -972,14 +972,53 @@ class _BaysPassable(RouteGraph):
         return super()._dijkstra(sources, goals, bays_are_ends=False)
 
 
-def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
-    """Which restrictions block a route, found by lifting each one alone (and all of them together)."""
+BAY, NARROW, STEPS, CLOSED = (
+    "the way on crosses a production bay",
+    "the way on has openings too narrow for this load",
+    "the way on has stairs or steps",
+    "the way on uses something reported closed",
+)
+OPENS_A_WAY = {
+    BAY: "whoever runs that production area letting them cross it, or bringing what they need out of it",
+    NARROW: "a narrower load, or a smaller vehicle",
+    STEPS: "help on the stairs; the plan has no step-free way",
+    CLOSED: "the closed part reopening",
+}
+"""What could open a way past each rule: for the person to act on, never something the agent does itself."""
 
-    def found(graph: RouteGraph):
-        return graph.tour(stops)
+
+def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> tuple[list[str], list[dict]]:
+    """Which restrictions block a route, found by lifting each one alone (and all of them together), and for
+    each, how far toward the goal the rules still let the person go: the last place on that way they can
+    reach under every rule. A route there is valid, so a person who is stuck still gets somewhere useful
+    (the edge of the bay, the foot of the stairs) without anyone breaking a rule."""
+    graph = route_graph(b, c)
+    allowed = graph.reachable(stops[0], through_production_bays=False) | {stops[0]}
+    closest: list[dict] = []
+
+    def found(relaxed: RouteGraph, rule: str | None = None):
+        tour = relaxed.tour(stops)
+        if tour is not None and rule:
+            path = [s for leg in tour.legs for s in leg.space_path if s != OUTSIDE]
+            edge = next((s for s in reversed(path) if s in allowed), None)
+            there = graph.tour([stops[0], edge]) if edge not in (None, stops[0]) else None
+            if there is not None and all(x["id"] != edge for x in closest):
+                closest.append(
+                    {
+                        "place": _label(b, edge),
+                        "id": edge,
+                        "beyond_it": rule,
+                        "what_would_open_a_way": OPENS_A_WAY[rule],
+                        "route_there": {
+                            "length_m": round(there.length_m, 2),
+                            "steps": [step for leg in there.legs for step in _steps(b, leg)],
+                        },
+                    }
+                )
+        return tour
 
     causes = []
-    if crossing := found(_BaysPassable(b, c)):
+    if crossing := found(_BaysPassable(b, c), BAY):
         bays = {
             s
             for leg in crossing.legs
@@ -991,7 +1030,12 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
             f"production bays: a route meeting every other restriction exists only by passing through {names}; "
             "a route may end in a production bay but never cross one"
         )
-    if c.min_width_m and (wider := found(route_graph(b, dataclasses.replace(c, min_width_m=None)))):
+    if c.min_width_m and (
+        wider := found(
+            route_graph(b, dataclasses.replace(c, min_width_m=None)),
+            NARROW,
+        )
+    ):
         narrow = [
             f"{b.openings[e].width_m} m opening between {' and '.join(_label(b, s) for s in b.openings[e].space_ids)}"
             for leg in wider.legs
@@ -1002,9 +1046,12 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
             f"width: without the {c.min_width_m} m limit a route exists, through "
             + (", ".join(narrow) or "narrow lifts or stairs")
         )
-    if c.step_free and found(route_graph(b, dataclasses.replace(c, step_free=False))):
+    if c.step_free and found(route_graph(b, dataclasses.replace(c, step_free=False)), STEPS):
         causes.append("steps: a route exists only with stairs or stepped doors")
-    if c.closed and found(route_graph(b, dataclasses.replace(c, closed=frozenset()))):
+    if c.closed and found(
+        route_graph(b, dataclasses.replace(c, closed=frozenset())),
+        CLOSED,
+    ):
         causes.append(f"closures: the reported closures block it ({', '.join(sorted(c.closed))})")
     if not causes:
         if found(_BaysPassable(b, Constraints())):
@@ -1014,7 +1061,7 @@ def _why_no_route(b: Building, c: Constraints, stops: list[str]) -> list[str]:
             )
         else:
             causes.append(_not_connected(b, stops))
-    return causes
+    return causes, closest
 
 
 def _not_connected(b: Building, stops: list[str]) -> str:
@@ -1067,6 +1114,8 @@ def route(
     `blocked_by` says which restrictions block it, found by lifting each one in turn. Explain the trip
     with those causes. Don't name a single narrow opening, step or closure as the reason unless
     `blocked_by` shows it alone is enough, and don't call a place unreachable when it's only these rules.
+    `as_far_as_the_rules_allow` names the last place toward the goal they can still reach under every rule,
+    and what lies beyond it: a valid destination for a route, so a person who is stuck still gets somewhere.
 
     Args:
         start: Where the person is: room name/number, id, item name, or "outside" (from the street: the
@@ -1084,12 +1133,14 @@ def route(
     stops, shared_name = _stops_committed(ctx, [start, *(via or []), destination], constraints)
     tour = route_graph(b, constraints).tour(stops)
     if tour is None:
+        causes, closest = _why_no_route(b, constraints, stops)
         return _json(
             {
                 "reachable": False,
                 "stops": [_label(b, s) for s in stops],
                 "note": "No route under these constraints. See blocked_by for why.",
-                "blocked_by": _why_no_route(b, constraints, stops),
+                "blocked_by": causes,
+                "as_far_as_the_rules_allow": closest,
             }
         )
     legs = [_route_result(b, leg, ctx.deps.detail == "walk") for leg in tour.legs]

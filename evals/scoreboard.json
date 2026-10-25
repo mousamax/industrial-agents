@@ -1,7 +1,7 @@
 {
  "suites": {
   "benchmark": {
-   "at": "2026-10-24T22:06:42+00:00",
+   "at": "2026-10-25T06:28:32+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 138,
@@ -45,14 +45,14 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2911214,
-   "output_tokens": 34206
+   "input_tokens": 4861597,
+   "output_tokens": 34837
   },
   "warmup": {
-   "at": "2026-10-24T18:36:52+00:00",
+   "at": "2026-10-25T07:33:25+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 368,
+   "correct": 369,
    "total": 369,
    "by_kind": {
     "count": [
@@ -72,7 +72,7 @@
      40
     ],
     "route_with_closure": [
-     28,
+     29,
      29
     ],
     "tour": [
@@ -81,11 +81,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 5226062,
-   "output_tokens": 79887
+   "input_tokens": 13398612,
+   "output_tokens": 86256
   },
   "reworded": {
-   "at": "2026-10-24T18:42:51+00:00",
+   "at": "2026-10-25T07:06:45+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 45,
@@ -129,11 +129,11 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 718470,
-   "output_tokens": 11271
+   "input_tokens": 1590029,
+   "output_tokens": 10993
   },
   "scenarios": {
-   "at": "2026-10-24T22:10:03+00:00",
+   "at": "2026-10-25T07:40:02+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 17,
@@ -163,7 +163,7 @@
    }
   },
   "unseen": {
-   "at": "2026-10-24T18:39:40+00:00",
+   "at": "2026-10-25T07:07:07+00:00",
    "by": "mousamax",
    "model": "default",
    "correct": 96,
@@ -219,14 +219,14 @@
     ]
    },
    "errors": 0,
-   "input_tokens": 2091564,
-   "output_tokens": 40235
+   "input_tokens": 3533551,
+   "output_tokens": 21156
   },
   "holdout": {
-   "at": "2026-10-24T18:40:51+00:00",
+   "at": "2026-10-25T07:30:39+00:00",
    "by": "mousamax",
    "model": "default",
-   "correct": 94,
+   "correct": 95,
    "total": 96,
    "by_kind": {
     "area_difference": [
@@ -246,7 +246,7 @@
      8
     ],
     "exit_distance": [
-     8,
+     7,
      8
     ],
     "floor_with_most": [
@@ -274,13 +274,13 @@
      8
     ],
     "within_distance_count": [
-     6,
+     8,
      8
     ]
    },
    "errors": 0,
-   "input_tokens": 2263526,
-   "output_tokens": 42615
+   "input_tokens": 3624912,
+   "output_tokens": 21083
   }
  }
 }
